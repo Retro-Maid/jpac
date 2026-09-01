@@ -1,0 +1,11 @@
+flowchart LR
+  G["ABR genesis キー<br/>lg_code + machiaza_id"] --> H["blake2s<br/>内容アドレス"]
+  H --> ID["address_id<br/>jpa1xxxxxxxxxxxxxxxx"]
+  ID --> LG[("identity ledger<br/>address_id_ledger.csv.gz<br/>726,170件")]
+  LG -.->|退役IDの再利用を防ぐ| H
+  ID --> A["address"]
+  ID --> AE["address_entity"]
+  ID --> BR["全ブリッジ"]
+
+  classDef canon fill:#f4e7e2,stroke:#a8452c,color:#181d25;
+  class ID,LG canon;

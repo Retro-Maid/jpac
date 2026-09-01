@@ -1,0 +1,28 @@
+flowchart TB
+  subgraph L1["取得層 — sources/"]
+    S1["abr.py"]; S2["japanpost.py"]; S3["mlit.py"]
+    S4["mic_area_code.py"]; S5["mic_number_assignment.py"]; S6["doc_reader.py"]
+  end
+  subgraph L2["構築層 — build/"]
+    C1["canonical.py<br/>町字・市区町村・同一性"]
+    C2["postal.py"]; C3["mlit_bridge.py"]; C4["telephone.py"]
+    C5["versioning.py<br/>SCD-2"]; C6["overrides.py"]; C7["source_aliases.py"]
+    C8["quality.py"]; C9["diffing.py"]
+  end
+  subgraph L3["出力層 — export/"]
+    E1["writers.py<br/>Parquet / SQLite / CSV.gz / Flat View"]
+  end
+  subgraph L0["横断"]
+    H1["identity.py<br/>address_id 採番と台帳"]
+    H2["normalize.py<br/>保守的正規化"]
+    H3["snapshot.py<br/>来歴"]
+    H4["payload.py<br/>受理済みペイロードの読み取り"]
+  end
+
+  L1 --> L2 --> L3
+  L0 -.-> L1
+  L0 -.-> L2
+  L0 -.-> L3
+
+  classDef box fill:#efece7,stroke:#6b5f52,color:#181d25;
+  class L0,L1,L2,L3 box;

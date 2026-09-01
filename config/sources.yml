@@ -1,0 +1,362 @@
+# Official source registry. Verified 2026-08-23; licence conclusions re-verified
+# against the publishers' own pages on 2026-08-24 (see each `review_2026_08_24`).
+# Acquisition is managed internally and is not part of this repository; what is
+# used here is the licence metadata and each source's `required` flag.
+# Every license artifact hash below was reviewed by a human on the stated date and is
+# committed. There is no trust-on-first-use: a missing baseline blocks the release
+# (docs/LICENSE_POLICY.md §4).
+version: "1.0.0"
+
+sources:
+
+  abr:
+    provider: "デジタル庁"
+    provider_en: "Digital Agency"
+    required: true
+    landing_page: "https://www.digital.go.jp/policies/base_registry_address"
+    catalog_page: "https://dataset.address-br.digital.go.jp/"
+    discovery:
+      method: dcat_feed
+      feed_url: "https://dataset.address-br.digital.go.jp/data.json"
+      fallback_feed_url: "https://dataset.address-br.digital.go.jp/api/feed/dcat-us/1.1.json"
+      select_by: exact_title
+    license:
+      name: "公共データ利用規約（第1.0版） (PDL 1.0)"
+      url: "https://www.digital.go.jp/policies/base_registry_address_tos"
+      reviewed_on: "2026-08-24"
+      review_2026_08_24: >-
+        Terms page re-read verbatim. PDL 1.0 §1 permits 複製・公衆送信 of the content
+        itself and does not distinguish raw from derived, so redistributing the accepted
+        payloads unmodified needs no further permission. The only excluded ABR datasets
+        are 地番マスター / 地番マスター位置参照 (tos §1.3), which this project does not
+        fetch (docs/POLICY.md §3).
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。加工物には加工した旨とその主体を併記し、未加工の政府作成物である
+          かのような態様で公表・利用しない。
+      # Baselines are committed after human review. A NULL hash blocks the
+      # release; there is no trust-on-first-use path (docs/LICENSE_POLICY.md §4).
+      artifacts:
+        - role: primary_terms
+          name: "公共データ利用規約（第1.0版） (PDL 1.0)"
+          url: "https://www.digital.go.jp/policies/base_registry_address_tos"
+          text_sha256: "acd5205988866f65b29d0720c5bc4f669d43d5fce8afe5b9ac41e3bd7dcbd94a"
+          # This publisher declares its charset in the transport header, so the
+          # baseline already covers correctly-decoded text: the two agree.
+          text_sha256_decoded: "acd5205988866f65b29d0720c5bc4f669d43d5fce8afe5b9ac41e3bd7dcbd94a"
+        - role: policy_page
+          name: "アドレス・ベース・レジストリ 政策ページ"
+          url: "https://www.digital.go.jp/policies/base_registry_address"
+          text_sha256: "d069b147966c9b7d32084b5b8b3dd217b31e51f840f37371ea162622da06655b"
+          text_sha256_decoded: "d069b147966c9b7d32084b5b8b3dd217b31e51f840f37371ea162622da06655b"
+        - role: advertised_license
+          name: "CC BY 4.0 (as advertised in the DCAT feed)"
+          url: "https://creativecommons.org/licenses/by/4.0"
+          text_sha256: null
+          note: >-
+            Recorded discrepancy, not a conclusion. The terms page governs; this entry
+            exists so the disagreement is auditable (docs/LICENSE_POLICY.md §2).
+      note: >-
+        The 郵便番号変換表 additionally carries Japan Post's readme terms for its postal
+        side; see the japanpost source.
+      attribution:
+        # PDL 1.0 §1.1 states that a publisher's own 重要情報 examples replace the PDL
+        # default, so both forms below are the publisher's wording, not a house style.
+        # The unmodified form applies to redistributed payloads; the processed form to
+        # anything this project derives from them.
+        unmodified: |
+          出典：「アドレス・ベース・レジストリ（町字マスター、町字・郵便番号変換表）」（デジタル庁）
+                https://www.digital.go.jp/policies/base_registry_address
+        processed: |
+          出典：「アドレス・ベース・レジストリ（町字マスター、町字・郵便番号変換表）」（デジタル庁）
+                https://www.digital.go.jp/policies/base_registry_address を加工して作成
+    datasets:
+      town_master:
+        title: "全国 町字マスター"
+        observed_url: "https://data.address-br.digital.go.jp/mt_town/mt_town_all.csv.zip"
+        member: "mt_town_all.csv"
+        encoding: utf-8
+        canonical: true
+      city_master:
+        title: "全国 市区町村マスター"
+        observed_url: "https://data.address-br.digital.go.jp/mt_city/mt_city_all.csv.zip"
+        encoding: utf-8
+      pref_master:
+        title: "全国 都道府県マスター"
+        observed_url: "https://data.address-br.digital.go.jp/mt_pref/mt_pref_all.csv.zip"
+        encoding: utf-8
+      postal_conversion:
+        title: "ABR町字・郵便番号変換表"
+        arcgis_item_id: "1098a4f61dab4f52997839d04245132a"
+        observed_url: "https://www.arcgis.com/sharing/rest/content/items/1098a4f61dab4f52997839d04245132a/data"
+        member: "abr_post_code.csv"
+        encoding: utf-8
+        publisher_caveat: "本データは参考情報であり、サービスとして提供するものではありません。"
+    excluded_datasets:
+      - name: "地番マスター / 地番マスター位置参照拡張"
+        reason: "Below 町字; separate 登記所備付地図データ利用規約 not cleared for redistribution."
+      - name: "住居表示-街区マスター / 住居表示-住居マスター"
+        reason: "試験公開版, below 町字 granularity."
+
+  japanpost:
+    provider: "日本郵便株式会社"
+    provider_en: "Japan Post Co., Ltd."
+    required: true
+    landing_page: "https://www.post.japanpost.jp/zipcode/dl/utf-zip.html"
+    readme_page: "https://www.post.japanpost.jp/service/search/zipcode/download/utf-readme.html"
+    discovery:
+      method: html_links
+      resolve_relative_against: final_response_url   # page 301-redirects (acquisition side)
+      full_file_pattern: "utf/zip/utf_ken_all.zip"
+      delta_add_pattern: "utf/zip/utf_add_{yymm}.zip"
+      delta_del_pattern: "utf/zip/utf_del_{yymm}.zip"
+    license:
+      name: "著作権主張なし / 自由配布可 (publisher statement)"
+      url: "https://www.post.japanpost.jp/service/search/zipcode/download/utf-readme.html"
+      reviewed_on: "2026-08-24"
+      statement: "郵便番号データに限っては日本郵便株式会社は著作権を主張しません。自由に配布していただいて結構です。"
+      review_2026_08_24: >-
+        Readme re-read verbatim; the statement is unchanged. The publisher asserts no
+        copyright at all, so raw and derived redistribution are equally unrestricted and
+        attribution is voluntary rather than required.
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: "条件なし（著作権不主張）。出典表示は本プロジェクトの自主的な記載。"
+      attribution:
+        # Voluntary on both sides: identical wording, because there is no obligation to
+        # distinguish processed from unmodified when no copyright is asserted.
+        unmodified: |
+          郵便番号データ：日本郵便株式会社
+                https://www.post.japanpost.jp/zipcode/dl/utf-zip.html
+        processed: |
+          郵便番号データ：日本郵便株式会社
+                https://www.post.japanpost.jp/zipcode/dl/utf-zip.html
+      artifacts:
+        - role: primary_terms
+          name: "郵便番号データの説明 (readme)"
+          url: "https://www.post.japanpost.jp/service/search/zipcode/download/utf-readme.html"
+          text_sha256: "76eb114f5b8f3b2022c380cdc65fcffdd3710ceb1cba2062e7efd560c7facbcd"
+          # Recorded against ISO-8859-1-decoded text: this publisher serves text/html
+          # with no charset parameter. The value below is the same page hashed after
+          # correct decoding. Flipping the baseline is a coordinated change with the
+          # acquisition side (docs/LICENSE_POLICY.md §4).
+          text_sha256_decoded: "f977fa8f045edd204ea9ef45eb698c75bc639411db237fab6907c7c66b763a05"
+    datasets:
+      ken_all:
+        observed_url: "https://www.post.japanpost.jp/service/search/zipcode/download/utf/zip/utf_ken_all.zip"
+        member: "utf_ken_all.csv"
+        encoding: utf-8-sig
+        has_header: false
+        columns: 15
+    excluded_datasets:
+      - name: "大口事業所個別郵便番号 (jigyosyo)"
+        reason: "Establishments, not address areas (docs/POLICY.md §3)."
+
+  mlit:
+    provider: "国土交通省 国土政策局 国土情報課"
+    provider_en: "MLIT"
+    required: true
+    landing_page: "https://nlftp.mlit.go.jp/isj/"
+    discovery:
+      method: cgi_wizard
+      entry: "https://nlftp.mlit.go.jp/cgi-bin/isj/dls/_choose_method.cgi"
+      page_encoding: euc_jp
+      version_source: "版数 column of _choose_files.cgi"
+      data_url_template: "https://nlftp.mlit.go.jp/isj/dls/data/{version}/{pref}000-{version}.zip"
+      observed_version: "19.0b"
+      level_suffix: "b"          # b = 大字・町丁目; a = 街区 (never requested)
+    license:
+      # Was "PDL 1.0 + 位置参照情報 利用約款". The 2026-03-23 terms name 位置参照情報
+      # in scope and apply PDL 1.0 directly; the old 国土情報利用約款 now lives at
+      # /ksj/other/agreement_02.html and governs only legacy 国土数値情報 datasets, not
+      # 位置参照情報. The recorded name cited a document that no longer applies here.
+      name: "公共データ利用規約（第1.0版） (PDL 1.0)"
+      url: "https://nlftp.mlit.go.jp/ksj/other/agreement.html"
+      reviewed_on: "2026-08-24"
+      review_2026_08_24: >-
+        Terms re-read verbatim (施行 2026-03-23). Scope explicitly includes 位置参照情報
+        and applies PDL 1.0 with no redistribution clause of its own. 位置参照情報 is in
+        neither §1.2 (個別法令: 国土調査 and the Web mapping system only — which is why
+        the 測量法 / 国土地理院承認 requirement does not reach this project) nor §1.3
+        (別ルール: legacy 国土数値情報 datasets only). The published terms, not a
+        per-download contract, are what govern.
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。加工物には利用したコンテンツ名と加工した旨を併記し、あたかも国が
+          作成したかのような態様で公表・利用しない。座標は大字・町丁目の代表点であって
+          建物位置ではない旨を明示する。
+      attribution:
+        # 国土交通省 supplies its own 出典記載例, which per PDL 1.0 §1.1 replaces the PDL
+        # default. Note the publisher's own dataset name is 位置参照情報ダウンロード
+        # サービス, and its processed form is 「…をもとに○○作成」 — not 「…を加工して作成」.
+        unmodified: |
+          出典：位置参照情報ダウンロードサービス（国土交通省）
+                https://nlftp.mlit.go.jp/isj/
+        processed: |
+          「位置参照情報ダウンロードサービス」（国土交通省）
+                https://nlftp.mlit.go.jp/isj/ をもとに jp-address-crosswalk 作成
+      artifacts:
+        - role: primary_terms
+          name: "国土数値情報ダウンロードサイト 利用規約 (2026-03-23 施行)"
+          url: "https://nlftp.mlit.go.jp/ksj/other/agreement.html"
+          text_sha256: "95844b2015b249861990d0783bb6d98d02290784d65583f099d2a6b265153ac6"
+          # Recorded against EUC-JP-decoded text, but this page is UTF-8 with a BOM
+          # (the EUC-JP pin belongs to the download CGI, not to this page). The value
+          # below is the same page hashed after correct decoding.
+          text_sha256_decoded: "4c44671c4183abdad0fa8f117b98fd7594fc0990048e4d410917076284837e3a"
+        - role: superseded_terms
+          name: "国土数値情報ダウンロードサービスコンテンツ利用規約（旧国土情報利用約款準拠版）"
+          url: "https://nlftp.mlit.go.jp/ksj/other/agreement_02.html"
+          text_sha256: null
+          note: >-
+            Recorded so the earlier "+ 利用約款" naming stays auditable. It governs only
+            国土数値情報 datasets whose 利用許諾条件 is 商用可 / 非商用 / unstated, none of
+            which this project fetches. Not a gate.
+        - role: download_stipulation
+          name: "位置参照情報ダウンロード時の同意事項"
+          url: "https://nlftp.mlit.go.jp/cgi-bin/isj/dls/_view_stipulation.cgi"
+          text_sha256: null
+          note: >-
+            Kept as evidence, not as a gate, and not as a licence conclusion. On
+            2026-08-24 this CGI rendered no terms body under GET, and neither did the
+            2023 Internet Archive capture; the only click-through in the download flow
+            is a Google Forms アンケート. The direct data URL answers 200 with no cookie
+            or referer gate. Treat the published 利用規約 as governing.
+    datasets:
+      isj_oaza:
+        encoding: cp932
+        has_header: true
+        columns: 10
+        prefectures: 47
+    excluded_datasets:
+      - name: "街区レベル位置参照情報"
+        reason: "Below 町字 granularity for V1."
+
+  mic_area_code:
+    provider: "総務省"
+    provider_en: "MIC"
+    required: true
+    landing_page: "https://www.soumu.go.jp/main_sosiki/joho_tsusin/top/tel_number/shigai_list.html"
+    discovery:
+      method: html_links
+      prefer_format: doc
+      observed_url: "https://www.soumu.go.jp/main_content/001072458.doc"
+      alternate_pdf: "https://www.soumu.go.jp/main_content/000141817.pdf"
+      format: "OLE2 Word 97"
+      observed_current_as_of: "2026-03-01"
+    license:
+      # Was "総務省ホームページ 利用規約", which named the page but not the instrument.
+      # The page adopts PDL 1.0 verbatim — the same licence as ABR and MLIT — and saying
+      # so keeps all three ministries readable as one conclusion.
+      name: "公共データ利用規約（第1.0版） (PDL 1.0)"
+      url: "https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html"
+      reviewed_on: "2026-08-24"
+      review_2026_08_24: >-
+        Page re-read verbatim: "権利表記の記載がない限り「公共データ利用規約（第1.0版）」
+        に準拠した利用条件の下で利用することができます". Not 政府標準利用規約. §1.3
+        (個別法令) covers 政党助成法 reports only and §1.4 covers symbols and logos, so
+        neither reaches these datasets; both are ordinary site contents.
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。加工物には加工した旨を併記し、あたかも国（又は府省等）が作成したかの
+          ような態様で公表・利用しない。
+      attribution:
+        unmodified: |
+          出典：「市外局番の一覧」（総務省）
+                https://www.soumu.go.jp/main_sosiki/joho_tsusin/top/tel_number/shigai_list.html
+        processed: |
+          出典：「市外局番の一覧」（総務省）
+                https://www.soumu.go.jp/main_sosiki/joho_tsusin/top/tel_number/shigai_list.html を加工して作成
+      artifacts:
+        - role: primary_terms
+          name: "総務省ホームページ 著作権について（PDL 1.0 採用ページ）"
+          url: "https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html"
+          text_sha256: "e885876a039a4d93a54c852bef99911d6fb37493ee90afd1c3b347c38009acfc"
+          # Recorded against ISO-8859-1-decoded text; the page is Shift_JIS and declares
+          # it in its XML prolog, not in the transport header. The value below is the
+          # same page hashed after correct decoding.
+          text_sha256_decoded: "77cead0662f87bf3a188ec1390c684e808eb297310b95dc3d1ad949fdcd9ccac"
+
+  mic_number_assignment:
+    provider: "総務省"
+    provider_en: "MIC"
+    required: true
+    # Part of the V1 model (telephone_number_block), so a release cannot omit it.
+    # Annual cadence, so a previously verified snapshot may be carried forward with an
+    # explicit stale marker; a release blocks only when neither is available (P1-8).
+    allow_carry_forward: true
+    landing_page: "https://www.soumu.go.jp/main_sosiki/joho_tsusin/top/tel_number/number_shitei.html"
+    egov_dataset: "https://data.e-gov.go.jp/data/dataset/soumu_20160325_0034"
+    discovery:
+      method: egov_dataset_resources
+      select: "固定電話等の電話番号（{n}から始まる市外局番）"
+      observed_urls:
+        - "https://www.soumu.go.jp/main_content/000697543.xls"
+        - "https://www.soumu.go.jp/main_content/000697544.xls"
+        - "https://www.soumu.go.jp/main_content/000697545.xls"
+        - "https://www.soumu.go.jp/main_content/000697546.xls"
+        - "https://www.soumu.go.jp/main_content/000697548.xls"
+        - "https://www.soumu.go.jp/main_content/000697549.xls"
+        - "https://www.soumu.go.jp/main_content/000697550.xls"
+        - "https://www.soumu.go.jp/main_content/000697551.xls"
+        - "https://www.soumu.go.jp/main_content/000697552.xls"
+      format: "BIFF8 .xls"
+      sheet: "公開データ"
+      header_row: 2
+    license:
+      # Was "総務省ホームページ 利用規約", which named the page but not the instrument.
+      # The page adopts PDL 1.0 verbatim — the same licence as ABR and MLIT — and saying
+      # so keeps all three ministries readable as one conclusion.
+      name: "公共データ利用規約（第1.0版） (PDL 1.0)"
+      url: "https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html"
+      reviewed_on: "2026-08-24"
+      review_2026_08_24: >-
+        Page re-read verbatim: "権利表記の記載がない限り「公共データ利用規約（第1.0版）」
+        に準拠した利用条件の下で利用することができます". Not 政府標準利用規約. §1.3
+        (個別法令) covers 政党助成法 reports only and §1.4 covers symbols and logos, so
+        neither reaches these datasets; both are ordinary site contents.
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。加工物には加工した旨を併記し、あたかも国（又は府省等）が作成したかの
+          ような態様で公表・利用しない。
+      attribution:
+        unmodified: |
+          出典：「電気通信番号指定状況（固定電話等の電話番号）」（総務省）
+                https://www.soumu.go.jp/main_sosiki/joho_tsusin/top/tel_number/number_shitei.html
+        processed: |
+          出典：「電気通信番号指定状況（固定電話等の電話番号）」（総務省）
+                https://www.soumu.go.jp/main_sosiki/joho_tsusin/top/tel_number/number_shitei.html を加工して作成
+      artifacts:
+        - role: primary_terms
+          name: "総務省ホームページ 著作権について（PDL 1.0 採用ページ）"
+          url: "https://www.soumu.go.jp/menu_kyotsuu/policy/tyosaku.html"
+          text_sha256: "e885876a039a4d93a54c852bef99911d6fb37493ee90afd1c3b347c38009acfc"
+          # Recorded against ISO-8859-1-decoded text; the page is Shift_JIS and declares
+          # it in its XML prolog, not in the transport header. The value below is the
+          # same page hashed after correct decoding.
+          text_sha256_decoded: "77cead0662f87bf3a188ec1390c684e808eb297310b95dc3d1ad949fdcd9ccac"
+    excluded_datasets:
+      - name: "0120 / 0800 / 0570 / 0990 / 050 / 070 / 080 / 090 / 020 / IMSI"
+        reason: "Non-geographic number resources."
+
+http:
+  timeout_connect_s: 15
+  timeout_read_s: 120
+  max_retries: 3
+  retry_on: [500, 502, 503, 504, connection_error]
+  backoff_base_s: 2
+  max_download_bytes: 536870912        # 512 MiB
+  max_uncompressed_bytes: 2147483648   # 2 GiB
+  max_archive_members: 200
+  max_compression_ratio: 200
+  require_https: true
+  user_agent: "jp-address-crosswalk/1.0 (+https://github.com/jp-address-crosswalk)"

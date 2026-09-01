@@ -1,0 +1,10 @@
+lg_code,pref,pref_kana,pref_roma,county,county_kana,county_roma,city,city_kana,city_roma,ward,ward_kana,ward_roma,efct_date,ablt_date,remarks
+011011,北海道,ホッカイドウ,Hokkaido,,,,札幌市,サッポロシ,Sapporo-shi,中央区,チュウオウク,Chuo-ku,1947-04-17,,
+012092,北海道,ホッカイドウ,Hokkaido,,,,夕張市,ユウバリシ,Yubari-shi,,,,1947-04-17,,
+012106,北海道,ホッカイドウ,Hokkaido,,,,岩見沢市,イワミザワシ,Iwamizawa-shi,,,,1947-04-17,,
+014303,北海道,ホッカイドウ,Hokkaido,樺戸郡,カバトグン,Kabato-gun,月形町,ツキガタチョウ,Tsukigata-cho,,,,1947-04-17,,
+085464,茨城県,イバラキケン,Ibaraki,猿島郡,サシマグン,Sashima-gun,境町,サカイマチ,Sakai-machi,,,,1947-04-17,,
+131041,東京都,トウキョウト,Tokyo,,,,新宿区,シンジュクク,Shinjuku-ku,,,,1947-04-17,,
+133621,東京都,トウキョウト,Tokyo,,,,利島村,トシマムラ,Toshima-mura,,,,1947-04-17,,
+202045,長野県,ナガノケン,Nagano,,,,岡谷市,オカヤシ,Okaya-shi,,,,1947-04-17,,
+261041,京都府,キョウトフ,Kyoto,,,,京都市,キョウトシ,Kyoto-shi,中京区,ナカギョウク,Nakagyo-ku,1947-04-17,,

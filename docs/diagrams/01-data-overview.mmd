@@ -1,0 +1,35 @@
+flowchart LR
+  subgraph SRC[" 発行元 "]
+    direction TB
+    JP["日本郵便<br/>postal_record<br/>124,513"]
+    ML["国土交通省<br/>mlit_town<br/>191,106"]
+    MIC["総務省<br/>telephone_area<br/>582"]
+    MUNI["市区町村<br/>municipality<br/>1,918"]
+  end
+
+  ABR["ABR 町字マスター<br/>address<br/>726,170<br/>address_id が主キー"]
+
+  subgraph BR[" ブリッジ "]
+    direction TB
+    B1["bridge_address_postal_code<br/>676,124"]
+    B2["bridge_address_postal<br/>352,499"]
+    B3["bridge_address_mlit<br/>733,948"]
+    B4["bridge_address_telephone<br/>726,170"]
+    B5["bridge_municipality_postal<br/>10,117"]
+    B6["bridge_municipality_telephone<br/>2,189"]
+  end
+
+  ABR --- B1 --- JP
+  ABR --- B2 --- JP
+  ABR --- B3 --- ML
+  ABR --- B4 --- MIC
+  MUNI --- B5 --- JP
+  MUNI --- B6 --- MIC
+  ABR -.->|lg_code| MUNI
+
+  classDef canon  fill:#f4e7e2,stroke:#a8452c,stroke-width:2px,color:#181d25;
+  classDef bridge fill:#e2eef1,stroke:#2c6675,stroke-width:1.5px,color:#181d25;
+  classDef source fill:#efece7,stroke:#6b5f52,stroke-width:1.5px,color:#181d25;
+  class ABR canon;
+  class B1,B2,B3,B4,B5,B6 bridge;
+  class JP,ML,MIC,MUNI source;

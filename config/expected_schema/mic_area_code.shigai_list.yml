@@ -1,0 +1,15 @@
+column_count: 4
+columns:
+- コード
+- 番号区画
+- 市外局番
+- 市内局番
+container: none
+delimiter: \x07
+encoding: utf-16/cp1252 (Word 97)
+fingerprint: 54bbbf89a2512ce8105b741cf0652599eed29c45df8d6eba956c8637075ca8fd
+has_header: true
+members:
+- WordDocument
+- NTable
+sheet_names: []

@@ -1,0 +1,47 @@
+# Human-attested name resolution for a publisher whose prose is out of date.
+#
+# This file does NOT change a canonical name, a municipality code, an
+# address_id, or any substantive statement a publisher makes. It resolves ONE
+# string, in ONE publisher's text, to the lg_code it denotes. Everything else —
+# which numbering area covers the municipality, what the municipality is called
+# — still comes from the sources.
+#
+# It is deliberately not `municipality_lineage.yml`: that file drives identity
+# rule I3, and a rename that keeps its lg_code must never retire an address_id.
+#
+# Every alias carries `preconditions` that are measured on each build. When one
+# stops holding — typically because the publisher corrected its text — the alias
+# is reported stale and NOT applied, so a fixed source silently un-needs the
+# override instead of the override silently outliving it.
+version: "1.0.0"
+
+aliases:
+  - id: ALIAS-0001
+    source: mic_shigai_list
+    scope: municipality_name
+    pref: 兵庫県
+    published_name: 篠山市
+    lg_code: "282219"
+    effective_date: 2019-05-01
+    reason: >-
+      改称: 令和元年5月1日に篠山市から丹波篠山市へ市名変更。地方公共団体コード
+      282219 / JIS 28221 は変更なし。総務省「市外局番の一覧」(令和8年3月1日現在,
+      sha256 39cd71ef05ecd646…) は改称から7年を経てなお旧称で記載しており、
+      番号区画441の「兵庫県三田市、篠山市」がこの市を指す。
+    evidence_url: https://www.city.tambasasayama.lg.jp/soshikikarasagasu/sozoutoshika/tambasasayamasozokakari/12/12590.html
+    evidence_note: >-
+      丹波篠山市公式サイト「丹波篠山市への市名変更について」。「市の名称を篠山市から
+      『丹波篠山市』に変更しました」と令和元年5月1日施行を明記。同ページのフッタが
+      法人番号 3000020282219 を掲げており、その下7桁 282219 は地方公共団体コード
+      282219 に対応するため、文書と lg_code の対応も同ページ内で確認できる。
+      2026-08-23 に取得して本文を確認済み。
+    attested_by: retro.maid.itworker@gmail.com
+    attested_on: 2026-08-23
+    preconditions:
+      # The target must still be the municipality this alias was written for.
+      abr_lg_code_current_name: 丹波篠山市
+      # If a municipality by the published name ever exists, the alias is a
+      # collision, not a correction.
+      abr_has_no_municipality_named: 篠山市
+      # If MIC corrects its document, the alias is obsolete and must lapse.
+      source_still_contains: 篠山市

@@ -1,0 +1,77 @@
+# Release-blocking and warning thresholds — see docs/QUALITY_POLICY.md
+version: "1.1.0"
+
+blocking:
+  source_row_count_change_pct: 5.0
+  abr_town_count_change_pct: 2.0
+  duplicate_natural_keys_max: 0
+  unresolved_rate_rise_points: 3.0
+  ambiguous_rate_rise_points: 3.0
+  exact_rate_fall_points: 3.0
+  exact_rate_rise_points_without_rule_bump: 5.0
+  # Zero tolerance: policy says EVERY unexplained removal is DATA_LOSS_SUSPECTED,
+  # so a percentage allowance here would have let thousands of rows vanish quietly.
+  addresses_removed_without_lineage_max: 0
+  # Separate, non-zero allowance for properly evidenced retirements.
+  addresses_retired_with_lineage_pct: 2.0
+  invariant_failures_max: 0
+  required_sources: [abr, japanpost, mlit, mic_area_code, mic_number_assignment]
+
+warning:
+  source_row_count_change_pct: 1.0
+  rate_move_points: 1.0
+
+# Absolute floors for the genesis release, where no previous release exists to compare
+# against. Without these a truncated first download would become the baseline (P1-4).
+genesis_minimums:
+  abr_town_rows: 150000
+  abr_city_rows: 1500
+  abr_postal_conversion_rows: 200000
+  japanpost_ken_all_rows: 110000
+  mlit_isj_rows: 150000
+  mic_telephone_areas: 500
+  mic_number_blocks: 10000
+
+# Reviewed, exact rule migrations only. This is not a generic threshold waiver:
+# it applies to one version transition, bridge, metric and measured delta. Once
+# 1.2.0 is the previous release it can never match again.
+approved_rate_changes:
+  - from_matching_rule_version: "1.1.0"
+    to_matching_rule_version: "1.2.0"
+    bridge: bridge_address_telephone
+    metric: unresolved_pct
+    expected_delta_points: 92.453
+    tolerance_points: 0.001
+    rationale: >-
+      docs/POLICY.md §4 forbids expanding municipality-level statements to 町字. Version
+      1.2.0 therefore replaces every town telephone target with a lossless T10
+      unresolved row while retaining official evidence in the municipality bridge.
+
+# Reviewed, exact row-count migrations only. Like approved_rate_changes above,
+# an entry names one table and the exact counts on both sides, so it matches the
+# single transition it was written for and never again — once 1629 is the
+# baseline the entry is inert. Raising the percentage limit instead would have
+# widened the gate for every future release, which is the thing this gate exists
+# to prevent.
+approved_row_count_changes:
+  - table: telephone_area_coverage
+    from_rows: 1489
+    to_rows: 1629
+    tolerance_rows: 0
+    attested_by: retro.maid.itworker@gmail.com
+    attested_on: 2026-08-23
+    rationale: >-
+      Recovered rows, not new data. coverage_id was keyed on
+      (numbering_area_code, clause_raw), but one clause names several
+      municipalities — 「上北郡（東北町、野辺地町、横浜町及び六ヶ所村に限る。）」 is one
+      clause_raw and four rows — so they collided and the dedup kept whichever
+      came first. 140 rows were dropped by row order (docs/POLICY.md §4) and 122
+      郡部の町村 ended up with no numbering area. coverage_id is now content
+      addressed over every distinguishing field, only byte-identical rows may
+      collapse, and the parser's output is compared with the stored table on
+      every build (test_every_parsed_coverage_clause_survives_into_the_table).
+
+rationale: >-
+  exact_rate_rise_points_without_rule_bump exists because a sudden jump in exact matches
+  with no matching-rule change is evidence that strictness regressed, not that quality
+  improved (docs/QUALITY_POLICY.md §1).

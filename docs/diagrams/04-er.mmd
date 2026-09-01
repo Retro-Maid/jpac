@@ -1,0 +1,64 @@
+erDiagram
+  ADDRESS ||--|| ADDRESS_ENTITY : "同一 address_id"
+  ADDRESS ||--o{ ADDRESS_CODE : "コード体系ごと"
+  ADDRESS ||--|{ ADDRESS_RSDT_VARIANT : "lg_code + machiaza_id"
+  ADDRESS ||--o{ ADDRESS_HISTORY : "属性変更"
+  ADDRESS ||--o{ ADDRESS_LINEAGE : "分割・統合"
+  ADDRESS }o--|| MUNICIPALITY : "lg_code"
+  MUNICIPALITY ||--o{ MUNICIPALITY_VERSION : "SCD-2"
+
+  ADDRESS ||--o{ BRIDGE_ADDRESS_POSTAL_CODE : "address_id"
+  BRIDGE_ADDRESS_POSTAL_CODE }o--|| POSTAL_CODE_ENTITY : "target_id = 郵便番号"
+  ADDRESS ||--o{ BRIDGE_ADDRESS_POSTAL : "address_id"
+  BRIDGE_ADDRESS_POSTAL }o--|| POSTAL_RECORD : "target_id = postal_record_id"
+  POSTAL_RECORD ||--o{ POSTAL_RECORD_VERSION : "SCD-2 + 旧郵便番号"
+
+  ADDRESS ||--o{ BRIDGE_ADDRESS_MLIT : "address_id"
+  BRIDGE_ADDRESS_MLIT }o--|| MLIT_TOWN : "target_id = mlit_record_id"
+  MLIT_TOWN ||--o{ MLIT_TOWN_VERSION : "SCD-2 + 代表緯度経度"
+
+  ADDRESS ||--o{ BRIDGE_ADDRESS_TELEPHONE : "address_id"
+  MUNICIPALITY ||--o{ BRIDGE_MUNICIPALITY_TELEPHONE : "lg_code"
+  BRIDGE_MUNICIPALITY_TELEPHONE }o--|| TELEPHONE_AREA : "target_id = 番号区画"
+  TELEPHONE_AREA ||--o{ TELEPHONE_AREA_VERSION : "SCD-2"
+  TELEPHONE_AREA ||--o{ TELEPHONE_AREA_COVERAGE : "収容市区町村句"
+  TELEPHONE_AREA ||--o{ TELEPHONE_NUMBER_BLOCK : "市内局番"
+  MUNICIPALITY ||--o{ BRIDGE_MUNICIPALITY_POSTAL : "lg_code"
+
+  MATCH_RUN ||--o{ MATCH_RUN_INPUT : "使用スナップショット"
+  MATCH_RUN_INPUT }o--|| SOURCE_SNAPSHOT : "source_snapshot_id"
+  SOURCE_SNAPSHOT ||--o{ SNAPSHOT_LICENSE_ARTIFACT : "規約本文の照合"
+
+  ADDRESS {
+    string address_id PK "jpa1 + 16字"
+    string lg_code FK
+    string machiaza_id "主キーではない"
+    string full_name_raw
+    string full_name_normalized
+    string valid_from "出典が明示した場合のみ"
+  }
+  BRIDGE_ADDRESS_POSTAL_CODE {
+    string bridge_id PK
+    string address_id FK
+    string target_id FK
+    string relation_type "exact / equivalent / ambiguous / unresolved"
+    string match_method
+    string matching_rule_id "P1..P7"
+    float confidence "規則由来。確率ではない"
+    int candidate_count
+    bool candidate_count_is_complete
+    bool is_unique_match
+    string verification_status "auto / review_required / ..."
+    string match_run_id FK
+    string source_snapshot_id FK
+  }
+  SOURCE_SNAPSHOT {
+    string source_snapshot_id PK
+    string provider
+    string dataset_name
+    string download_url
+    string sha256
+    string license_name
+    string license_text_sha256
+    string downloaded_at
+  }

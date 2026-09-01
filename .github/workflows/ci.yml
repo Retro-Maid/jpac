@@ -1,0 +1,108 @@
+name: CI
+
+on:
+  push:
+    branches: ["**"]
+  pull_request:
+
+# No network-dependent job gates a pull request: a publisher outage must not
+# fail someone's PR (docs/TEST_STRATEGY.md §8).
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: ruff
+        run: ruff check src tests tools
+      - name: mypy
+        run: mypy src --ignore-missing-imports || true
+      # The README embeds generated SVGs. Hash-compares each diagram against the
+      # .mmd it was built from, so a source edited without re-rendering cannot
+      # ship a stale picture. Needs no Node: it compares hashes, not renders.
+      - name: diagrams are up to date with their sources
+        run: python tools/build_diagrams.py --check
+
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: Unit, adapter, schema-drift and licence-drift tests (offline)
+        run: pytest -v -m "not live" --cov=jp_address_crosswalk --cov-report=term-missing
+
+  config-integrity:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with: { python-version: "3.12" }
+      - run: pip install -e ".[dev]"
+      - name: Every config file parses and carries its version
+        run: |
+          python - <<'PY'
+          import sys, yaml, pathlib
+          required = {
+              "config/sources.yml": ["sources", "http"],
+              "config/matching_rules.yml": ["postal", "mlit", "telephone", "auto_accept"],
+              "config/address_normalization.yml": ["profiles"],
+              "config/quality_thresholds.yml": ["blocking", "genesis_minimums"],
+          }
+          bad = []
+          for path, keys in required.items():
+              d = yaml.safe_load(pathlib.Path(path).read_text(encoding="utf-8"))
+              if "version" not in d:
+                  bad.append(f"{path}: missing version")
+              for k in keys:
+                  if k not in d:
+                      bad.append(f"{path}: missing {k}")
+          # Every licence artifact that gates a release must carry a reviewed hash.
+          src = yaml.safe_load(pathlib.Path("config/sources.yml").read_text(encoding="utf-8"))
+          for name, spec in src["sources"].items():
+              for art in spec.get("license", {}).get("artifacts", []):
+                  if art.get("role") == "primary_terms" and not art.get("text_sha256"):
+                      bad.append(f"{name}: primary_terms has no reviewed baseline hash")
+          if bad:
+              print("\n".join(bad)); sys.exit(1)
+          print("config integrity OK")
+          PY
+
+      - name: Expected-schema baselines are committed
+        run: |
+          test -d config/expected_schema
+          n=$(ls config/expected_schema/*.yml 2>/dev/null | wc -l)
+          echo "expected-schema files: $n"
+          test "$n" -gt 0
+
+  fixture-build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - run: pip install -e ".[dev]"
+      - name: Deterministic fixture build (runs twice, must be identical)
+        run: pytest -v tests/test_fixture_build.py
+
+      - name: Two consecutive releases through the real pipeline
+        # The normal monthly path: build, promote, build again against the
+        # promoted baseline. A carry-forward regression that broke exactly this
+        # path once passed CI because nothing exercised it.
+        run: pytest -v tests/test_two_release.py
+
+      - name: Enforcement tests (invalid input must be refused)
+        run: pytest -v tests/test_enforcement.py

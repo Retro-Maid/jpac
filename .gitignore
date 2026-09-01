@@ -1,0 +1,42 @@
+# --- data and build output (never committed; see README) ---
+data/raw/
+data/cache/
+data/previous/
+data/verify/
+data/discovery_state.json
+dist/
+reports/*.csv
+!reports/.gitkeep
+
+# --- local-only working files, not part of the published repository ---
+.local/
+docs/assets/logo-original.png
+
+# --- identity ledger: the ledger itself IS committed, its scratch files are not ---
+identity/*.csv.gz.tmp
+identity/*.staged
+
+# --- Python ---
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.mypy_cache/
+.pytest_cache/
+.ruff_cache/
+.hypothesis/
+*.egg-info/
+.coverage
+.coverage.*
+htmlcov/
+
+# --- editors and OS ---
+.vscode/
+.idea/
+*.swp
+.DS_Store
+Thumbs.db
+
+# --- stray temporaries ---
+*.tmp
+*.bak

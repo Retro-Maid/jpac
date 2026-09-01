@@ -1,0 +1,15 @@
+# Human-attested 廃置分合 (municipality merger / re-code) transitions.
+# Identity rule I3 fires ONLY for a transition listed here. A municipality-level
+# merger is not town-level evidence, so without attestation the towns get new
+# address_ids and the old ones retire (docs/IDENTITY_MODEL.md §4).
+#
+# V1 ships this empty. Populating it from official e-Stat / MIC 市町村合併情報 is
+# a known limitation (docs/LIMITATIONS.md, item 11).
+version: "1.0.0"
+transitions: []
+# - old_lg_code: "012025"
+#   new_lg_code: "012033"
+#   effective_date: 2026-04-01
+#   evidence_url: "https://..."
+#   attested_by: "..."
+#   attested_on: 2026-08-23

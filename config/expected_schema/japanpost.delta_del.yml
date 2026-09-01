@@ -1,0 +1,25 @@
+column_count: 15
+columns:
+- jis_city_code
+- old_postal_code_raw
+- postal_code
+- pref_kana
+- city_kana
+- town_kana
+- pref
+- city
+- town
+- flag_multi_code
+- flag_koaza_banchi
+- flag_has_chome
+- flag_multi_town
+- update_flag
+- change_reason
+container: zip
+delimiter: ','
+encoding: utf-8-sig
+fingerprint: 4d80fbcbb1140c25858889436f518c601ea5e33cb02158363c6d74ababef8254
+has_header: false
+members:
+- utf_del_NNNN.csv
+sheet_names: []

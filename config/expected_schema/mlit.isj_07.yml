@@ -1,0 +1,23 @@
+column_count: 10
+columns:
+- 都道府県コード
+- 都道府県名
+- 市区町村コード
+- 市区町村名
+- 大字町丁目コード
+- 大字町丁目名
+- 緯度
+- 経度
+- 原典資料コード
+- 大字・字・丁目区分コード
+container: zip
+delimiter: ','
+encoding: cp932
+fingerprint: b60c89dc0754d84e5a472a039271aa7260ff135ee109302885bbdf96d28d63c6
+has_header: true
+members:
+- NNNNN-NN.Nb/
+- NNNNN-NN.Nb/NN_NNNN.csv
+- NNNNN-NN.Nb/NN.Nb.html
+- NNNNN-NN.Nb/META_NN_NNNN.xml
+sheet_names: []

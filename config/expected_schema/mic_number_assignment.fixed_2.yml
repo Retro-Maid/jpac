@@ -1,0 +1,17 @@
+column_count: 7
+columns:
+- 番号区画コード
+- 番号
+- 市外局番
+- 市内局番
+- 事業者
+- 使用状況
+- 備考
+container: none
+delimiter: ''
+encoding: biff8
+fingerprint: a2c6620218583c5b8e74845dfc565a1f50dac5a927971fb39f42c99963190157
+has_header: true
+members: []
+sheet_names:
+- 公開データ

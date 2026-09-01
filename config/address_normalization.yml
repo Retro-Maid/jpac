@@ -1,0 +1,71 @@
+# Address normalization profiles — see docs/MATCHING_RULES.md §8
+# Conservative by design: a transformation that could merge two genuinely
+# different Japanese place names is NOT applied.
+version: "1.0.0"
+
+profiles:
+
+  conservative:
+    description: "Default profile for all name-based matching rules."
+    steps:
+      - id: nfkc
+        description: "Unicode NFKC normalization"
+      - id: fullwidth_digits_to_ascii
+        description: "１２３ -> 123"
+      - id: kanji_chome_to_arabic
+        description: "一丁目 -> 1丁目; bounded strictly to a 丁目 suffix"
+        pattern: "([一二三四五六七八九十百]+)丁目$"
+        rationale: >-
+          Applied only immediately before 丁目 so that place names containing kanji
+          numerals (三田, 四谷, 六本木) are untouched.
+      - id: strip_whitespace
+        description: "Remove all whitespace including full-width spaces"
+      - id: unify_hyphens
+        description: "- ‐ ‑ – — − unified to '-' in numeric contexts only"
+        numeric_context_only: true
+        rationale: "ー (chouon) is left alone in kana names; it is a letter there, not a hyphen."
+
+    not_applied:
+      - pair: "ヶ / ケ / が / ガ"
+        reason: "Distinguishes real place names (青ヶ島 vs 青ケ島 usage differs by municipality)."
+      - pair: "ノ / 之 / の"
+        reason: "Distinguishes real place names (井之頭 vs 井の頭)."
+      - pair: "旧字体 / 新字体 (澤/沢, 齋/斎, 邊/辺, 髙/高, 﨑/崎)"
+        reason: "Official name forms differ between municipalities; unifying them merges distinct towns."
+      - pair: "katakana / hiragana"
+        reason: "Not interchangeable in place names."
+      - pair: "大字 / 字 prefix stripping"
+        reason: "Meaningful in the conservative profile; only mlit_relaxed may strip it."
+    consequence: >-
+      Two towns differing only by the above do NOT match. An intended match must be added
+      to overrides/manual_overrides.yml with evidence. An explicit reviewed exception is
+      preferred to a silent global rule.
+
+  mlit_relaxed:
+    description: >-
+      Candidate generation for MLIT only, where MLIT composes 大字・町丁目 into one
+      string while ABR splits it across oaza_cho / chome / koaza.
+    inherits: conservative
+    additional_steps:
+      - id: strip_oaza_aza_prefix
+        description: "Leading 大字 / 字 removed"
+      - id: compose_abr_parts
+        description: "ABR oaza_cho + chome + koaza concatenated before comparison"
+    restriction: >-
+      May only produce candidates and rule M3 matches. Never used for M1, and never for
+      any postal rule.
+
+  postal_town:
+    description: "Japan Post 町域 field."
+    inherits: conservative
+    additional_steps:
+      - id: flag_special_records
+        description: >-
+          Exact-suffix classification into record_kind
+          (以下に掲載がない場合 / 〜の次に番地がくる場合 / 〜一円).
+          Exact match only; never fuzzy.
+      - id: strip_parenthetical
+        description: "Trailing （...） notes removed for comparison; original kept in town_raw"
+        keep_original: true
+
+recorded_per_match: true   # normalization_profile + version stored on every bridge row

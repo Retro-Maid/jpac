@@ -1,0 +1,23 @@
+flowchart TB
+  R[("data/raw/<br/>受理済みペイロード<br/>SHA-256 記録済み")]
+  E["parse<br/>CSV / Shift_JIS / EUC-JP<br/>BIFF8 .xls / Word 97 .doc"]
+  S["schema gate<br/>期待スキーマとの照合<br/>列の増減・順序・文字コード"]
+  F["build<br/>正準化 → 同一性解決<br/>→ ブリッジ生成 → SCD-2"]
+  G["validate<br/>不変条件・鍵衝突<br/>コード型・auto確定ゲート"]
+  H["quality gates<br/>123項目<br/>前回リリースとの比較"]
+  I["export<br/>Parquet / SQLite / CSV.gz<br/>+ 各種レポート"]
+  J["promote baseline<br/>data/previous と<br/>identity ledger を更新"]
+  X(["リリース中止<br/>ベースラインと台帳は不変"])
+
+  R --> E --> S --> F --> G --> H
+  H -->|PASS| I --> J
+  H -->|FAIL| X
+  S -.->|スキーマ変更| X
+  G -.->|不変条件違反| X
+
+  classDef ok   fill:#e2eef1,stroke:#2c6675,color:#181d25;
+  classDef stop fill:#f4e7e2,stroke:#a8452c,stroke-width:2px,color:#181d25;
+  classDef store fill:#efece7,stroke:#6b5f52,color:#181d25;
+  class E,S,F,G,H,I,J ok;
+  class X stop;
+  class R store;

@@ -1,0 +1,25 @@
+# Reviewed source-key conflicts (independent review 3, P0).
+#
+# When two source rows share a natural key and disagree on a field this project
+# does not model, the build stops and every source row is retained in
+# `address_key_conflict`. That is deliberate: silently collapsing them is the
+# data loss docs/POLICY.md §5 forbids.
+#
+# This file is how a human clears one. Inspect the retained rows, record what
+# the publisher actually says, and sign off the exact (lg_code, machiaza_id,
+# field). Nothing else is cleared, and an entry does not change any value —
+# the collapsed row still carries NULL and every variant is still preserved in
+# `address_rsdt_variant`.
+version: "1.0.0"
+reviewed: []
+# - lg_code: "102016"
+#   machiaza_id: "0106005"
+#   fields: [efct_date]
+#   observed: >-
+#     Two rows for 群馬県前橋市: the 住居表示 row (rsdt_addr_flg=1) states
+#     efct_date 1947-04-17, the 地番 row (flag=0) states 2022-02-02.
+#   decision: >-
+#     Each aspect carries its own effective date, so this is not a
+#     contradiction. Both dates are kept in address_rsdt_variant.
+#   reviewed_by: "..."
+#   reviewed_on: 2026-08-23

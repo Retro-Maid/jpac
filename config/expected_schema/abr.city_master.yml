@@ -1,0 +1,26 @@
+column_count: 16
+columns:
+- lg_code
+- pref
+- pref_kana
+- pref_roma
+- county
+- county_kana
+- county_roma
+- city
+- city_kana
+- city_roma
+- ward
+- ward_kana
+- ward_roma
+- efct_date
+- ablt_date
+- remarks
+container: zip
+delimiter: ','
+encoding: utf-8
+fingerprint: b39d80ede80b5dd892eb43882d57d11521ad6bd10a0f9ac53b9b0872e61b3186
+has_header: true
+members:
+- mt_city_all.csv
+sheet_names: []

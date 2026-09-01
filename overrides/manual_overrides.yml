@@ -1,0 +1,20 @@
+# Human-confirmed matching decisions (docs/MATCHING_RULES.md §10).
+# Never patch a decision into code: it belongs here with its evidence, and it is
+# re-checked against current source state on every build so a stale override is
+# reported rather than silently reapplied (spec §71).
+version: "1.0.0"
+overrides: []
+# Example shape:
+# - id: OVR-0001
+#   bridge: bridge_address_mlit
+#   source: {address_id: "jpa1..."}
+#   target: {mlit_code: "011010001001"}
+#   set: {relation_type: exact, confidence: 1.0, verification_status: manually_verified}
+#   reason: "..."
+#   evidence: "..."
+#   evidence_url: "https://..."
+#   observed_source_state:
+#     abr_snapshot_sha256: "..."
+#     mlit_snapshot_sha256: "..."
+#   created_at: 2026-08-23
+#   created_by: "..."

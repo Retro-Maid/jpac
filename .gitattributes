@@ -1,0 +1,24 @@
+# Line endings are normalised to LF in the repository. The build writes its own
+# artifacts as LF regardless of platform, so `sha256sum -c SHA256SUMS` works the
+# same way on every machine; the repository should not disagree with that.
+* text=auto eol=lf
+
+# Fixtures are compared byte for byte against what the publishers serve. Git must
+# not touch them.
+tests/fixtures/** -text
+
+# Binary payloads and generated assets.
+*.png binary
+*.gz binary
+*.zip binary
+*.xls binary
+*.doc binary
+*.parquet binary
+*.sqlite binary
+
+# Generated from docs/diagrams/*.mmd — never hand-edited, noisy in review.
+docs/diagrams/*.svg linguist-generated=true
+docs/schema.sql linguist-generated=true
+
+# GitHub language stats: this is a Python project, not an SQL/HTML one.
+docs/** linguist-documentation=true

@@ -1,0 +1,25 @@
+column_count: 14
+columns:
+- lg_code
+- machiaza_id
+- pref
+- county
+- city
+- ward
+- kyoto_st
+- oaza_cho
+- chome
+- koaza
+- machiaza_dist
+- post_code
+- add_date
+- dlt_date
+container: zip
+delimiter: ','
+encoding: utf-8
+fingerprint: af383254bb9d6edac7913d2fd9b024d2011c509f3ed5de0716b11b5e54540502
+has_header: true
+members:
+- abr_post_code.csv
+- metadata.txt
+sheet_names: []

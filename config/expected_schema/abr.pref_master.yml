@@ -1,0 +1,17 @@
+column_count: 7
+columns:
+- lg_code
+- pref
+- pref_kana
+- pref_roma
+- efct_date
+- ablt_date
+- remarks
+container: zip
+delimiter: ','
+encoding: utf-8
+fingerprint: 96aa04f013022310994283a62b529ce2589cc0779a517094d46bbc1418f73ff4
+has_header: true
+members:
+- mt_pref_all.csv
+sheet_names: []
