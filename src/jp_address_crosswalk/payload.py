@@ -17,8 +17,9 @@ not part of this repository; see README. What remains is everything needed to
 
 from __future__ import annotations
 
+import struct
 import zipfile
-from collections.abc import Iterator
+from collections.abc import Iterator, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -210,3 +211,242 @@ def iter_zip_csv_members(path: Path, limits: ArchiveLimits | None = None) -> Ite
             if info.filename.lower().endswith(".csv"):
                 with zf.open(info) as fh:
                     yield info.filename, fh.read()
+
+
+# ------------------------------------------------------------------ shapefile
+# Two sources ship their attribute table as a DBF inside a shapefile archive
+# (e-Stat 小地域境界, 国土数値情報 N02). Only the .dbf is ever read here: geometry
+# is a separate concern with a separate dependency, and neither source's
+# attributes need it.
+#
+# DBF is parsed rather than pulled in as a dependency. The payload is level-5
+# DBF with character and numeric fields only, the format has been frozen for
+# decades, and the alternative is a new pinned runtime dependency for ~50 lines
+# of struct unpacking — the same trade docs/ARCHITECTURE.md §5 records for the
+# legacy MIC formats, decided the other way because this format is simpler and
+# does not move.
+
+DBF_FIELD_TERMINATOR = 0x0D
+DBF_DELETED = b"*"
+
+
+def read_dbf(data: bytes, encoding: str = "cp932") -> tuple[list[str], list[list[str]]]:
+    """Field names and rows of a DBF table, every value as stripped text.
+
+    Numeric fields are returned as text too. The codes in these payloads are
+    zero-padded identifiers (``PREF`` ``01``, ``CITY`` ``101``, ``N02_005g``
+    ``010112``) and reading them as numbers is exactly the ``013100`` →
+    ``13100`` corruption README.md warns about; there is no caller here that
+    wants arithmetic.
+    """
+    if len(data) < 32:
+        raise SourceFetchFailed("DBF shorter than its own header", bytes=len(data))
+    n_records = int.from_bytes(data[4:8], "little")
+    header_len = int.from_bytes(data[8:10], "little")
+    record_len = int.from_bytes(data[10:12], "little")
+    if not header_len or not record_len:
+        raise SourceFetchFailed(
+            "DBF header declares no length", header_len=header_len, record_len=record_len
+        )
+
+    names: list[str] = []
+    widths: list[int] = []
+    pos = 32
+    while pos + 32 <= header_len and data[pos] != DBF_FIELD_TERMINATOR:
+        descriptor = data[pos : pos + 32]
+        names.append(descriptor[:11].split(b"\x00")[0].decode("ascii", "replace").strip())
+        widths.append(descriptor[16])
+        pos += 32
+    if not names:
+        raise SourceFetchFailed("DBF declares no fields")
+    # The header is self-describing, so disagreement means the file is not what
+    # it claims and every offset below would be wrong. Fail rather than emit
+    # plausible-looking garbage.
+    if sum(widths) + 1 != record_len:
+        raise SourceFetchFailed(
+            "DBF field widths do not add up to the declared record length",
+            declared=record_len, from_fields=sum(widths) + 1, fields=len(names),
+        )
+
+    rows: list[list[str]] = []
+    offset = header_len
+    for _ in range(n_records):
+        record = data[offset : offset + record_len]
+        offset += record_len
+        if len(record) < record_len:
+            break
+        if record[0:1] == DBF_DELETED:
+            continue
+        values: list[str] = []
+        cursor = 1
+        for width in widths:
+            values.append(record[cursor : cursor + width].decode(encoding, "replace").strip())
+            cursor += width
+        rows.append(values)
+    return names, rows
+
+
+def read_dbf_member(
+    path: Path, suffix: str = ".dbf", limits: ArchiveLimits | None = None,
+    encoding: str = "cp932", contains: str | Sequence[str] | None = None,
+) -> tuple[list[str], list[list[str]]]:
+    """Read the one DBF in a shapefile archive.
+
+    ``contains`` narrows to a single member and may be several substrings, all
+    of which must match. Both kinds of ambiguity are real in these payloads: N02
+    ships ``_Station`` and ``_RailroadSection`` side by side, *and* ships a
+    Shift-JIS and a UTF-8 copy of each — so the caller has to name the encoding
+    directory as well as the table, or it can decode Shift-JIS bytes as UTF-8
+    and get mojibake that still parses.
+
+    Matching more than one member is an error rather than "take the first":
+    picking silently is how one dataset's rows end up attributed to another.
+    """
+    limits = limits or ArchiveLimits()
+    needles = (
+        [] if contains is None
+        else [contains] if isinstance(contains, str)
+        else list(contains)
+    )
+    with open_zip_safely(path, limits) as zf:
+        members = [
+            m for m in safe_zip_members(zf, limits)
+            if m.filename.lower().endswith(suffix)
+            and all(n in m.filename for n in needles)
+        ]
+        if len(members) != 1:
+            raise SourceFetchFailed(
+                "expected exactly one matching DBF in the archive",
+                path=str(path), contains=needles,
+                found=[m.filename for m in members],
+            )
+        with zf.open(members[0]) as fh:
+            return read_dbf(fh.read(), encoding)
+
+
+# Shapefile geometry. Only the two shape types these sources use are handled:
+# Polygon (5) for the e-Stat 小地域 boundaries and PolyLine (3) for N02 stations.
+#
+# Parsed here for the same reason as the DBF above. The format is frozen, the
+# subset needed is small, and the alternative is a pinned spatial dependency for
+# the two record layouts below. The point-in-polygon logic that consumes this
+# lives in build/spatial.py and is validated against an independent
+# implementation (see tests/test_spatial.py).
+SHP_POLYLINE = 3
+SHP_POLYGON = 5
+_SHP_HEADER_BYTES = 100
+_SHP_RECORD_HEADER_BYTES = 8
+
+
+def read_shp_shapes(
+    data: bytes, expect: int | None = None
+) -> list[tuple[tuple[float, float, float, float], list[list[tuple[float, float]]]] | None]:
+    """Bounding box and rings/parts of every record, in file order.
+
+    Returns ``None`` for a null shape so the result stays index-aligned with the
+    DBF: dropping them would silently shift every attribute onto the wrong
+    geometry.
+
+    Polygon and PolyLine share a record layout — bbox, part offsets, then a flat
+    point array — so one reader covers both. Ring orientation is not normalised;
+    the even-odd rule used downstream does not need it, and rewriting the
+    publisher's rings would be an undeclared modification.
+    """
+    shapes: list[tuple[tuple[float, float, float, float], list[list[tuple[float, float]]]] | None] = []
+    offset = _SHP_HEADER_BYTES
+    total = len(data)
+    while offset + _SHP_RECORD_HEADER_BYTES <= total:
+        content_words = int.from_bytes(data[offset + 4 : offset + 8], "big")
+        body = offset + _SHP_RECORD_HEADER_BYTES
+        end = body + content_words * 2
+        if end > total:
+            raise SourceFetchFailed(
+                "shapefile record runs past the end of the file",
+                offset=offset, declared_end=end, size=total,
+            )
+        shape_type = int.from_bytes(data[body : body + 4], "little")
+        if shape_type == 0:                      # null shape
+            shapes.append(None)
+            offset = end
+            continue
+        if expect is not None and shape_type != expect:
+            raise SourceFetchFailed(
+                "unexpected shapefile shape type", expected=expect, observed=shape_type
+            )
+        box = struct.unpack("<4d", data[body + 4 : body + 36])
+        n_parts = int.from_bytes(data[body + 36 : body + 40], "little")
+        n_points = int.from_bytes(data[body + 40 : body + 44], "little")
+        parts_at = body + 44
+        points_at = parts_at + n_parts * 4
+        starts = [
+            int.from_bytes(data[parts_at + i * 4 : parts_at + i * 4 + 4], "little")
+            for i in range(n_parts)
+        ]
+        coords = struct.unpack(f"<{n_points * 2}d", data[points_at : points_at + n_points * 16])
+        rings: list[list[tuple[float, float]]] = []
+        for i, start in enumerate(starts):
+            stop = starts[i + 1] if i + 1 < n_parts else n_points
+            rings.append(
+                [(coords[j * 2], coords[j * 2 + 1]) for j in range(start, stop)]
+            )
+        shapes.append(((box[0], box[1], box[2], box[3]), rings))
+        offset = end
+    return shapes
+
+
+def read_shp_member(
+    path: Path, contains: str | Sequence[str] | None = None,
+    expect: int | None = None, limits: ArchiveLimits | None = None,
+) -> list[tuple[tuple[float, float, float, float], list[list[tuple[float, float]]]] | None]:
+    """``read_shp_shapes`` for the one .shp in an archive. See ``read_dbf_member``."""
+    limits = limits or ArchiveLimits()
+    needles = (
+        [] if contains is None
+        else [contains] if isinstance(contains, str)
+        else list(contains)
+    )
+    with open_zip_safely(path, limits) as zf:
+        members = [
+            m for m in safe_zip_members(zf, limits)
+            if m.filename.lower().endswith(".shp")
+            and all(n in m.filename for n in needles)
+        ]
+        if len(members) != 1:
+            raise SourceFetchFailed(
+                "expected exactly one matching .shp in the archive",
+                path=str(path), contains=needles,
+                found=[m.filename for m in members],
+            )
+        with zf.open(members[0]) as fh:
+            return read_shp_shapes(fh.read(), expect)
+
+
+def read_prj_member(
+    path: Path, contains: str | Sequence[str] | None = None,
+    limits: ArchiveLimits | None = None,
+) -> str:
+    """The .prj text, so a datum can be asserted rather than assumed.
+
+    N02 and e-Stat are both JGD2011, and a join between two sources on different
+    datums is off by metres in a way nothing downstream would report.
+    """
+    limits = limits or ArchiveLimits()
+    needles = (
+        [] if contains is None
+        else [contains] if isinstance(contains, str)
+        else list(contains)
+    )
+    with open_zip_safely(path, limits) as zf:
+        members = [
+            m for m in safe_zip_members(zf, limits)
+            if m.filename.lower().endswith(".prj")
+            and all(n in m.filename for n in needles)
+        ]
+        if len(members) != 1:
+            raise SourceFetchFailed(
+                "expected exactly one matching .prj in the archive",
+                path=str(path), contains=needles,
+                found=[m.filename for m in members],
+            )
+        with zf.open(members[0]) as fh:
+            return fh.read().decode("ascii", "replace")

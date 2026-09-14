@@ -171,6 +171,7 @@ class MicAreaCodeSource(BaseSource):
                 license_name=discovery.license_name, license_url=discovery.license_url,
                 license_text_sha256=discovery.license_text_sha256,
                 source_version=res.version, published_at=fr.last_modified,
+                edition_origin=res.edition_origin,
                 downloaded_at=utcnow(), etag=fr.etag, last_modified=fr.last_modified,
                 sha256=fr.sha256, file_size=fr.size,
                 row_count=row_counts.get(res.key),

@@ -20,6 +20,7 @@ import pytest
 from jp_address_crosswalk import pipeline
 from jp_address_crosswalk.build import canonical
 from jp_address_crosswalk.pipeline import Paths
+from jp_address_crosswalk.snapshot import SourceSnapshot
 
 from .test_fixture_build import (  # reuse the fixture loaders
     FIXTURES,
@@ -52,18 +53,38 @@ class FakeSnapshot:
         self.license_text_sha256 = "0" * 64
         self.source_version = "v1"
         self.published_at = None
+        self.edition_origin = None
         self.downloaded_at = "2026-08-23T00:00:00Z"
         self.etag = None
         self.last_modified = None
         self.file_size = 1
         self.schema_fingerprint = "f"
         self.parser_version = "1.0.0"
+        # Was missing until the shape guard below caught it: nothing in the
+        # release path reads it, so the omission never surfaced.
+        self.resolved_via = "discovery"
         self.status = "ok"
 
     def as_dict(self) -> dict:
         return {
             k: v for k, v in self.__dict__.items() if not k.startswith("_")
         }
+
+
+def test_fake_snapshot_matches_the_real_dataclass() -> None:
+    """The double is hand-written, so it drifts silently when a field is added.
+
+    Adding ``edition_origin`` to SourceSnapshot broke both release tests with an
+    AttributeError raised from deep inside the SOURCES.yml writer — a failure that
+    says nothing about what actually went wrong. This asserts the shape directly so
+    the next added field fails here, with the field name in the message.
+    """
+    from dataclasses import fields
+
+    real = {f.name for f in fields(SourceSnapshot)}
+    fake = set(FakeSnapshot("d", "s", 1).as_dict())
+    assert real - fake == set(), f"FakeSnapshot is missing: {sorted(real - fake)}"
+    assert fake - real == set(), f"FakeSnapshot invents: {sorted(fake - real)}"
 
 
 def make_outcome(town: pl.DataFrame, sha: str) -> pipeline.FetchOutcome:

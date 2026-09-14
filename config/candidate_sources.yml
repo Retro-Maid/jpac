@@ -1,0 +1,698 @@
+# Candidate source registry for the geo-expansion investigation.
+#
+# This is NOT config/sources.yml. Nothing here is fetched, and nothing here has
+# cleared docs/LICENSE_POLICY.md §4 (verbatim read + committed text_sha256 baseline).
+# It is the machine-readable form of docs/GEO_EXPANSION_RESEARCH.md, recorded so the
+# survey is auditable and re-checkable rather than living only in prose.
+#
+# Before any entry moves into config/sources.yml it must gain:
+#   - a publisher terms page read verbatim, with reviewed_on and text_sha256
+#   - a per-layer licence block (国土数値情報 has no single project-wide licence)
+#   - an explicit redistribution verdict for unmodified and modified payloads
+#
+# evidence:
+#   measured          — counted from the publisher's actual payload this survey; strongest
+#   terms_page_read   — the publisher's own terms page was fetched and read this survey
+#   secondary         — taken from a listing page, catalog, or search summary; NOT proof
+#
+# join_bucket: how the dataset can reach a jpac 町字 (docs/GEO_EXPANSION_RESEARCH.md §2)
+#   a = 市区町村コード / b = ABR 町字ID / c = 郵便番号 / d = geometry only / e = 住所文字列
+#
+# verdict:
+#   clear      — redistributable on attribution-only terms; candidate for adoption
+#   conditional— redistributable but with a clause that must be passed downstream
+#   blocked    — cannot be redistributed by this project
+#   deferred   — depends on unresolved work (usually the 町字 polygon problem)
+
+version: "0.1.0"
+survey_date: "2026-09-02"
+research_doc: "docs/GEO_EXPANSION_RESEARCH.md"
+
+# ---------------------------------------------------------------------------
+# Prior art. Not sources — context for whether this project should exist as scoped.
+# ---------------------------------------------------------------------------
+prior_art:
+  - name: "G空間情報センター"
+    operator: "一般社団法人 社会基盤情報流通推進協議会 (AIGID)"
+    url: "https://front.geospatial.jp/"
+    layer: catalog
+    evidence: terms_page_read
+    note: >-
+      Closest incumbent. A distribution platform, not a crosswalk: its own 約款 states
+      that per-dataset conditions are set by each 情報提供者, so ID reconciliation
+      remains the consumer's problem.
+  - name: "国土交通データプラットフォーム"
+    operator: "国土交通省"
+    layer: catalog
+    evidence: secondary
+    note: "Cross-search and visualisation. No published address-ID crosswalk."
+  - name: "デジタル庁 ベース・レジストリ"
+    operator: "デジタル庁"
+    layer: registry
+    evidence: secondary
+    note: >-
+      Supersets this idea. 法人ベース・レジストリ went live 2026-03; 不動産ベース・
+      レジストリ is planned. Building either ourselves is bad scoping.
+  - name: "Geoshape リポジトリ / 国勢調査町丁・字等別境界データセット"
+    operator: "ROIS-DS 人文学オープンデータ共同利用センター (CODH)"
+    url: "https://geoshape.ex.nii.ac.jp/ka/"
+    layer: feature_data
+    license: "CC BY 4.0 (e-Stat 利用規約の遵守が条件)"
+    evidence: terms_page_read
+    note: "220,814 町丁・字等 (2020年版). Precedent that e-Stat 小地域 boundaries can be redistributed."
+  - name: "Linked Open Addresses Japan"
+    operator: "uedayou"
+    layer: feature_data
+    license: "CC BY-SA 4.0"
+    evidence: secondary
+    note: >-
+      Nearest conceptual prior art: 国土数値情報 + 位置参照情報 + e-Stat merged into
+      RDF with 行政区画ポリゴン. Differs by having no persistent ID, no provenance,
+      no confidence, and by being share-alike.
+  - name: "geolonia/japanese-addresses (v1/v2)"
+    layer: feature_data
+    evidence: secondary
+    note: "Address normalisation, not a provenance-tracked crosswalk."
+  - name: "Overture Maps Foundation"
+    layer: feature_data
+    license: "CDLA-Permissive 2.0 (transportation theme: ODbL)"
+    evidence: terms_page_read
+    note: "GERS is the global analogue of a persistent-ID crosswalk. Not joined to Japanese administrative IDs."
+  - name: "公益財団法人 国土地理協会 全国町丁目・字界地図データベース"
+    layer: feature_data
+    license: "proprietary / paid"
+    evidence: secondary
+    note: "~180,000 町丁目 polygons. The commercial answer this project exists to avoid needing."
+
+# ---------------------------------------------------------------------------
+# The blocking question: a redistributable 町字 polygon source.
+# ---------------------------------------------------------------------------
+polygon_problem:
+  statement: >-
+    jpac holds 位置参照情報 代表点 only — one point per 大字・町丁目, and DATA_LICENSE.md
+    commits to never describing it as more. A point cannot do point-in-polygon, so no
+    join_bucket=d dataset (OSM roads, N02 stations, most 国土数値情報) can be attached to
+    町字 without 町字 boundaries this project does not have.
+  candidates:
+    - name: "国勢調査 小地域（町丁・字等別）境界データ"
+      publisher: "総務省統計局 / e-Stat 統計GIS"
+      key: "KEY_CODE (JIS市区町村コード + 小地域コード)"
+      license: "政府標準利用規約（第2.0版）準拠 / CC BY 互換"
+      license_url: "https://www.e-stat.go.jp/terms-of-use"
+      scope_note: >-
+        統計地理情報システム機能利用規約 第6条: コンテンツの利用条件等は e-Stat 利用規約に
+        準ずる。境界データそのものは e-Stat 本体規約側。
+      redistribution: { unmodified: permitted, modified: permitted }
+      evidence: terms_page_read
+      verdict: deferred
+      blocker: >-
+        KEY_CODE is not machiaza_id. The official crosswalk is not merely absent — it is
+        designed, published as a column (ABR 位置参照拡張 cns_bnd_s_area_kcode) and empty in
+        all 337,641 rows nationwide as of 2026-09-02. See candidates.digital_agency
+        "ABR 町字マスター位置参照拡張" for the measurement.
+      year_scoped: true
+      year_note: >-
+        小地域 are re-cut at every census, so a KEY_CODE mapping is valid for one census year
+        only. The v3 correspondence key must be (machiaza_id, key_code, census_year), not a
+        pair with the year demoted to metadata. ABR's own (empty) schema agrees: cns_bnd_year
+        is a separate column.
+      # -------------------------------------------------------------------
+      # Measured 2026-09-05 against the real payload (all 47 prefectures,
+      # 令和2年国勢調査 小地域（町丁・字等）JGD2011 世界測地系緯度経度 Shapefile).
+      # Full write-up: docs/ESTAT_BOUNDARY_VERIFICATION.md
+      # -------------------------------------------------------------------
+      measured_2026_09_05:
+        evidence: measured
+        download_bytes_all_47_prefectures: 322598028
+        distribution: "都道府県別47ファイル。全国一括ファイルは無い"
+        polygons_total: 232019
+        polygons_town: 231668          # HCODE 8101
+        polygons_water: 351            # HCODE 8154 水面調査区
+        exclave_D: 323                 # KIGO_D='D' 飛び地
+        enclave_D1: 7                  # KIGO_D='D1' 抜け地（他市区町村の飛び地が食い込む穴）
+        island_I: 3787                 # KIGO_I='I'
+        duplicate_boundary_KIGO_E: 17381   # 1町字が複数ポリゴンに分かれる (7.5%)
+        prj_datum: "GCS_JGD_2011 (全47県で統一)"
+        encoding: cp932
+        municipality_reconciliation:
+          jpac_municipalities: 1918
+          estat_codes: 1897
+          matched: 1889
+          jpac_only: 29
+          estat_only: 8
+          unexplained: 0
+          jpac_only_breakdown:
+            designated_city_parents: 20
+            northern_territories: 6    # 01695-01700。国勢調査未実施
+            hamamatsu_new_wards: 3     # 22138/22139/22140
+          estat_only_breakdown:
+            hamamatsu_old_wards: 7     # 22131-22137
+            unassigned_area: 1         # 13199（市区町村名が空。帰属未確定）
+          note: >-
+            e-Stat carries 政令指定都市 at WARD-code granularity (e.g. 14135 川崎市多摩区),
+            so the 20 parent-city codes correctly have no polygon. This settles for e-Stat
+            the ward-vs-city question left UNRESOLVED for N03 (see candidates.mlit N03_007).
+        point_in_polygon:
+          method: "jpac 位置参照情報 代表点 → e-Stat 小地域ポリゴン (HCODE 8101 のみ)"
+          prefectures_tested: ["14", "13", "01", "27", "47", "22"]
+          excluding_shizuoka: { points: 46210, matched: 46176, rate: 0.9993, mismatched: 9, outside_any_polygon: 25 }
+          shizuoka: { points: 3637, matched: 3086, rate: 0.8485, mismatched: 551 }
+          shizuoka_note: >-
+            All 551 are 浜松市: jpac's post-reorganisation ward codes landing in e-Stat's
+            pre-reorganisation ward polygons. A version skew resolvable via
+            overrides/municipality_lineage.yml, not a boundary-accuracy failure — the points
+            land in the correct CITY.
+          points_in_multiple_polygons: 0
+          caveat: >-
+            Measured per prefecture, so the publisher's 県境未接合 warning did not surface;
+            a nationwide merge is untested. The 9 mismatches sit on municipal borders and it
+            is NOT established whether e-Stat or the 代表点 is the one that is off — a 代表点
+            is not guaranteed to lie inside its own 町字.
+        granularity_gap:
+          estat_town_polygons: 231668
+          jpac_machiaza: 726170
+          ratio: 3.1
+          effect: >-
+            HARD EVIDENCE for the `blocker` above. e-Stat 町丁・字等 is roughly 3.1x coarser
+            than ABR 町字, so this source does NOT deliver 町字 polygons — it delivers a
+            coarser statistical partition. Assigning one e-Stat polygon to several jpac 町字
+            would be the "expand a municipality-level statement down to 町字" move POLICY.md
+            §4 forbids. Municipality-level use and 町字-level use are separate decisions.
+      publisher_caveats_verbatim:
+        source: "https://www.e-stat.go.jp/pdf/gis/notes/00200521.pdf"
+        reviewed_on: "2026-09-05"
+        items:
+          - "調査区の境界を基に作成しているため、住居表示等で用いられている実際の町丁・字の境界と一致しない場合があります。また、町丁・字の名称についても、一致しない場合があります。"
+          - "一つの市区町村内に同一の基本単位区又は町丁・字番号を持つ境域が複数存在する場合があり、このような場合には、重複フラグを付与し、識別できるようにしています。"
+          - "面積は、それぞれの境界データの図郭により算出したものであり、市区町村内のすべての総計は、国土地理院等の公式な面積と一致しません。"
+          - "都道府県の境界線は、接合処理を行っていないため、都道府県をまたがって市区町村を接合した場合には、都道府県の境界線にずれが生じる場合があります。"
+          - "他県の飛び地の境域が市区町村に含まれる場合は、当該飛び地の境域情報も含まれます。また、水面調査区がある場合には、同様に水面調査区の情報も含まれます。"
+      no_survey_law_clause:
+        checked_2026_09_05:
+          - "https://www.e-stat.go.jp/gis-terms"
+          - "https://www.e-stat.go.jp/terms-of-use"
+          - "https://www.e-stat.go.jp/gis/statmap-search?type=2"
+          - "https://www.e-stat.go.jp/pdf/gis/notes/00200521.pdf"
+          - "https://www.e-stat.go.jp/help/data-definition-information/downloaddata/A002005212020.pdf"
+        finding: >-
+          None of these carry a 測量法 / 国土地理院長承認 requirement — the instrument that
+          makes N03 `conditional` and 基盤地図情報 `blocked`. The only 国土地理院 mention is a
+          comparison of areas, not a rights claim. Absence of a statement is not proof of
+          absence; this remains for the human LICENSE_POLICY.md §4 gate to confirm.
+      catalog_discrepancy:
+        url: "https://www.geospatial.jp/ckan/dataset/soumu-r2-town"
+        catalog_says: "独自利用規約"
+        publisher_chain_says: "統計地理情報システム機能利用規約 §6 → e-Stat 利用規約 → 政府標準利用規約 2.0 / CC BY 互換"
+        resolution: "The publisher's own chain governs. Recorded as another instance of the §7 finding that catalog licence fields are unreliable."
+    - name: "基盤地図情報（基本項目） CommBdry / CommPt（町字界線・町字代表点）"
+      publisher: "国土地理院"
+      license: "基本測量成果 — 測量法 §29 (複製) / §30 (使用) 承認体系"
+      license_url: "https://www.gsi.go.jp/LAW/2930-qa.html"
+      redistribution: { unmodified: approval_required, modified: approval_required }
+      evidence: terms_page_read
+      verdict: blocked
+      note: >-
+        GSI Q&A names 不特定多数への公開 and 独自データの大量付加 as cases requiring
+        approval. DATA_LICENSE.md's reasoning that 位置参照情報 escapes 測量法 rests on
+        the 国土数値情報 terms §1.2 and does NOT transfer to GSI products.
+    - name: "登記所備付地図データ"
+      publisher: "法務省 (via G空間情報センター)"
+      key: "地番 (筆), with 大字・丁目 attributes"
+      license: "登記所備付地図データ利用規約（令和5年1月23日制定、一部を除き政府標準利用規約 第2.0版 準拠）"
+      redistribution: { unmodified: permitted, modified: permitted }
+      evidence: terms_page_read
+      verdict: conditional
+      note: >-
+        Could yield 町字 polygons bottom-up by dissolving 筆. Carries a discretionary
+        clause absent from PDL: 法務省 may refuse any and all use. Coverage and accuracy
+        vary by when each 図面 was made.
+    - name: "標準地域メッシュ (JIS X 0410)"
+      verdict: deferred
+      note: "Fallback substrate that sidesteps boundaries entirely, at the cost of not being 町字."
+
+# ---------------------------------------------------------------------------
+# Share-alike contamination risk.
+# ---------------------------------------------------------------------------
+share_alike_risk:
+  statement: >-
+    All four current jpac sources are attribution-only (PDL 1.0 ×3 + Japan Post asserting
+    no copyright). Merging an ODbL or CC BY-SA source into the same database can force the
+    combined database to be offered under that licence, which would break DATA_LICENSE.md's
+    design of flowing each publisher's own terms through separately.
+  sources:
+    - name: "OpenStreetMap"
+      license: "ODbL 1.0"
+      evidence: terms_page_read
+      verdict: blocked
+      mitigations_considered:
+        - "Collective Database (OSMF guideline: independent iff a data type is all-OSM or all-non-OSM within a regional cut) — weak for a crosswalk table, which mixes by construction"
+        - "Produced Work — fine for tiles, not for distributing a correspondence table"
+        - "Physical separation into a separate ODbL repository — recommended if OSM is ever needed"
+      alternative: "国土数値情報 N13 道路 (plain CC BY 4.0)"
+    - name: "Overture Maps transportation theme"
+      license: "ODbL 1.0 (inherited from OSM)"
+      evidence: terms_page_read
+      verdict: blocked
+      note: "Overture is CDLA-Permissive 2.0 in general; transportation is not. Does not solve the OSM problem."
+
+# ---------------------------------------------------------------------------
+# 国土数値情報: NOT one licence. Per-layer, per-year.
+# ---------------------------------------------------------------------------
+mlit_ksj:
+  terms_url: "https://nlftp.mlit.go.jp/ksj/other/agreement.html"
+  terms_effective: "2026-03-23"
+  legacy_terms_url: "https://nlftp.mlit.go.jp/ksj/other/agreement_02.html"
+  list_url: "https://nlftp.mlit.go.jp/ksj/index.html"
+  evidence: terms_page_read
+  default_license: "公共データ利用規約（第1.0版） (PDL 1.0)"
+  carve_outs:
+    section_1_2_individual_law:
+      description: "個別法令による利用の規制があるコンテンツ（国土調査系のみ）"
+      datasets:
+        - "20万分の1土地分類基本調査"
+        - "土地保全基本調査"
+        - "20万分の1シームレス土地保全図"
+        - "5万分1都道府県土地分類基本調査"
+        - "土地履歴調査"
+        - "災害類型別土地保全調査"
+        - "主要水系調査"
+        - "都道府県水調査（利水現況図）"
+        - "地下水調査（地下水マップ）"
+    section_1_3_other_rules:
+      description: "本利用ルールが適用されないコンテンツ → 旧国土情報利用約款準拠版へ"
+      trigger_values: ["オープンデータ（CC BY 4.0）一部制限", "商用可", "非商用", "記載なし"]
+  legacy_terms_meaning:
+    evidence: terms_page_read
+    reviewed_on: "2026-09-02"
+    source_clause: "agreement_02.html 第1条"
+    商用可:
+      redistribution: permitted
+      commercial: permitted
+      verbatim: "「商用可」＝出典・加工者等表示のうえ、原著作者等の許諾上、商用目的での利用（複製物の再配布を含む）が可能なもの"
+    非商用:
+      redistribution: prohibited
+      commercial: prohibited
+      verbatim: "「非商用」＝出典・加工者等表示のうえ、原著作者等の許諾上、非商用目的のみでの利用（ただし複製物の再配布を除く）が可能なもの"
+      note: "第3条第2項も、GIS形式・エクセル形式等のデータベースは原著作者等のデータベース著作権を侵害するおそれがある旨を注記する。"
+    記載なし:
+      redistribution: unknown
+      evidence: none
+      note: >-
+        Enumerated as a §1.3 trigger value but no meaning was found in agreement_02.html.
+        Unhandled case in the decision rule; requires an enquiry before adopting any layer
+        whose 利用許諾条件 is blank.
+  decision_rule: >-
+    Only layers whose 利用許諾条件 reads plainly "オープンデータ（CC BY 4.0）" sit under the
+    2026-03-23 terms (PDL 1.0) and are redistributable without further conditions. Any of
+    「一部制限」「商用可」「非商用」 drops the layer into the legacy 約款; 「非商用」 forbids
+    redistribution outright.
+  # Layer verdicts below are from the listing page's 利用許諾条件 column (evidence: secondary).
+  # Each must be re-read on its own detail page before adoption.
+  layers:
+    clear:
+      evidence: secondary
+      license: "オープンデータ（CC BY 4.0） → PDL 1.0 side"
+      items:
+        - { id: N02, name: "鉄道（路線・駅）", join_bucket: d, note: "the open answer to the '駅情報' requirement" }
+        - { id: N13, name: "道路", join_bucket: d, note: "the open alternative to OSM roads" }
+        - id: N03
+          name: "行政区域"
+          join_bucket: a
+          superseded_by_detail_page: true
+          note: >-
+            ⚠️ The listing page says 素の CC_BY_4.0, but the 2025 detail page adds a 測量法
+            国土地理院長承認 requirement (see candidates.mlit "N03 行政区域 2025年版").
+            Real verdict is `conditional`, not `clear`. Kept here to show that the listing
+            page alone was wrong — the case §5.4 of the research doc warned about.
+        - { id: N07, name: "バスルート", join_bucket: d }
+        - { id: P11, name: "バス停留所", join_bucket: d }
+        - { id: P36, name: "高速バス停留所", join_bucket: d }
+        - { id: S12, name: "駅別乗降客数", join_bucket: d, note: "joins to N02 stations" }
+        - { id: P29, name: "学校", join_bucket: d }
+        - { id: P04, name: "医療機関", join_bucket: d }
+        - { id: P05, name: "市町村役場等及び公的集会施設", join_bucket: d, note: "NOT P34, which is 非商用" }
+        - { id: L01, name: "地価公示", join_bucket: d }
+        - { id: L02, name: "都道府県地価調査", join_bucket: d }
+        - { id: A31, name: "洪水浸水想定区域 (a/b)", join_bucket: d }
+        - { id: A51, name: "雨水出水（内水）浸水想定区域", join_bucket: d }
+        - { id: A52, name: "砂防指定地", join_bucket: d }
+        - { id: A53, name: "多段階浸水想定", join_bucket: d }
+        - { id: A55, name: "都市計画決定情報", join_bucket: d }
+        - { id: A56, name: "宅地造成等工事規制区域・特定盛土等規制区域", join_bucket: d }
+        - { id: A54, name: "大規模盛土造成地", join_bucket: d }
+        - { id: A09, name: "都市地域", join_bucket: d }
+        - { id: A38, name: "医療圏", join_bucket: d }
+        - { id: A42, name: "歴史的風土保存区域", join_bucket: d }
+        - { id: A43, name: "伝統的建造物群保存地区", join_bucket: d }
+        - { id: A44, name: "歴史的風致維持向上計画の重点地区", join_bucket: d }
+        - { id: A45, name: "国有林野", join_bucket: d }
+        - { id: L03, name: "土地利用（細分）メッシュ", join_bucket: mesh }
+        - { id: null, name: "1km/500m/250m メッシュ別将来推計人口", join_bucket: mesh }
+    partial_restriction:
+      evidence: secondary
+      license: "オープンデータ（CC BY 4.0）一部制限 → legacy 約款 side"
+      verdict: conditional
+      items: [A13, A12, A27, A32, A29, A50, A33, A46, A47, A40, A49, A48, A10, A11, N06, P14]
+    commercial_ok:
+      evidence: secondary
+      license: "商用可 → legacy 約款 side (redistribution permitted)"
+      verdict: conditional
+      items: ["湖沼", G04, G08, A16, A17, A18, A19, A20, A21, A22, A23, A24, A25, C28, N08, S10a, S05-d]
+    non_commercial:
+      evidence: secondary
+      license: "非商用 → legacy 約款 side"
+      verdict: blocked
+      reason: "再配布は禁止 (agreement_02.html)"
+      items: [P02, P30, P34, P17, P18, P28, P27, P12, P35, P13, P20, P26, P03, P07, P15,
+              P16, P19, P21, P22, P24, P31, P32, P33, P09, N05, N10, N12, N04, N09, N11,
+              C02, C09, W01, W05, W07, G02, A15, A28, A34, A35, A39, A30b, A37, L05,
+              S05-a, S05-b, S05-c, S10b, A18s, A19s, A20s, A21s, A22s]
+
+# ---------------------------------------------------------------------------
+# Candidate sources, by publisher.
+# ---------------------------------------------------------------------------
+candidates:
+
+  digital_agency:
+    provider: "デジタル庁"
+    items:
+      - name: "ABR 町字マスター位置参照拡張 (mt_town_pos_pref{01..47}.csv)"
+        granularity: 町字
+        join_bucket: b
+        license: "公共データ利用規約（第1.0版） (PDL 1.0)"
+        license_url: "https://www.digital.go.jp/policies/base_registry_address_tos"
+        license_field_in_dcat: "https://creativecommons.org/licenses/by/4.0"
+        publisher_framing: "ID対応表 — links 町字ID to MLIT 位置参照情報 and 統計局 国勢調査小地域境界データ"
+        evidence: measured
+        measured_on: "2026-09-02"
+        measurement_tool: "tools/probe_abr_town_pos.py"
+        dataset_modified: "2025-10-27"
+        schema:
+          - lg_code
+          - machiaza_id
+          - rsdt_addr_flg
+          - rep_lon
+          - rep_lat
+          - rep_srid
+          - rep_scale
+          - rep_src_code
+          - plygn_fname
+          - plygn_kcode
+          - plygn_fmt
+          - plygn_srid
+          - plygn_scale
+          - plygn_src_code
+          - pos_oaza_cho_chome_code
+          - pos_data_mnt_year
+          - cns_bnd_s_area_kcode
+          - cns_bnd_year
+        measurements:
+          rows: 337641
+          prefectures: 47
+          schema_identical_across_prefectures: true
+          non_empty:
+            rep_lon: { count: 337641, share: 1.0 }
+            rep_lat: { count: 337641, share: 1.0 }
+            pos_oaza_cho_chome_code: { count: 208501, share: 0.6175, role: "control column — MLIT link IS populated" }
+            pos_data_mnt_year: { count: 208501, share: 0.6175, observed_values: ["2020"] }
+            cns_bnd_s_area_kcode: { count: 0, share: 0.0 }
+            cns_bnd_year: { count: 0, share: 0.0 }
+            plygn_fname: { count: 0, share: 0.0 }
+            plygn_kcode: { count: 0, share: 0.0 }
+            plygn_fmt: { count: 0, share: 0.0 }
+            plygn_srid: { count: 0, share: 0.0 }
+            plygn_scale: { count: 0, share: 0.0 }
+            plygn_src_code: { count: 337641, share: 1.0, observed_values: ["0"], note: "populated but constant; the referenced polygon file name is empty" }
+          join_to_town_master:
+            key: "(lg_code, machiaza_id)"
+            town_master_distinct_keys: 726170
+            extension_rows_matching: 209332
+            extension_rows_matching_share: 0.620
+            town_records_with_an_extension_row: 196162
+            town_coverage_share: 0.270
+            municipalities_present: 1894
+            municipalities_fully_matching: 396
+            municipalities_partially_matching: 1430
+            municipalities_zero_matching: 68
+            example_mismatch: >-
+              札幌市北区 (lg_code=011061): 町字マスター machiaza_id starts 0001000/0002001…,
+              extension starts 0000101/0000102… — different numbering series, not a lookup miss.
+        geometry: "代表点のみ（ポリゴン列は存在するが全国0件）"
+        verdict: conditional
+        priority: low
+        downgraded_from: high
+        downgrade_reason: >-
+          Measured, not inferred. Not a coordinate source (covers 27.0% of 町字, narrower than
+          the 位置参照情報 代表点 jpac already holds), not a polygon source (plygn_* empty
+          nationwide), and not an e-Stat crosswalk (cns_bnd_* empty nationwide). What it does
+          carry is a second MLIT 大字町丁目コード correspondence at 61.75%, usable only as
+          corroboration for the existing mlit_* lineage.
+        watch:
+          column: cns_bnd_s_area_kcode
+          why: >-
+            Currently 0 nationwide. Any populated row would be official ground truth for the
+            v3 小地域↔町字 crosswalk — a labelled validation set, worth more than its coverage.
+          how: "re-run tools/probe_abr_town_pos.py"
+      - name: "ABR 住居表示-街区マスター / 住居マスター"
+        granularity: 街区 / 住居
+        join_bucket: b
+        license: "PDL 1.0 (試験公開版)"
+        evidence: secondary
+        verdict: deferred
+        note: "Below 町字. Already excluded in config/sources.yml; opening a 街区 layer is a scope decision."
+      - name: "ABR 地番マスター / 地番マスター位置参照拡張"
+        granularity: 地番
+        license: "登記所備付地図データ利用規約 (excluded by ABR tos §1.3)"
+        evidence: secondary
+        verdict: conditional
+        note: "Currently excluded. Clearing the 法務省 terms would open it."
+      - name: "法人ベース・レジストリ"
+        granularity: 法人
+        join_bucket: a
+        license: unknown
+        evidence: secondary
+        verdict: deferred
+        note: "Live since 2026-03. Not an address dataset; a future join target."
+      - name: "不動産ベース・レジストリ"
+        status: "整備中"
+        verdict: deferred
+        note: "Do not build a substitute. Wait for the official registry."
+
+  mic:
+    provider: "総務省"
+    items:
+      - name: "国勢調査 小地域（町丁・字等別）境界データ"
+        publisher_detail: "統計局 / e-Stat 統計GIS"
+        granularity: 小地域
+        join_bucket: "own key (KEY_CODE)"
+        license: "政府標準利用規約（第2.0版）準拠 / CC BY 互換"
+        license_url: "https://www.e-stat.go.jp/terms-of-use"
+        redistribution: { unmodified: permitted, modified: permitted }
+        evidence: terms_page_read
+        verdict: deferred
+        priority: highest
+        note: "The polygon substrate. Blocked on the KEY_CODE ↔ machiaza_id crosswalk (see polygon_problem)."
+      - name: "国勢調査 小地域集計"
+        granularity: 小地域
+        join_bucket: "own key (KEY_CODE)"
+        license: "政府標準利用規約（第2.0版）準拠"
+        evidence: terms_page_read
+        verdict: deferred
+        note: "Pairs with the boundaries; the payoff for solving the crosswalk."
+      - name: "全国地方公共団体コード"
+        granularity: 市区町村
+        join_bucket: a
+        license: "公共データ利用規約（第1.0版） (PDL 1.0)"
+        evidence: secondary
+        verdict: clear
+        priority: medium
+        note: "Cheap. Useful as corroboration for municipal merger history."
+
+  mlit:
+    provider: "国土交通省"
+    items:
+      - name: "国土数値情報 (per layer)"
+        see: mlit_ksj
+      - name: "国土数値情報 N03 行政区域 2025年版"
+        detail_page: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-2025.html"
+        granularity: 市区町村
+        join_bucket: a
+        join_key: "N03_007 全国地方公共団体コード (5桁) → jpac municipality.jis_city_code"
+        reference_date: "2025-01-01"
+        geodetic: "JGD2011 / (B, L)"
+        shape: polygon
+        formats: [GML, Shapefile, GeoJSON]
+        size_note: "全国版 約230MB〜727MB（年次による）／都道府県別 0.8〜54MB"
+        license: "オープンデータ（CC_BY_4.0）※本データを二次利用する場合には、国土地理院に申請等必要な場合があります。"
+        license_verbatim_from: detail_page
+        survey_restriction:
+          verbatim:
+            - "測量法に基づく国土地理院長承認（複製）R 6JHf 503"
+            - "本製品を複製する場合には、国土地理院の長の承認を得なければなりません。"
+          reviewed_on: "2026-09-05"
+          effect: >-
+            N03 is NOT plain CC BY 4.0. The detail page carries a 測量法 reproduction
+            approval number and an explicit approval requirement for 複製 — the same
+            instrument that makes GSI 基盤地図情報 blocked (GEO_EXPANSION_RESEARCH.md §6.4).
+            This overturns the ⭕ "素の CC BY 4.0" classification that §5.4 assigned to N03
+            from the listing page alone, which is exactly the failure §5.4 warned about.
+          unresolved: >-
+            Whether redistributing the polygons, or derived values (representative points,
+            areas, the reconciliation table), falls inside 複製 / 二次利用 requiring approval.
+            Not decidable from the page; may require an enquiry to 国土地理院.
+        redistribution:
+          use_for_build: likely_permitted
+          polygons: requires_gsi_approval_unresolved
+          derived_non_geometry: unresolved
+        evidence: terms_page_read
+        reviewed_on: "2026-09-05"
+        verdict: conditional
+        priority: high
+        design_doc: "docs/N03_BOUNDARY_DESIGN.md"
+        attributes:
+          - { code: N03_001, name: 都道府県名 }
+          - { code: N03_002, name: 支庁・振興局名 }
+          - { code: N03_003, name: 郡・政令都市名 }
+          - { code: N03_004, name: 市区町村名 }
+          - code: N03_005
+            name: 政令指定都市の行政区名
+            verbatim: "当該区域における地方自治法第252条の20で定義される政令指定都市内に設置される行政区名"
+            note: "2025年版で追加。v3.1 には無い"
+          - code: N03_007
+            name: 全国地方公共団体コード
+            verbatim: "JIS X 0401で定められている都道府県コード2桁と、JIS X 0402で定められている市区町村コード3桁から構成される5桁の数字で表現されたコード"
+            note: >-
+              5桁。ゼロ始まりがあるので文字列で読む。UNRESOLVED: the definition says nothing
+              about 政令指定都市, and N03_005 exists as a separate ward-name attribute, so
+              whether N03_007 holds the ward code (14101) or the city code (14100) is not
+              decidable from the page. Measure it on 神奈川県 before writing the join.
+              See docs/N03_BOUNDARY_DESIGN.md §4.1.
+        measured_2026_09_05:
+          note: >-
+            Counted against dist/jp_address_crosswalk.sqlite (v1.0.0), not against N03.
+            These are the jpac-side facts the join design depends on.
+          municipality_rows: 1918
+          distinct_jis_city_code: 1918
+          null_jis_city_code: 0
+          lg_prefix_mismatches: 0
+          ward_rows: 171
+          designated_city_parents: 20
+        gate: >-
+          NOT cleared for config/sources.yml. LICENSE_POLICY.md §4 requires a human to read
+          the detail page and agreement.html verbatim and commit text_sha256 with a
+          rationale. Additionally, and before that, the 国土地理院 approval question in
+          survey_restriction.unresolved must be settled — a CC BY 4.0 reading alone does not
+          clear it. Must be added as its own source entry (mlit_ksj_n03), never folded
+          into the existing `mlit` entry, which is 位置参照情報 and carries a different
+          §1.3 determination (DATA_LICENSE.md: do not round differing conditions into one).
+        caveats:
+          - "⚠️ 測量法に基づく国土地理院長承認（複製）が併記されている。素の CC BY 4.0 ではない（survey_restriction）"
+          - "⚠️ N03_007 が政令市で区コードか市コードかは未確認。神奈川県で実測してから結合を書く"
+          - "境界未定地域あり（暫定境界）。東京都千代田区・中央区・港区を含む。別掲の暫定境界一覧は未取得"
+          - "所属未定地（N03_007 が空）の件数は未実測"
+          - "全国版 GML は config/sources.yml の max_uncompressed_bytes (2GiB) に触れうる。都道府県別 Shapefile を推奨"
+      - name: "国土数値情報 N03 行政区域 v3.1"
+        detail_page: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N03-v3_1.html"
+        reference_date: "2023-01-01"
+        license: "平成30年以降：適用する利用規約に基づく（オープンデータ）／上記以外：商用可"
+        evidence: terms_page_read
+        reviewed_on: "2026-09-05"
+        verdict: superseded
+        note: >-
+          Recorded so the version choice is auditable. Rejected in favour of the 2025 edition
+          on two grounds: a 2023-01-01 reference date maximises 廃置分合 drift against jpac's
+          2026 ABR snapshot, and v3.1 lacks N03_005 政令市の区名. Its licence field is also
+          year-split, which the 2025 edition's plain CC_BY_4.0 avoids.
+      - name: "Project PLATEAU 3D都市モデル"
+        granularity: 建築物
+        join_bucket: d
+        license: "CC BY 4.0 (政府標準利用規約 併記)"
+        distribution: "G空間情報センター"
+        coverage: "56都市・約1,000万棟（都市部のみ）"
+        evidence: secondary
+        verdict: clear
+        priority: low
+        note: "Depends on the polygon problem; partial national coverage."
+
+  gsi:
+    provider: "国土地理院"
+    items:
+      - name: "基盤地図情報（基本項目）"
+        license: "基本測量成果 — 測量法 §29/§30"
+        evidence: terms_page_read
+        verdict: blocked
+      - name: "電子国土基本図（地名情報）「住居表示住所」"
+        license: "基本測量成果 — 測量法 §27-2 に基づく提供"
+        evidence: secondary
+        verdict: blocked
+        note: "Already excluded by docs/LIMITATIONS.md. No change."
+      - name: "地理院タイル"
+        license: "地理院タイル利用規約"
+        evidence: terms_page_read
+        verdict: conditional
+        note: "Real-time tile display needs attribution only, no application. Display use, not a data source."
+
+  moj:
+    provider: "法務省"
+    items:
+      - name: "登記所備付地図データ"
+        granularity: 筆 (地番)
+        join_bucket: d
+        license: "登記所備付地図データ利用規約（令和5年1月23日制定）"
+        license_basis: "一部を除き 政府標準利用規約（第2.0版）準拠"
+        distribution: "G空間情報センター (XML / Shapefile / GeoJSON 変換版)"
+        update_cadence: "年1回程度（直近 2026-04-15、次回 2027年春頃予定）"
+        redistribution: { unmodified: permitted, modified: permitted }
+        evidence: terms_page_read
+        verdict: conditional
+        must_pass_downstream:
+          - "禁止事項条項（反社会的勢力への利益供与、個人特定行為、第三者の財産・プライバシー侵害等）"
+          - "法務省の判断により一切のコンテンツ利用を認めないことがある旨の裁量条項"
+          - "作成時期により精度が異なる／現在使用されていない市区町村名が残る場合がある旨"
+          - "一部市町村で複数年分のデータが存在しない旨"
+
+  other_agencies:
+    items:
+      - name: "気象庁 過去の気象データ・アメダス"
+        provider: "気象庁"
+        join_bucket: a
+        license: "公共データ利用規約（第1.0版） (PDL 1.0)"
+        attribution_extra: "加工時は「編集・加工を行った旨」と「編集責任が利用者にある」ことを併記"
+        evidence: secondary
+        verdict: clear
+        priority: low
+      - name: "20万分の1日本シームレス地質図 V1/V2"
+        provider: "産総研 地質調査総合センター"
+        join_bucket: d
+        license: "政府標準利用規約（第2.0版）準拠"
+        license_url: "https://gbank.gsj.jp/seamless/agreement.html"
+        evidence: secondary
+        verdict: clear
+        priority: low
+      - name: "公共交通オープンデータセンター (ODPT)"
+        provider: "公共交通オープンデータ協議会"
+        license: "service terms separated from per-dataset licences; each provider sets its own (e.g. 東京都交通局 = CC BY 4.0)"
+        access: "利用者登録が必要"
+        evidence: secondary
+        verdict: conditional
+        note: "No blanket adoption possible. Per-operator determination."
+      - name: "GTFS-JP / 標準的なバス情報フォーマット"
+        provider: "各自治体・交通事業者"
+        evidence: secondary
+        verdict: conditional
+        note: "Terms vary per operator; large fan-out."
+      - name: "駅データ.jp (ekidata.jp)"
+        license_url: "https://ekidata.jp/agreement.php"
+        evidence: terms_page_read
+        reviewed_on: "2026-09-02"
+        redistribution:
+          unmodified: "permitted, free of charge only"
+          modified: permitted
+          verbatim: "第6条（第三者提供）加工、非加工にかかわらず、本件データを第三者へ提供することができる。但し、非加工で提供する場合は無償でなくてはならない。"
+        verdict: conditional
+        reason: >-
+          Redistribution IS permitted — an earlier reading of §7 as forbidding it was wrong.
+          §7 covers crime, 公序良俗, rights infringement, and disparagement only.
+          Excluded on a different ground: not a government publisher, which docs/POLICY.md §2
+          requires.
+        alternative: "国土数値情報 N02"

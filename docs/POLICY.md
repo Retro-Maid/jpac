@@ -44,6 +44,57 @@ Explicitly **out of scope for V1**:
 Third-party OSS may be studied for **design ideas only**. Never as input data, and
 never as ground truth for matching.
 
+## 3.1 V2 scope extension (駅 → 市区町村)
+
+Added 2026-09-05. **§3 above is left exactly as written.** It records what V1's
+scope was, and editing that list would destroy the record rather than extend it —
+so the `stations` entry there stays, and this section states what V2 adds on top.
+
+### What is added
+
+| | |
+|---|---|
+| **Subjects** | 鉄道駅・鉄道路線 (国土数値情報 N02)、統計境界 (e-Stat 国勢調査 小地域) |
+| **Origins** | **None.** 総務省統計局 is already covered by MIC in §3, and 国土数値情報 by MLIT |
+| **Granularity** | 市区町村 only. See below |
+
+### Granularity: 市区町村 is a ceiling, not a starting point
+
+A station is attributed to a municipality and **never to a 町字**. This is not a
+gap to be closed later by trying harder. e-Stat's 231,668 町丁・字等 are ~3.1×
+coarser than jpac's 726,170 町字 (measured 2026-09-05), so assigning a station
+to a 町字 through them would be expanding a municipality-level statement to
+町字 level — which §4 below already lists as a defect.
+
+The schema enforces it: `bridge_station_municipality` carries `lg_code` and has
+no `address_id` column. A table that cannot express the wrong answer cannot
+drift into it.
+
+### New data class: geometry that is read but not distributed
+
+V1 sources are tabular and are redistributed as accepted. The V2 boundary source
+is different in kind, so it gets an explicit rule:
+
+- **Read at build time.** Polygons are the instrument that turns a coordinate
+  into a `lg_code`.
+- **Not shipped.** No release artifact carries geometry. What ships is the
+  correspondence and its provenance.
+- **Not re-derived into coordinates either.** Centroids, areas and perimeters
+  computed from a boundary source are not emitted (see
+  `docs/STATION_JOIN_PLAN.md` §3.1 and the `excluded_columns` entry in
+  `config/sources.yml`).
+
+This keeps the release the same kind of thing it has always been — a
+crosswalk with its evidence — and keeps the project out of the business of
+redistributing spatial data, where the licence questions are materially harder
+(`docs/N03_BOUNDARY_DESIGN.md` §8 records one that stopped an earlier design).
+
+### Release independence
+
+Both V2 sources are `required: false` in `config/sources.yml`. A V1 release must
+not depend on them and must not be blocked by their absence, their licence
+review, or a publisher outage.
+
 ## 4. Ambiguity policy (hard)
 
 > Leaving data unresolved is acceptable. Inventing a wrong 1:1 mapping is a defect.

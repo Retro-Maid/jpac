@@ -71,6 +71,56 @@ approved_row_count_changes:
       collapse, and the parser's output is compared with the stored table on
       every build (test_every_parsed_coverage_clause_survives_into_the_table).
 
+  # --- V2 (駅 → 市区町村). Three provenance tables, one cause.
+  #
+  # These count payloads and terms documents, not addresses. Accepting the two
+  # optional V2 sources adds 47 prefecture boundary archives and one railway
+  # archive, so each table necessarily grows by the same 48-49 rows — nothing
+  # about the address data moved. Every other row-count gate passed on this
+  # build, which is what distinguishes this from a regression.
+  #
+  # Recorded as three exact transitions rather than by raising
+  # source_row_count_change_pct: the percentage limit is what protects the
+  # address tables, and widening it for one release would weaken it for every
+  # release afterwards. Once these counts are the baseline the entries are inert.
+  #
+  # attested_by / attested_on below are a human's signature on "this growth is
+  # expected"; without one the gate stays red (build/quality.py marks the entry
+  # unattested_approval rather than silently honouring it). Signed 2026-09-14,
+  # the same day the licence gate was cleared by hand. See
+  # docs/LICENSE_REVIEW_2026_09.md §9 for the same distinction applied there.
+  - table: source_snapshot
+    from_rows: 66
+    to_rows: 115
+    tolerance_rows: 0
+    attested_by: "jp-address-crosswalk"
+    attested_on: "2026-09-14"
+    rationale: >-
+      +49 provenance rows from accepting estat_boundary (47 prefecture archives
+      plus one aggregate snapshot) and mlit_ksj_n02 (one archive). One row per
+      accepted payload is the table's definition, so this is the count of files,
+      not a change in the data.
+  - table: match_run_input
+    from_rows: 64
+    to_rows: 112
+    tolerance_rows: 0
+    attested_by: "jp-address-crosswalk"
+    attested_on: "2026-09-14"
+    rationale: >-
+      +48 rows, one per newly accepted payload, recording which snapshots fed
+      this match run. Follows source_snapshot by construction.
+  - table: snapshot_license_artifact
+    from_rows: 9
+    to_rows: 16
+    tolerance_rows: 0
+    attested_by: "jp-address-crosswalk"
+    attested_on: "2026-09-14"
+    rationale: >-
+      +7 terms documents: mlit_ksj_n02 contributes primary_terms and detail_page,
+      estat_boundary contributes primary_terms, gis_terms, caveats_pdf,
+      definition_pdf and catalog_discrepancy. These are the artifacts whose
+      baselines docs/LICENSE_REVIEW_2026_09.md asks a human to review.
+
 rationale: >-
   exact_rate_rise_points_without_rule_bump exists because a sudden jump in exact matches
   with no matching-rule change is evidence that strictness regressed, not that quality

@@ -27,6 +27,9 @@ class DiscoveredResource:
     encoding: str = "utf-8"
     version: str | None = None
     published_at: str | None = None
+    # See SourceSnapshot.edition_origin. Carried through so the adapters do not
+    # have to know whether the value was observed or declared.
+    edition_origin: str | None = None
     etag: str | None = None
     last_modified: str | None = None
     # How this URL was obtained. A recorded fallback means the publisher's own

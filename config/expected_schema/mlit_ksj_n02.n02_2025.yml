@@ -1,0 +1,16 @@
+column_count: 7
+columns:
+- N02_001
+- N02_002
+- N02_003
+- N02_004
+- N02_005
+- N02_005c
+- N02_005g
+container: zip
+delimiter: ''
+encoding: utf-8
+fingerprint: 77f5fe6f634c83c5c2aae478816b8b37dec23cd181eee7ddd2a7f4fc6f01f429
+has_header: true
+members: []
+sheet_names: []

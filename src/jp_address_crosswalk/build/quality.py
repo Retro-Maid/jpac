@@ -245,18 +245,30 @@ def compare_with_previous(
             # can never match again, because the new count becomes the baseline.
             for approval in thresholds.get("approved_row_count_changes", []):
                 tolerance = int(approval.get("tolerance_rows", 0))
-                if (
+                if not (
                     approval.get("table") == table
                     and abs(int(approval.get("from_rows", -1)) - prev["row_count"])
                     <= tolerance
                     and abs(int(approval.get("to_rows", -1)) - cur["row_count"])
                     <= tolerance
                 ):
-                    row["status"] = "pass"
-                    row["approved_migration"] = True
+                    continue
+                # An approval is a person saying "I looked, and this growth is
+                # expected". Without a name it is just a threshold waiver written
+                # in a different place, and it would let anyone silence this gate
+                # by describing the change they are making. The entry stays in the
+                # report either way, so an unattested one is visible rather than
+                # ignored.
+                if not str(approval.get("attested_by") or "").strip():
+                    row["approved_migration"] = False
                     row["rationale"] = approval.get("rationale")
-                    row["attested_by"] = approval.get("attested_by")
+                    row["unattested_approval"] = True
                     break
+                row["status"] = "pass"
+                row["approved_migration"] = True
+                row["rationale"] = approval.get("rationale")
+                row["attested_by"] = approval.get("attested_by")
+                break
         out.append(row)
 
     # Source-level volume: compares each publisher snapshot's own row count with
