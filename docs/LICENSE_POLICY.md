@@ -98,6 +98,22 @@ place. Normalization strips scripts, styles, navigation chrome and whitespace so
 unrelated site redesign does not produce a false positive, while a change to the terms
 body does.
 
+### PDF artifacts hash raw bytes, and are weaker for it
+
+Added 2026-09-05 with the `estat_boundary` source. Two of its licence artifacts — the
+境界データ 注意事項 and the 定義書 — are PDFs, and `license_text_hash` cannot apply to
+them: its normalization is defined over HTML markup. Those artifacts carry
+`hash_kind: raw_bytes` and a plain SHA-256 over the file.
+
+**This is a weaker baseline than the HTML one, and deliberately labelled as such.** A
+raw-byte hash changes whenever the publisher regenerates the PDF — a new production
+timestamp inside the file is enough — so it produces false positives that the HTML path
+would absorb. It still detects a change to the wording, which is what the gate is for; it
+just cannot distinguish that from a re-export. When a PDF artifact fires
+`LICENSE_REVIEW_REQUIRED`, read the document before assuming the terms moved.
+
+Artifacts without `hash_kind` are HTML and use `license_text_hash_bytes`.
+
 Clearing the gate requires a human to read the new terms, update this file and
 `config/sources.yml`, and commit the new hash with a rationale. No automatic acceptance
 path exists (spec §33).

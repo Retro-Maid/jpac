@@ -201,7 +201,7 @@ class AbrSource(BaseSource):
                     license_name=discovery.license_name,
                     license_url=discovery.license_url,
                     license_text_sha256=discovery.license_text_sha256,
-                    source_version=res.version,
+                    source_version=res.version, edition_origin=res.edition_origin,
                     published_at=res.published_at,
                     downloaded_at=utcnow(),
                     etag=fr.etag,

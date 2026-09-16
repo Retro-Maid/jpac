@@ -582,6 +582,11 @@ CREATE TABLE "source_snapshot" (
   "license_text_sha256" TEXT,
   "source_version"      TEXT,
   "published_at"        TEXT,
+  -- Where source_version / published_at came from: 'observed' (the acquisition
+  -- side read the publisher's page), 'declared' (a fixed edition named in
+  -- config/sources.yml), 'mixed', or NULL when neither is known. A declaration
+  -- is not an observation and the record says which.
+  "edition_origin"      TEXT,
   "downloaded_at"       TEXT,
   "etag"                TEXT,
   "last_modified"       TEXT,
@@ -593,6 +598,105 @@ CREATE TABLE "source_snapshot" (
   "resolved_via"        TEXT,
   "status"              TEXT
 );
+
+-- V2 (駅 → 市区町村). Present only when the optional boundary/railway payloads
+-- were available at build time; a V1 release omits all three (docs/POLICY.md §3.1).
+
+CREATE TABLE "estat_small_area" (
+  "key_code"           TEXT,
+  "pref_code"          TEXT,
+  "city_code"          TEXT,
+  "s_area"             TEXT,
+  "pref_name_raw"      TEXT,
+  "city_name_raw"      TEXT,
+  "s_name_raw"         TEXT,
+  -- 8101 町丁・字等 / 8154 水面調査区. 8154 is 港湾区域 and 漁港の水域 (国勢調査の
+  -- 調査区の設定の基準等に関する省令 第一条4項) and is not land, so it is excluded
+  -- before any point is placed.
+  "hcode"              TEXT,
+  "kigo_e"             TEXT,   -- 重複境域: one 町字 cut into several polygons
+  "area_max_f"         TEXT,   -- 'M' on the largest of those
+  "kigo_d"             TEXT,   -- 'D' 飛び地 / 'D1' 抜け地 (a hole belonging elsewhere)
+  "n_ken"              TEXT,
+  "n_city"             TEXT,
+  "kigo_i"             TEXT,   -- 'I' 島
+  -- pref_code || city_code. The JIS 5-digit code jpac already joins on.
+  "jis_city_code"      TEXT,
+  "reconcile_status"   TEXT,
+  "source_snapshot_id" TEXT,
+  CHECK (hcode IN ('8101', '8154')),
+  CHECK (reconcile_status IN ('matched', 'superseded', 'split_no_single_successor',
+                              'unassigned_area', 'estat_only'))
+);
+CREATE INDEX idx_esa_jis ON estat_small_area(jis_city_code);
+CREATE INDEX idx_esa_rec ON estat_small_area(reconcile_status);
+
+CREATE TABLE "n02_station" (
+  -- 駅グループコード. One row per station, not per platform: N02 ships 10,234
+  -- polyline features for 9,046 stations.
+  "n02_group_code"        TEXT PRIMARY KEY,
+  "feature_count"         INTEGER,
+  "station_name_raw"      TEXT,
+  "line_name_raw"         TEXT,
+  "operator_name_raw"     TEXT,
+  "railway_class"         TEXT,
+  "operator_class"        TEXT,
+  "n02_station_code"      TEXT,
+  -- A group can span operators and lines (a shared station). The retained name
+  -- above is one of N; these say how many, so "one of N" is never read as "the".
+  "station_name_variants" INTEGER,
+  "line_variants"         INTEGER,
+  "operator_variants"     INTEGER,
+  "source_snapshot_id"    TEXT,
+  CHECK (feature_count >= 1)
+);
+
+CREATE TABLE "bridge_station_municipality" (
+  "n02_group_code"      TEXT,
+  "station_name_raw"    TEXT,
+  "operator_name_raw"   TEXT,
+  -- The 6-digit 全国地方公共団体コード, joinable to municipality(lg_code) the
+  -- same way every other bridge in this schema is. NULL when the station is in
+  -- no polygon, and also when the boundary edition names a municipality that no
+  -- longer exists (the 2020 census still has 旧浜松7区). There is deliberately
+  -- no address_id column: 町字 granularity is unreachable through this source
+  -- (docs/POLICY.md §3.1).
+  "lg_code"             TEXT,
+  -- The 5-digit JIS code the polygon actually carried, kept so a NULL lg_code
+  -- above stays recoverable instead of being a silent loss. Cross the two with
+  -- overrides/municipality_lineage.yml to reach a current municipality.
+  "boundary_jis_city_code" TEXT,
+  "relation_type"       TEXT,
+  "match_method"        TEXT,
+  "confidence"          REAL,
+  "candidate_count"     INTEGER,
+  "is_unique_match"     INTEGER,
+  "verification_status" TEXT,
+  -- 'centroid' | 'point_on_line' | 'none': which representative point placed
+  -- the station, so a fallback is visible rather than implied.
+  "placement_point"     TEXT,
+  "mismatch_note"       TEXT,
+  "source_snapshot_id"  TEXT,
+  CHECK (confidence >= 0.0 AND confidence <= 1.0),
+  CHECK (candidate_count >= 0),
+  CHECK (NOT (is_unique_match = 1 AND candidate_count > 1)),
+  -- A station is contained by a municipality, never equal to one, so the
+  -- relation vocabulary here is narrower than the address bridges'.
+  CHECK (relation_type IN ('contains', 'ambiguous', 'unresolved')),
+  CHECK (match_method IN ('spatial_containment', 'unresolved')),
+  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified',
+                                 'manually_rejected')),
+  -- 'auto' is admitted for containment, unlike the address bridges which reserve
+  -- it for exact/equivalent. Those assert two identifiers name the same thing;
+  -- this asserts a polygon encloses a point, which is deterministic and leaves a
+  -- reviewer nothing to add. It still requires a single settled candidate.
+  CHECK (verification_status <> 'auto' OR (
+    relation_type = 'contains' AND candidate_count = 1 AND is_unique_match = 1
+    AND confidence = 1.0 AND mismatch_note IS NULL)),
+  CHECK (relation_type <> 'unresolved' OR (lg_code IS NULL AND confidence = 0.0))
+);
+CREATE INDEX idx_bsm_station ON bridge_station_municipality(n02_group_code);
+CREATE INDEX idx_bsm_lg ON bridge_station_municipality(lg_code);
 
 CREATE TABLE "telephone_area" (
   "numbering_area_code"        TEXT PRIMARY KEY,

@@ -141,9 +141,35 @@ class TestLicenceBaselines:
         for artifact in SOURCES[name]["license"].get("artifacts", []):
             if artifact.get("text_sha256") is None:
                 continue
+            if artifact.get("hash_kind") == "raw_bytes":
+                # A PDF baseline hashes the file, not decoded text, so "decoded"
+                # has no meaning for it. The weaker guarantee that buys is stated
+                # in docs/LICENSE_POLICY.md §4 and asserted below.
+                continue
             assert artifact.get("text_sha256_decoded"), (
                 f"{name}/{artifact['role']} has a baseline but no decoded counterpart; "
                 "see docs/LICENSE_POLICY.md §4"
+            )
+
+    @pytest.mark.parametrize("name", sorted(SOURCES))
+    def test_raw_byte_baselines_say_so_and_explain_themselves(self, name: str) -> None:
+        """A weaker baseline has to be labelled, or it reads like a strong one.
+
+        `hash_kind: raw_bytes` is the only escape from the decoded-counterpart
+        rule above, so it must not be usable as a silent shortcut: an artifact
+        claiming it carries no `text_sha256_decoded` (which would be misleading)
+        and states why in its note.
+        """
+        for artifact in SOURCES[name]["license"].get("artifacts", []):
+            if artifact.get("hash_kind") != "raw_bytes":
+                continue
+            role = f"{name}/{artifact['role']}"
+            assert artifact.get("text_sha256_decoded") is None, (
+                f"{role} is hashed over raw bytes; a 'decoded' value would claim "
+                "a normalization that never happened"
+            )
+            assert "raw bytes" in (artifact.get("note") or ""), (
+                f"{role} uses the raw_bytes escape without explaining it in its note"
             )
 
 

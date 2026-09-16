@@ -83,6 +83,10 @@ class MicNumberAssignmentSource(BaseSource):
 
     def parse(self, fetched: dict[str, FetchResult]) -> dict[str, pl.DataFrame]:
         rows: list[dict] = []
+        # Kept for build_snapshots: this publisher states its own as-of date
+        # inside the workbook, which is the strongest kind of edition evidence —
+        # it is provable from the shipped bytes rather than observed on a page or
+        # declared in config. See SourceSnapshot.edition_origin.
         current_as_of = ""
         with stage_context(self.name, "parse"):
             for key in sorted(fetched):
@@ -121,6 +125,7 @@ class MicNumberAssignmentSource(BaseSource):
         ).unique(subset=["numbering_area_code", "number"], keep="first").sort(
             ["area_code", "local_code", "numbering_area_code"]
         )
+        self._current_as_of = current_as_of or None
         log.info(
             "parsed MIC number assignment",
             rows=df.height,
@@ -131,8 +136,15 @@ class MicNumberAssignmentSource(BaseSource):
 
     def build_snapshots(self, discovery, fetched, schemas, row_counts):
         snaps = []
+        # The workbook's own 「〇年〇月〇日現在」 outranks anything observed on the
+        # page or declared in config: it travels with the bytes, so a rebuild of an
+        # archived payload reproduces it. Falls back to whatever parse() could not
+        # find.
+        payload_as_of = getattr(self, "_current_as_of", None)
         for res in discovery.resources:
             fr = fetched[res.key]
+            published = payload_as_of or fr.last_modified
+            origin = "payload" if payload_as_of else res.edition_origin
             snaps.append(
                 SourceSnapshot(
                     source_snapshot_id=make_snapshot_id(res.dataset_name, fr.sha256),
@@ -140,7 +152,8 @@ class MicNumberAssignmentSource(BaseSource):
                     source_page_url=discovery.source_page_url, download_url=res.url,
                     license_name=discovery.license_name, license_url=discovery.license_url,
                     license_text_sha256=discovery.license_text_sha256,
-                    source_version=res.version, published_at=fr.last_modified,
+                    source_version=res.version, published_at=published,
+                    edition_origin=origin,
                     downloaded_at=utcnow(), etag=fr.etag, last_modified=fr.last_modified,
                     sha256=fr.sha256, file_size=fr.size,
                     row_count=row_counts.get(res.key),

@@ -13,10 +13,18 @@
 | Schema drift | fingerprint computation and mismatch detection | no |
 | License drift | terms-hash comparison, and the encoding a terms page is hashed under | no |
 | Licensing | attribution wording per publisher, and what a shipped record can evidence | no |
+| Spatial (V2) | ray cast edge cases, station bridge, mesh classification, lineage successors | no |
+| Page (V2) | `site/lookup.js` and `site/geo.js` run under node against the Python writers (`mesh.pack_lookup`, `geo_pack`), 3次〜6次 mesh codes against an independent derivation | no — skipped where node is absent |
 | Live smoke | discovery only, against real sources | yes, `-m live` |
 
 Everything except the live smoke runs offline, so CI is deterministic and the project
 stays testable on a machine that cannot reach the publishers.
+
+The map's answers are also checked against real data outside the suite, because the
+boundary files are not committed: the page's own decision code, run under node over the
+shipped `site/data`, is compared with shapely on the original 231,661 e-Stat polygons
+(45,001 points, including 10,000 within centimetres of a cell edge — 0 mismatches,
+`docs/MESH_MUNICIPALITY_LOOKUP.md` §4.6).
 
 ## 2. Fixtures
 
@@ -289,6 +297,7 @@ The row-count half of it also runs as an invariant test
 ## 9. CI
 
 `ci.yml` runs ruff, mypy, the full offline suite, the deterministic fixture build, and
-the invariant suite against the fixture database on every push and PR. The live smoke
-job is scheduled and manual only, never a PR gate — a publisher's outage must not fail
-someone's pull request.
+the invariant suite against the fixture database on every push and PR. The runner has
+node, so the page tests run there rather than skip. The live smoke job is scheduled
+and manual only, never a PR gate — a publisher's outage must not fail someone's pull
+request. `pages.yml` only deploys `site/`; it runs no tests and builds no data.

@@ -25,6 +25,9 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = ["pytest>=8", "pytest-cov", "hypothesis>=6", "ruff", "mypy"]
+# tools/build_site_geo.py only — the map's boundary lines. `jpac build` never
+# imports it. Justified in docs/ARCHITECTURE.md §5.
+geo = ["shapely>=2.1,<3"]
 
 [project.scripts]
 jpac = "jp_address_crosswalk.cli:app"

@@ -330,6 +330,20 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_lineage_new ON address_lineage(new_address_id)",
 ]
 
+# V2 tables are optional, so their indexes are created only when the tables were
+# actually written. Adding them to INDEXES above would fail a V1-only build.
+V2_INDEXES = {
+    "estat_small_area": [
+        "CREATE INDEX IF NOT EXISTS idx_esa_jis ON estat_small_area(jis_city_code)",
+        "CREATE INDEX IF NOT EXISTS idx_esa_rec ON estat_small_area(reconcile_status)",
+    ],
+    "bridge_station_municipality": [
+        "CREATE INDEX IF NOT EXISTS idx_bsm_station"
+        " ON bridge_station_municipality(n02_group_code)",
+        "CREATE INDEX IF NOT EXISTS idx_bsm_lg ON bridge_station_municipality(lg_code)",
+    ],
+}
+
 
 def write_sqlite(
     tables: dict[str, pl.DataFrame],
@@ -355,7 +369,11 @@ def write_sqlite(
                 _write_table(conn, name, _sorted(name, tables[name]))
             conn.executescript(FLAT_VIEWS)
             conn.executescript(DDL_VIEWS)
-            for stmt in INDEXES:
+            planned = list(INDEXES)
+            for table, statements in V2_INDEXES.items():
+                if table in tables and not tables[table].is_empty():
+                    planned.extend(statements)
+            for stmt in planned:
                 try:
                     conn.execute(stmt)
                 except sqlite3.OperationalError as exc:
@@ -416,6 +434,43 @@ BRIDGE_CHECKS = [
     f"CHECK (verification_status IN ('{_STATUSES}'))",
 ]
 
+# The station bridge is a different shape and needs its own constraints rather
+# than the address-bridge set: it has no address_id / target_id /
+# candidate_group_id / override_stale, so BRIDGE_CHECKS would reference columns
+# that do not exist. The differences are deliberate, not omissions:
+#
+# * `contains` is the only positive relation. A station is inside a municipality,
+#   never identical to one, so the exact/equivalent vocabulary does not apply.
+# * `auto` is therefore admitted for `contains`. The address bridges withhold it
+#   because they assert two identifiers name the same thing; containment is a
+#   deterministic geometric test with nothing for a reviewer to add. It still
+#   requires a single settled candidate and a clean note.
+# * There is no address_id column at all — 町字 granularity is unreachable
+#   through this source (docs/POLICY.md §3.1), and a table that cannot express
+#   the wrong answer cannot drift into it.
+STATION_BRIDGE_CHECKS = [
+    "CHECK (confidence >= 0.0 AND confidence <= 1.0)",
+    "CHECK (candidate_count >= 0)",
+    "CHECK (NOT (is_unique_match = 1 AND candidate_count > 1))",
+    "CHECK (relation_type IN ('contains','ambiguous','unresolved'))",
+    "CHECK (match_method IN ('spatial_containment','unresolved'))",
+    f"CHECK (verification_status IN ('{_STATUSES}'))",
+    "CHECK (verification_status <> 'auto' OR ("
+    " relation_type = 'contains' AND candidate_count = 1 AND is_unique_match = 1"
+    " AND confidence = 1.0 AND mismatch_note IS NULL))",
+    # An unresolved station keeps its row and names no municipality, which is
+    # what makes "not placed" different from "placed nowhere in particular".
+    "CHECK (relation_type <> 'unresolved' OR (lg_code IS NULL AND confidence = 0.0))",
+]
+
+SMALL_AREA_CHECKS = [
+    "CHECK (hcode IN ('8101','8154'))",
+    "CHECK (reconcile_status IN ('matched','superseded','split_no_single_successor',"
+    "'unassigned_area','estat_only'))",
+]
+
+N02_STATION_CHECKS = ["CHECK (feature_count >= 1)"]
+
 
 def _write_table(conn: sqlite3.Connection, name: str, df: pl.DataFrame) -> None:
     if df.is_empty() and not df.columns:
@@ -434,8 +489,14 @@ def _write_table(conn: sqlite3.Connection, name: str, df: pl.DataFrame) -> None:
         suffix = " PRIMARY KEY" if c == pk else ""
         types.append(f'"{c}" {sql_type}{suffix}')
 
-    if name.startswith("bridge_") and "relation_type" in cols:
+    if name == "bridge_station_municipality":
+        types.extend(STATION_BRIDGE_CHECKS)
+    elif name.startswith("bridge_") and "relation_type" in cols:
         types.extend(BRIDGE_CHECKS)
+    if name == "estat_small_area":
+        types.extend(SMALL_AREA_CHECKS)
+    if name == "n02_station":
+        types.extend(N02_STATION_CHECKS)
     if name == "postal_code_entity":
         types.append("CHECK (length(postal_code) = 7)")
     if name == "address":

@@ -36,6 +36,18 @@ class SourceSnapshot:
     license_text_sha256: str | None = None
     source_version: str | None = None
     published_at: str | None = None
+    # Where ``source_version`` / ``published_at`` came from. The acquisition side
+    # observed the publisher's page and wins; a fixed-edition source may instead
+    # declare its edition in config/sources.yml, and that is not the same kind of
+    # fact. Recording which is which keeps a declaration from being read as an
+    # observation, the same discipline docs/LICENSE_POLICY.md applies to licences.
+    # "payload"  — stated inside the payload itself; strongest, since an archived
+    #              rebuild reproduces it.
+    # "observed" — the acquisition side read it off the publisher's page.
+    # "declared" — a fixed edition named in config/sources.yml.
+    # "mixed"    — the two fields came from different places.
+    # None       — nothing known.
+    edition_origin: str | None = None
     downloaded_at: str = ""
     etag: str | None = None
     last_modified: str | None = None

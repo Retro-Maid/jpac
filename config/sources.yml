@@ -20,6 +20,15 @@ sources:
       feed_url: "https://dataset.address-br.digital.go.jp/data.json"
       fallback_feed_url: "https://dataset.address-br.digital.go.jp/api/feed/dcat-us/1.1.json"
       select_by: exact_title
+      # No `edition` / `reference_date` here on purpose. ABR is a rolling source:
+      # the publisher names no version, and the DCAT feed's `modified` moves
+      # continuously (observed 2026-09-04 for 全国 町字マスター). Pinning a static
+      # value in config would go stale and the shipped record would then assert
+      # something false, so the edition is left to the acquisition side to observe.
+      version_note: >-
+        発行元は版番号を名乗らない。版に相当する信号は DCAT feed の `modified` /
+        `issued` のみで、`modified` は頻繁に動く。ローリング更新のため config に
+        静的な版を書かない。内容の同一性は各スナップショットの sha256 が担保する。
     license:
       name: "公共データ利用規約（第1.0版） (PDL 1.0)"
       url: "https://www.digital.go.jp/policies/base_registry_address_tos"
@@ -112,6 +121,12 @@ sources:
       full_file_pattern: "utf/zip/utf_ken_all.zip"
       delta_add_pattern: "utf/zip/utf_add_{yymm}.zip"
       delta_del_pattern: "utf/zip/utf_del_{yymm}.zip"
+      # Rolling source: no static `edition` here (see the abr note above).
+      version_note: >-
+        発行元は版番号を名乗らないが、ダウンロードページに「〇年〇月〇日更新」があり、
+        差分ファイル名が `utf_add_{yymm}.zip` という発行元自身の規約を持つ。版として
+        記録すべき値は取得時点の YYMM（例 2607 = 2026年7月更新分）であって、取得側が
+        観測する。月次更新なので config には固定値を書かない。
     license:
       name: "著作権主張なし / 自由配布可 (publisher statement)"
       url: "https://www.post.japanpost.jp/service/search/zipcode/download/utf-readme.html"
@@ -168,6 +183,16 @@ sources:
       data_url_template: "https://nlftp.mlit.go.jp/isj/dls/data/{version}/{pref}000-{version}.zip"
       observed_version: "19.0b"
       level_suffix: "b"          # b = 大字・町丁目; a = 街区 (never requested)
+      # Annual source, so no static `edition` here either: the fiscal-year edition
+      # advances and a pinned value would go stale. The publisher announces each
+      # edition on its 新着情報 page, which is the cheapest way to confirm the
+      # version without driving the download CGI.
+      version_note: >-
+        年度版。版数は `_choose_files.cgi` の版数列で取得側が観測する。発行元は
+        https://nlftp.mlit.go.jp/isj_news.html で提供開始を告知しており、
+        令和7年度版は 2026-05-29 提供開始（2026-09-05 確認）。v1.0.0 のスナップショット
+        （取得 2026-08-23、fiscal_year 2025 / isj_version 19.0b）はこの令和7年度版に当たり、
+        当時の最新である。
     license:
       # Was "PDL 1.0 + 位置参照情報 利用約款". The 2026-03-23 terms name 位置参照情報
       # in scope and apply PDL 1.0 directly; the old 国土情報利用約款 now lives at
@@ -249,6 +274,13 @@ sources:
       alternate_pdf: "https://www.soumu.go.jp/main_content/000141817.pdf"
       format: "OLE2 Word 97"
       observed_current_as_of: "2026-03-01"
+      # Rolling: the 一覧 is revised in place with a 現在 date on the document.
+      # `observed_current_as_of` is what the acquisition side last saw, not a
+      # pinned edition, so no `edition` / `reference_date` here.
+      version_note: >-
+        発行元は版番号を名乗らない。版に相当するのは文書上の「〇年〇月〇日現在」で、
+        取得側が観測する（直近の観測は 2026-03-01）。随時改定のため config に固定値を
+        書かない。
     license:
       # Was "総務省ホームページ 利用規約", which named the page but not the instrument.
       # The page adopts PDL 1.0 verbatim — the same licence as ABR and MLIT — and saying
@@ -347,6 +379,284 @@ sources:
     excluded_datasets:
       - name: "0120 / 0800 / 0570 / 0990 / 050 / 070 / 080 / 090 / 020 / IMSI"
         reason: "Non-geographic number resources."
+
+  # ---------------------------------------------------------------------------
+  # V2 additions (駅 → 市区町村). Both are `required: false`: the V1 release does
+  # not depend on them and is not blocked by their absence.
+  # Design: docs/STATION_JOIN_PLAN.md · Evidence: docs/STATION_JOIN_PREFLIGHT.md
+  # Licence review: docs/LICENSE_REVIEW_2026_09.md
+  # ---------------------------------------------------------------------------
+
+  mlit_ksj_n02:
+    provider: "国土交通省 国土政策局 国土情報課"
+    provider_en: "MLIT"
+    required: false
+    landing_page: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html"
+    discovery:
+      method: static_url
+      observed_url: "https://nlftp.mlit.go.jp/ksj/gml/data/N02/N02-25/N02-25_GML.zip"
+      observed_sha256: "aaf76af133b2e771e538fabc4646d2e443dc1d5a67b221382a28d744e706cc9f"
+      observed_bytes: 14903774
+      edition: "2025"
+      reference_date: "2025-12-31"
+      version_source: "詳細ページの「データ基準年月日」。年度ごとに別 zip。"
+    license:
+      name: "公共データ利用規約（第1.0版） (PDL 1.0)"
+      url: "https://nlftp.mlit.go.jp/ksj/other/agreement.html"
+      reviewed_on: "2026-09-14"
+      reviewed_by: "jp-address-crosswalk"
+      review_2026_09_14: >-
+        2026-09-14、人が読んで再配布可と判断した。判断の対象は
+        docs/LICENSE_REVIEW_2026_09.md §9.1 が絞り込んだ論点 §8.4 —— N02 が電子地形図
+        タイルを「使用しました」と述べながら測量法の承認番号を持たないことを、発行元の
+        整理として受け入れてよいか —— であり、受け入れると判断した。相違は無かった。
+        下の ai_pre_read_2026_09_05 は AI による下読みであって人の判断の記録ではない。
+        条項の引用と135レイヤの調査はそこに置いたまま残し、人が確認した範囲だけを
+        この項に書いている。全文は同ドキュメント §8 にある。
+      # ⚠️ 以下は AI が書いた下読みである。人の判断は上の review_2026_09_14 にある。
+      # LICENSE_POLICY.md §4 のゲートを通すのは人の署名であって、この文章ではない。
+      ai_pre_read_2026_09_05: >-
+        N02 の詳細ページ（2025年版）と国土数値情報ダウンロードサイト利用規約（施行
+        2026-03-23）を逐語で読んだ。詳細ページの「このデータの使用許諾条件」は
+        「2020年（令和2年）以降：オープンデータ（CC_BY_4.0）／上記以外：商用可」であり、
+        2025年度版は素の CC_BY_4.0 側にある。規約 §1.2（個別法令）は国土調査系の成果に
+        限定して測量法の承認要件を課しており、国土数値情報 N02 には及ばない。§1.3
+        （本利用ルールが適用されないコンテンツ）のトリガー値は「一部制限」「商用可」
+        「非商用」「記載なし」であり、素の CC_BY_4.0 である 2025年度版はこれに該当しない。
+        したがって N02 2025年度版は PDL 1.0 が適用され、出典表示と加工明示のうえで
+        再配布できると判断した。
+        測量法については、詳細ページに承認番号・複製条項・二次利用注記のいずれも無いことを
+        確認した（「測量法」「承認」「二次利用」「申請」の各語の出現が 0 件）。これが記載漏れ
+        でないことは、国土数値情報の全レイヤ詳細ページ 135 件を調査して裏付けた: 承認番号を
+        持つのは 11 件のみ、うち複製承認は N03 / N10 / N13 の 3 件、「本製品を複製する場合には」
+        条項は 2 件、「二次利用する場合には」注記は N03 ただ 1 件である。基本測量成果を原典に
+        挙げながら承認番号を持たないレイヤが 34 件あることから、原典表示と承認の要否は
+        国土交通省がレイヤごとに区別して付しており、N02 の不在は積極的な整理と読める。
+        N02 が電子地形図（タイル）を「使用しました」と述べている点は、同様の記載を持ちながら
+        承認番号を持たない 28 レイヤと同じ扱いである。
+        取得は 2025年度版のファイルに限る。2019年度以前は「商用可」＝旧約款側であり条件が
+        異なるため、混在させない。
+      year_scoped: true
+      year_note: >-
+        「2020年（令和2年）以降：オープンデータ（CC_BY_4.0）／上記以外：商用可」。
+        年度ごとに別 zip なので、2025年度版のみを取得すれば混在は起きない。
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。加工物には利用したコンテンツの名称及び加工した旨を併記し、あたかも国が
+          作成したかのような態様で公表・利用しない。
+      attribution:
+        # 規約 §1.1 の出典記載例は「…をもとに○○作成」であって「…を加工して作成」ではない。
+        # 発行元の記載例が PDL 1.0 §1.1 によりデフォルトに優先する（mlit エントリと同じ）。
+        unmodified: |
+          出典：国土交通省国土数値情報ダウンロードサイト
+                https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html
+        processed: |
+          「国土数値情報（鉄道データ）」（国土交通省）
+                https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html をもとに jp-address-crosswalk 作成
+      artifacts:
+        - role: primary_terms
+          name: "国土数値情報ダウンロードサイト 利用規約 (2026-03-23 施行)"
+          url: "https://nlftp.mlit.go.jp/ksj/other/agreement.html"
+          text_sha256: "4c44671c4183abdad0fa8f117b98fd7594fc0990048e4d410917076284837e3a"
+          text_sha256_decoded: "4c44671c4183abdad0fa8f117b98fd7594fc0990048e4d410917076284837e3a"
+          note: >-
+            Same page and same hash as the `mlit` (位置参照情報) entry — agreement.html
+            governs both. Recorded twice deliberately: the two datasets receive separate
+            §1.2/§1.3 determinations and must not be rounded into one (DATA_LICENSE.md).
+            Recomputed 2026-09-05 with snapshot.license_text_hash_bytes(): no drift from
+            the 2026-08-24 baseline.
+        - role: detail_page
+          name: "国土数値情報 N02 鉄道 2025年版 詳細ページ（利用許諾条件の出所）"
+          url: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html"
+          text_sha256: "9eb77a695e33f1df8a0e73751d836263ad0f99e68b58b500ffb4f08959e2fc5b"
+          text_sha256_decoded: "9eb77a695e33f1df8a0e73751d836263ad0f99e68b58b500ffb4f08959e2fc5b"
+          note: >-
+            The per-layer 利用許諾条件 lives here, not in agreement.html. This page is the
+            gate that reclassified N03 (see the 135-layer survey in
+            docs/LICENSE_REVIEW_2026_09.md §10.3) — a listing-page reading is not enough.
+    datasets:
+      n02_station:
+        title: "鉄道データ 駅 (2025年版)"
+        member: "N02-25_GML/UTF-8/N02-25_Station.shp"
+        encoding: utf-8
+        datum: "JGD2011"
+        geometry: polyline
+        features: 10234
+        group_key: "N02_005g"
+        groups: 9046
+      n02_railroad_section:
+        title: "鉄道データ 鉄道区間 (2025年版)"
+        member: "N02-25_GML/UTF-8/N02-25_RailroadSection.shp"
+        encoding: utf-8
+        datum: "JGD2011"
+    excluded_datasets:
+      - name: "2019年度以前の各年度版 (N02-05 … N02-19)"
+        reason: "利用許諾条件が「商用可」＝旧約款側。条件が異なるので混ぜない。"
+      - name: "N02 v2.3"
+        reason: "N02_005c / N02_005g を持たない。駅のグループ化ができない。"
+
+  estat_boundary:
+    provider: "総務省統計局"
+    provider_en: "Statistics Bureau of Japan"
+    required: false
+    landing_page: "https://www.e-stat.go.jp/gis/statmap-search?type=2"
+    discovery:
+      method: static_url_per_prefecture
+      url_template: "https://www.e-stat.go.jp/gis/statmap-search/data?dlserveyId=A002005212020&code={pref}&coordSys=1&format=shape&downloadType=5&datum=2011"
+      survey_id: "A002005212020"
+      census_year: "2020"
+      # Fixed edition, so it is safe to declare here: the 令和2年 boundary set is
+      # the same files forever. `edition` feeds source_snapshot.source_version and
+      # `reference_date` feeds published_at, both marked edition_origin=declared.
+      edition: "A002005212020 / JGD2011"
+      reference_date: "2020-10-01"
+      published_at: "2023-01-04"
+      datum: "JGD2011"
+      prefectures: 47
+      observed_total_bytes: 322598028
+    license:
+      name: "政府統計の総合窓口(e-Stat)利用規約（政府標準利用規約 第2.0版 準拠 / CC BY 4.0 互換）"
+      url: "https://www.e-stat.go.jp/terms-of-use"
+      reviewed_on: "2026-09-14"
+      reviewed_by: "jp-address-crosswalk"
+      review_2026_09_14: >-
+        2026-09-14、人が読んで再配布可と判断した。判断の対象は
+        docs/LICENSE_REVIEW_2026_09.md §9.1 が絞り込んだ2論点である。
+        §8.1 —— e-Stat 利用規約 ３)イ の別紙除外と gis-terms 第6条の二段構造を、
+        データの利用条件が本体規約に帰着すると読んでよいか。読んでよいと判断した。
+        §8.3 —— 調査区の境界を設定した地方公共団体が同規約 ２)ア の「第三者」に当たらないと
+        読んでよいか。当たらないと判断した。ただしこれは権利処理済である旨の明示に代わる
+        解釈であり、明示が無いことを承知のうえでの判断である。下読みの結論と相違は無かった。
+        下の ai_pre_read_2026_09_05 は AI による下読みであって人の判断の記録ではない。
+        条項の引用と省令の参照はそこに置いたまま残し、人が確認した範囲だけを
+        この項に書いている。全文は同ドキュメント §8 にある。
+      # ⚠️ 以下は AI が書いた下読みである。人の判断は上の review_2026_09_14 にある。
+      # LICENSE_POLICY.md §4 のゲートを通すのは人の署名であって、この文章ではない。
+      ai_pre_read_2026_09_05: >-
+        e-Stat 利用規約、統計地理情報システム機能利用規約（全13条）、境界データの注意事項、
+        および定義書を逐語で読んだ。
+        規約の連鎖は二段である。e-Stat 利用規約 ３)イ は「別の利用ルールの適用を明示している
+        コンテンツ」を適用外とし、その別紙に「統計地理情報システムの利用について」（リンク先は
+        /gis-terms）を挙げている。一方その gis-terms 第6条は「本機能が提供する情報（コンテンツ）
+        の利用条件等は、『政府統計の総合窓口（e-Stat）利用規約』に準じるものとします」と定める。
+        内閣官房IT総合戦略室「政府標準利用規約（第2.0版）の解説」は、別の利用ルールを適用する
+        コンテンツについて「１．のルールは適用されないこととなるため、必要に応じ、１．の
+        ５）、６）で定めているような事項を別の利用ルールの中でも定めることが求められる」とし、
+        本体と異なる利用条件を設ける場合は「具体的かつ合理的な根拠」を明示する責任を課している。
+        gis-terms は免責（第9条）と準拠法・裁判管轄（第12条）を自前で定める一方、コンテンツの
+        ライセンスについて本体と異なる条件を定めておらず、その根拠の説明も置いていない。
+        したがって別紙掲載はシステム固有の利用ルール文書の存在を示すものであって、データの
+        ライセンスを本体規約から外すものではなく、コンテンツの利用条件は第6条により e-Stat
+        利用規約に帰着すると判断した。同規約は複製・公衆送信・翻案を認め商用利用も可としており、
+        CC BY 4.0 と互換である旨を明記している。gis-terms 第7条（禁止事項）は運用妨害・運用支障・
+        法令違反の3つのみで、再配布を禁じる条項は無い。
+        第三者の権利（同規約 ２)ア）については、次の2経路を検討した。(1) 国土地理院の測量成果:
+        規約・注意事項・定義書のいずれにも測量法および承認に関する記載が無く、国土地理院への
+        言及は「面積が公式値と一致しない」という比較のみである。N03 が承認番号と複製条項を
+        明示しているのと対照的であり、乗っていないと判断した。(2) 調査区の境界を設定した地方
+        公共団体: 国勢調査の調査区の設定の基準等に関する省令（昭和59年総理府令第24号）第一条は
+        一般調査区・特別調査区・水面調査区のいずれも「総務大臣の定める方法により」設定すると
+        定めており、地方公共団体は法定受託事務としてこの方法に従う。境界は地方公共団体の独自
+        創作ではないため「第三者（国以外の者）が著作権その他の権利を有している」には当たらないと
+        判断した。なお同規約は「特に権利処理済であることが明示されているものを除き」と定めており、
+        境界データについて権利処理済である旨の明示は無い。上記は明示に代わる解釈であり、
+        その点を承知のうえで再配布可と判断した。
+        gis-terms 第1条2項の「本機能で使用している背景地図の利用規約」は jSTAT MAP の画面表示に
+        関するものであり、境界データ Shapefile のダウンロード（ログイン不要で取得できることを
+        確認済）には介在しないと判断した。
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。編集・加工した場合は出典とは別に加工した旨を記載し、あたかも国（又は
+          府省等）が作成したかのような態様で公表・利用しない。
+      publisher_caveats:
+        # 発行元が明記している制約。DATA_LICENSE.md の作法により下流へそのまま伝える。
+        source: "https://www.e-stat.go.jp/pdf/gis/notes/00200521.pdf"
+        items:
+          - "国勢調査の基本単位区及び町丁・字等の境界データは、地方公共団体が調査を実施する際に設定した調査区の境界を基に作成しているため、住居表示等で用いられている実際の町丁・字の境界と一致しない場合があります。また、町丁・字の名称についても、一致しない場合があります。"
+          - "一つの市区町村内に同一の基本単位区又は町丁・字番号を持つ境域が複数存在する場合があり、このような場合には、重複フラグを付与し、識別できるようにしています。"
+          - "基本単位区又は町丁・字等の面積は、それぞれの境界データの図郭により算出したものであり、市区町村内のすべての総計は、国土地理院等の公式な面積と一致しません。"
+          - "都道府県の境界線は、接合処理を行っていないため、都道府県をまたがって市区町村を接合した場合には、都道府県の境界線にずれが生じる場合があります。"
+          - "他県の飛び地の境域が市区町村に含まれる場合は、当該飛び地の境域情報も含まれます。また、水面調査区がある場合には、同様に水面調査区の情報も含まれます。"
+      attribution:
+        unmodified: |
+          出典：「令和2年国勢調査 小地域（町丁・字等別）境界データ」（総務省統計局）
+                https://www.e-stat.go.jp/gis
+        processed: |
+          「令和2年国勢調査 小地域（町丁・字等別）境界データ」（総務省統計局）
+                https://www.e-stat.go.jp/gis を加工して作成
+      artifacts:
+        - role: primary_terms
+          name: "政府統計の総合窓口(e-Stat) 利用規約"
+          url: "https://www.e-stat.go.jp/terms-of-use"
+          text_sha256: "93c44dc2fc4de2f33789c71ca80bceac80877ee42f4b707a69d345bc3ff28fa1"
+          text_sha256_decoded: "93c44dc2fc4de2f33789c71ca80bceac80877ee42f4b707a69d345bc3ff28fa1"
+          note: >-
+            Publisher declares charset in the transport header, so the baseline already
+            covers correctly-decoded text: the two values agree.
+        - role: gis_terms
+          name: "統計地理情報システム機能利用規約（第6条でコンテンツの利用条件を本体規約に委ねる）"
+          url: "https://www.e-stat.go.jp/gis-terms"
+          text_sha256: "1cf8468484a74c50f75bf99da67f6bc1f3f87c35e56ad364a2244da96a3aab24"
+          text_sha256_decoded: "1cf8468484a74c50f75bf99da67f6bc1f3f87c35e56ad364a2244da96a3aab24"
+          note: >-
+            Listed in the 別紙 of the primary terms as content under 別の利用ルール. Both
+            documents are gates: the exclusion and the §6 remission only make sense read
+            together (see review_2026_09_14 and ai_pre_read_2026_09_05).
+        - role: caveats_pdf
+          name: "境界データ 注意事項（国勢調査）"
+          url: "https://www.e-stat.go.jp/pdf/gis/notes/00200521.pdf"
+          text_sha256: "e980fada707098bae32b48a6c1702b375d9f41227c58f50e0cf72396472f15c7"
+          hash_kind: raw_bytes
+          note: >-
+            PDF: SHA-256 over raw bytes, NOT license_text_hash (which normalises HTML by
+            stripping scripts/tags/whitespace and cannot apply here). A raw-byte baseline
+            is more prone to false positives than an HTML one — regenerating the PDF
+            changes the hash even when the wording does not. See docs/LICENSE_POLICY.md §4.
+        - role: definition_pdf
+          name: "令和2年国勢調査 町丁・字等境界データ データベース定義書"
+          url: "https://www.e-stat.go.jp/help/data-definition-information/downloaddata/A002005212020.pdf"
+          text_sha256: "b3e62d5b3ff0047bba2478aa575845e635c2fde68c825c3f80c34a3ecc11cb14"
+          hash_kind: raw_bytes
+          note: >-
+            PDF: SHA-256 over raw bytes, for the same reason as caveats_pdf above —
+            license_text_hash normalises HTML and cannot apply, and a raw-byte baseline
+            is the weaker guarantee described in docs/LICENSE_POLICY.md §4.
+            This is also the source of the 「属性情報については、JGD2000の値」 note that
+            excludes X_CODE / Y_CODE from ingestion. Confirmed by measurement: 99.03% of
+            X_CODE/Y_CODE are identical between the JGD2000 and JGD2011 editions while
+            0% of polygon vertices are (docs/STATION_JOIN_PREFLIGHT.md §5.5.1).
+        - role: catalog_discrepancy
+          name: "G空間情報センター カタログ（ライセンス欄が「独自利用規約」と表示）"
+          url: "https://www.geospatial.jp/ckan/dataset/soumu-r2-town"
+          text_sha256: null
+          note: >-
+            Recorded discrepancy, not a conclusion. The publisher's own chain governs.
+            Another instance of the finding that catalog licence fields are unreliable
+            (docs/GEO_EXPANSION_RESEARCH.md §7).
+    datasets:
+      small_area_town_2020:
+        title: "令和2年国勢調査 小地域（町丁・字等）JGD2011 世界測地系緯度経度 Shapefile"
+        encoding: cp932
+        polygons: 232019
+        polygons_town: 231668      # HCODE 8101
+        polygons_water: 351        # HCODE 8154 水面調査区
+        excluded_columns: ["X_CODE", "Y_CODE", "AREA", "PERIMETER"]
+        excluded_reason: >-
+          X_CODE/Y_CODE are JGD2000 even in the JGD2011 product (definition sheet;
+          confirmed by measurement). AREA/PERIMETER are stated by the publisher not to
+          agree with official 国土地理院 figures. Only the geometry, whose .prj is
+          GCS_JGD_2011 in all 47 prefectures, is used.
+    excluded_datasets:
+      - name: "小地域（基本単位区）"
+        reason: >-
+          市区町村への割り当ては町丁・字等と同結果（PREF+CITY を両方が持つ）。実測と逐語確認を
+          行ったのは町丁・字等の方であり、測った方を使う。
+      - name: "3次〜6次メッシュ境界"
+        reason: "行政区域に対応しない。"
 
 http:
   timeout_connect_s: 15

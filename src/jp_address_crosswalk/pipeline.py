@@ -28,7 +28,13 @@ from .build import (
     versioning,
 )
 from .build import (
+    estat as estat_build,
+)
+from .build import (
     overrides as overrides_mod,
+)
+from .build import (
+    station as station_build,
 )
 from .build.common import BuildContext, assert_bridge_invariants
 from .errors import (
@@ -41,9 +47,14 @@ from .logging_setup import get_logger, stage_context
 from .normalize import NORMALIZATION_PROFILE_VERSION
 from .payload import (
     MANIFEST_NAME,
+    SHP_POLYGON,
+    SHP_POLYLINE,
     FetchResult,
     PayloadManifest,
     load_payload_manifest,
+    read_dbf_member,
+    read_prj_member,
+    read_shp_member,
 )
 from .snapshot import (
     SourceSnapshot,
@@ -54,10 +65,12 @@ from .snapshot import (
 )
 from .sources.abr import AbrSource
 from .sources.base import DiscoveredResource, Discovery
+from .sources.estat import EstatBoundarySource
 from .sources.japanpost import JapanPostSource
 from .sources.mic_area_code import MicAreaCodeSource
 from .sources.mic_number_assignment import MicNumberAssignmentSource
 from .sources.mlit import MlitSource
+from .sources.mlit_ksj_n02 import MlitKsjN02Source
 
 log = get_logger(__name__)
 
@@ -67,6 +80,9 @@ SOURCE_CLASSES = {
     "mlit": MlitSource,
     "mic_area_code": MicAreaCodeSource,
     "mic_number_assignment": MicNumberAssignmentSource,
+    # V2, required: false — a release is not blocked by its absence.
+    "estat_boundary": EstatBoundarySource,
+    "mlit_ksj_n02": MlitKsjN02Source,
 }
 
 
@@ -232,8 +248,13 @@ def rebuild_offline(
                     # is by dataset-name prefix, and a mismatch would silently
                     # attribute MIC rows to the ABR town snapshot.
                     dataset_name=_offline_dataset_name(name, k),
-                    version=manifest.resource(k).get("source_version"),
-                    published_at=manifest.resource(k).get("published_at"),
+                    **dict(
+                        zip(
+                            ("version", "published_at", "edition_origin"),
+                            _resolve_edition(spec, manifest.resource(k)),
+                            strict=True,
+                        )
+                    ),
                 )
                 for k, fr in sorted(fetched.items())
             ],
@@ -343,6 +364,7 @@ def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str,
                             license_text_sha256=first.license_text_sha256,
                             source_version=first.source_version,
                             published_at=first.published_at,
+                            edition_origin=first.edition_origin,
                             downloaded_at=first.downloaded_at,
                             sha256=hashlib.sha256(
                                 "|".join(sorted(m.sha256 for m in members)).encode()
@@ -477,6 +499,17 @@ def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str,
                 pl.lit(snap_mic_block).alias("source_snapshot_id"),
             ]
         ).unique(subset=["block_id"], keep="first").sort("block_id")
+
+    # --- V2: 駅 → 市区町村 (docs/POLICY.md §3.1)
+    # Optional by construction. Both sources are `required: false`, so a build
+    # without their payloads produces the V1 release unchanged rather than a
+    # half-built one — which is also what makes the licence gate on them unable
+    # to block a V1 release.
+    tables.update(
+        _build_station_tables(
+            paths, outcome, tables["municipality_version"], snapshot_for
+        )
+    )
 
     # --- Provenance
     tables["source_snapshot"] = pl.DataFrame(
@@ -746,6 +779,196 @@ def _snapshot_role(dataset_name: str) -> str:
     return "target"
 
 
+def _build_station_tables(
+    paths: Paths, outcome: FetchOutcome, municipality: pl.DataFrame, snapshot_for
+) -> dict[str, pl.DataFrame]:
+    """The three V2 tables, or nothing at all.
+
+    Geometry is read here rather than in the source adapters because it is only
+    ever a build-time instrument: nothing about it reaches a release artifact
+    (docs/POLICY.md §3.1), so it does not belong in the parsed-source record.
+
+    Reading it costs roughly a minute and a half over the 47 boundary archives.
+    That is paid only when the optional payloads are present, which is the same
+    condition under which these tables exist at all.
+    """
+    boundaries_raw = outcome.parsed.get("estat_boundary", {}).get("estat_small_area")
+    stations_raw = outcome.parsed.get("mlit_ksj_n02", {}).get("n02_station")
+    if boundaries_raw is None and stations_raw is None:
+        return {}
+
+    out: dict[str, pl.DataFrame] = {}
+    lineage = _load_municipality_lineage(paths)
+    unlisted = _load_unlisted_municipalities(paths)
+
+    if boundaries_raw is not None:
+        labelled, reconciliation = estat_build.reconcile(
+            boundaries_raw, municipality, lineage, unlisted
+        )
+        out["estat_small_area"] = labelled.with_columns(
+            pl.lit(snapshot_for("estat_boundary")).alias("source_snapshot_id")
+        )
+        out["_estat_reconciliation"] = reconciliation
+
+    if stations_raw is None or boundaries_raw is None:
+        # A station table with no boundaries cannot be joined; ship the stations
+        # so the payload is not silently discarded, but produce no bridge rather
+        # than an empty one that would read as "no station is in any municipality".
+        if stations_raw is not None:
+            out["n02_station"] = stations_raw.with_columns(
+                pl.lit(snapshot_for("mlit_ksj_n02")).alias("source_snapshot_id")
+            )
+            log.warning(
+                "station payload present without boundaries; no bridge was built",
+                stations=stations_raw.height,
+            )
+        return out
+
+    with stage_context("station", "geometry"):
+        boundary_geometry = _read_boundary_geometry(paths)
+        station_geometry = _read_station_geometry(paths)
+    # The polygons carry a 5-digit JIS code; every other table in this schema
+    # means the 6-digit 全国地方公共団体コード by `lg_code`. Translating here
+    # rather than storing the JIS code under that name is what keeps the bridge
+    # joinable to `municipality` like every other bridge. A JIS code that maps
+    # to more than one current lg_code is left out: picking one would be the
+    # invented 1:1 that POLICY.md §4 forbids.
+    pairs = (
+        municipality.filter(pl.col("is_current") == 1)
+        .select("jis_city_code", "lg_code")
+        .unique()
+    )
+    ambiguous = (
+        pairs.group_by("jis_city_code").len().filter(pl.col("len") > 1)["jis_city_code"]
+    )
+    if ambiguous.len():
+        log.warning(
+            "a JIS city code maps to several current lg_codes; left unresolved",
+            codes=sorted(ambiguous.to_list()),
+        )
+    lg_by_jis = dict(
+        pairs.filter(~pl.col("jis_city_code").is_in(ambiguous.to_list()))
+        .iter_rows()
+    )
+    snap_station = snapshot_for("mlit_ksj_n02")
+    out["n02_station"] = stations_raw.with_columns(
+        pl.lit(snap_station).alias("source_snapshot_id")
+    )
+    out["bridge_station_municipality"] = station_build.build_station_bridge(
+        stations_raw, station_geometry, boundary_geometry, lg_by_jis
+    ).with_columns(pl.lit(snap_station).alias("source_snapshot_id"))
+    return out
+
+
+def _read_boundary_geometry(
+    paths: Paths,
+) -> list[tuple[str, tuple[float, float, float, float], list]]:
+    """Land polygons only, tagged with the municipality code they carry.
+
+    水面調査区 (``HCODE`` 8154) is dropped here rather than downstream: it is 港湾
+    区域 and 漁港の水域 by 省令, so a station "inside" one would be a station in
+    the sea. 抜け地 (``KIGO_D`` D1) go too — see ``estat.is_land_polygon``.
+    """
+    src_dir = paths.raw / "estat_boundary"
+    out: list[tuple[str, tuple[float, float, float, float], list]] = []
+    datums: set[str] = set()
+    for path in sorted(src_dir.glob("*.zip")):
+        datums.add(_datum(read_prj_member(path)))
+        names, rows = read_dbf_member(path)
+        i_pref, i_city, i_hcode, i_kigo_d = (
+            names.index("PREF"), names.index("CITY"), names.index("HCODE"), names.index("KIGO_D")
+        )
+        shapes = read_shp_member(path, expect=SHP_POLYGON)
+        if len(shapes) != len(rows):
+            raise ValidationFailed(
+                "boundary geometry and attribute counts disagree; the two would "
+                "be misaligned and every station attributed to the wrong area",
+                file=path.name, shapes=len(shapes), rows=len(rows),
+            )
+        for row, shape in zip(rows, shapes, strict=True):
+            if shape is None or not estat_build.is_land_polygon(row[i_hcode], row[i_kigo_d]):
+                continue
+            out.append((row[i_pref] + row[i_city], shape[0], shape[1]))
+    _assert_one_datum(datums, "estat_boundary")
+    return out
+
+
+def _read_station_geometry(paths: Paths) -> dict[str, list]:
+    """Polyline parts per 駅グループコード, merged across the station's features."""
+    src_dir = paths.raw / "mlit_ksj_n02"
+    member = ("UTF-8/", "_Station")
+    geometry: dict[str, list] = {}
+    datums: set[str] = set()
+    for path in sorted(src_dir.glob("*.zip")):
+        datums.add(_datum(read_prj_member(path, contains=member)))
+        names, rows = read_dbf_member(path, encoding="utf-8", contains=member)
+        i_group = names.index("N02_005g")
+        shapes = read_shp_member(path, contains=member, expect=SHP_POLYLINE)
+        if len(shapes) != len(rows):
+            raise ValidationFailed(
+                "station geometry and attribute counts disagree",
+                file=path.name, shapes=len(shapes), rows=len(rows),
+            )
+        for row, shape in zip(rows, shapes, strict=True):
+            if shape is not None:
+                geometry.setdefault(row[i_group], []).extend(shape[1])
+    _assert_one_datum(datums, "mlit_ksj_n02")
+    return geometry
+
+
+def _datum(prj: str) -> str:
+    return prj.split(",", 1)[0].strip()
+
+
+# Both sources are JGD2011 and the join is only valid because they agree. A
+# silent datum mix shifts points by metres, which no downstream check would
+# report — so it is asserted from the .prj rather than assumed from the docs.
+EXPECTED_DATUM = 'GEOGCS["GCS_JGD_2011"'
+
+
+def _assert_one_datum(datums: set[str], source: str) -> None:
+    if datums != {EXPECTED_DATUM}:
+        raise ValidationFailed(
+            "unexpected geodetic datum; the station join assumes both sources "
+            "are JGD2011 and a mismatch would displace points silently",
+            source=source, observed=sorted(datums), expected=EXPECTED_DATUM,
+        )
+
+
+def _resolve_edition(spec: dict, observed: dict) -> tuple[str | None, str | None, str | None]:
+    """Version and publication date for one resource, and where each came from.
+
+    Two kinds of fact, deliberately not merged:
+
+    * **observed** — the acquisition side read the publisher's page at download
+      time and stated what it saw in ``_payload.yml``. This always wins.
+    * **declared** — ``config/sources.yml`` names a fixed edition under
+      ``discovery`` (``edition`` / ``reference_date``). Only sources whose
+      edition is pinned by choice carry this: N02 2025年版 and the e-Stat 令和2年
+      boundary set are the same files forever, so a static value stays true.
+      Rolling sources (ABR, 日本郵便) must **not** declare one — a static value
+      would silently go stale and the record would then assert something false.
+
+    ``edition_origin`` reports which, so a declaration is never read back as an
+    observation.
+    """
+    version = observed.get("source_version")
+    published = observed.get("published_at")
+    v_origin = "observed" if version else None
+    p_origin = "observed" if published else None
+
+    declared = spec.get("discovery") or {}
+    if not version and declared.get("edition"):
+        version, v_origin = str(declared["edition"]), "declared"
+    if not published and declared.get("reference_date"):
+        published, p_origin = str(declared["reference_date"]), "declared"
+
+    origins = {o for o in (v_origin, p_origin) if o}
+    if not origins:
+        return None, None, None
+    return version, published, origins.pop() if len(origins) == 1 else "mixed"
+
+
 def _load_municipality_lineage(paths: Paths) -> dict[str, str]:
     path = paths.overrides / "municipality_lineage.yml"
     if not path.exists():
@@ -754,6 +977,25 @@ def _load_municipality_lineage(paths: Paths) -> dict[str, str]:
     return {
         str(e["old_lg_code"]): str(e["new_lg_code"])
         for e in (data.get("transitions") or [])
+    }
+
+
+def _load_unlisted_municipalities(paths: Paths) -> dict[str, str]:
+    """Codes the lineage file records as *deliberately* unmapped, and why.
+
+    A split municipality has more than one successor, so it cannot appear in
+    ``transitions`` without inventing a 1:1 mapping (docs/POLICY.md §4). Without
+    reading this section a reconciliation would report such a code as "requires
+    investigation", which is wrong in a way that matters: it has been
+    investigated, and the answer was that no single successor exists.
+    """
+    path = paths.overrides / "municipality_lineage.yml"
+    if not path.exists():
+        return {}
+    data = yaml.safe_load(path.read_text(encoding="utf-8")) or {}
+    return {
+        str(e["lg_code"]): str(e.get("reason", "")).strip()
+        for e in (data.get("unlisted") or [])
     }
 
 
@@ -1100,6 +1342,10 @@ def _write_sources_and_notice(paths: Paths, outcome: FetchOutcome) -> None:
                     (source, "primary_terms"), "not_observed"
                 ),
                 "source_version": s.source_version, "published_at": s.published_at,
+                # Never present a declared edition as an observed one.
+                "edition_origin": s.edition_origin,
+                "version_note": cfg.sources.get(source, {})
+                    .get("discovery", {}).get("version_note"),
                 "downloaded_at": s.downloaded_at, "sha256": s.sha256,
                 "file_size": s.file_size, "row_count": s.row_count,
                 "schema_fingerprint": s.schema_fingerprint,

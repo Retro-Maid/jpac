@@ -44,6 +44,95 @@ Explicitly **out of scope for V1**:
 Third-party OSS may be studied for **design ideas only**. Never as input data, and
 never as ground truth for matching.
 
+## 3.1 V2 scope extension (駅 → 市区町村)
+
+Added 2026-09-05. **§3 above is left exactly as written.** It records what V1's
+scope was, and editing that list would destroy the record rather than extend it —
+so the `stations` entry there stays, and this section states what V2 adds on top.
+
+### What is added
+
+| | |
+|---|---|
+| **Subjects** | 鉄道駅・鉄道路線 (国土数値情報 N02)、統計境界 (e-Stat 国勢調査 小地域) |
+| **Origins** | **None.** 総務省統計局 is already covered by MIC in §3, and 国土数値情報 by MLIT |
+| **Granularity** | 市区町村 only. See below |
+
+### Granularity: 市区町村 is a ceiling, not a starting point
+
+A station is attributed to a municipality and **never to a 町字**. This is not a
+gap to be closed later by trying harder. e-Stat's 231,668 町丁・字等 are ~3.1×
+coarser than jpac's 726,170 町字 (measured 2026-09-05), so assigning a station
+to a 町字 through them would be expanding a municipality-level statement to
+町字 level — which §4 below already lists as a defect.
+
+The schema enforces it: `bridge_station_municipality` carries `lg_code` and has
+no `address_id` column. A table that cannot express the wrong answer cannot
+drift into it.
+
+### New data class: geometry that is read but not distributed
+
+V1 sources are tabular and are redistributed as accepted. The V2 boundary source
+is different in kind, so it gets an explicit rule:
+
+- **Read at build time.** Polygons are the instrument that turns a coordinate
+  into a `lg_code`.
+- **Not shipped.** No release artifact carries geometry. What ships is the
+  correspondence and its provenance.
+- **Not re-derived into coordinates either.** Centroids, areas and perimeters
+  computed from a boundary source are not emitted (see
+  `docs/STATION_JOIN_PLAN.md` §3.1 and the `excluded_columns` entry in
+  `config/sources.yml`).
+
+This keeps the release the same kind of thing it has always been — a
+crosswalk with its evidence — and keeps the project out of the business of
+redistributing spatial data, where the licence questions are materially harder
+(`docs/N03_BOUNDARY_DESIGN.md` §8 records one that stopped an earlier design).
+
+### Release independence
+
+Both V2 sources are `required: false` in `config/sources.yml`. A V1 release must
+not depend on them and must not be blocked by their absence, their licence
+review, or a publisher outage.
+
+## 3.2 Map extension: boundary geometry in `site/` only
+
+Added 2026-09-15, on the maintainer's decision. **§3.1 is left as written and
+still governs every release artifact** (`jpac build`, `dist/`): the release ships
+no geometry. This section adds one exception, scoped to the static map in
+`site/`.
+
+### Why
+
+The map answers "which municipality is this point in". A 3次メッシュ-level
+answer cannot settle a point in a cell that two municipalities — or two
+prefectures — share; it can only list both. The maintainer requires the clicked
+point itself to be decided, and that needs the boundary where it runs.
+
+### What `site/` may ship (built by `tools/build_site_geo.py`)
+
+| Payload | Geometry | Used for |
+|---|---|---|
+| `exact/` | e-Stat 小地域 dissolved per municipality, **unsimplified**, clipped to every 3次 cell a boundary or the coastline crosses. Coordinates quantised to 1e-6° (~10 cm; the census boundary itself is accurate to metres) | Deciding a click by point-in-polygon |
+| `line/`, `coarse/` | The same, simplified (coverage-preserving, per prefecture) | Drawing only. **Never used to decide anything** |
+
+### Conditions
+
+- **Source: e-Stat only.** Its terms permit redistribution with the 出典 and a
+  statement that it was processed (`config/sources.yml`
+  `estat_boundary.attribution.processed`), both shown on the page. N03 and
+  基盤地図情報 remain excluded: the 国土地理院長承認 question in
+  `docs/N03_BOUNDARY_DESIGN.md` §8 is unresolved.
+- **Never called 行政界 / 行政区域.** It is the census survey-district boundary
+  as of 2020 (the publisher's own first caveat), and the page says so.
+- **§4 holds at point level.** A point inside pieces of two municipalities (the
+  prefecture seams e-Stat does not join) keeps both. A point inside none is not
+  snapped to the nearest. 旧浜松市北区 — split in 2024, its new ward line absent
+  from 2020 data — stays two candidates even at point level.
+- **Not a release artifact.** `site/data/geo/` is produced by a separate tool, is
+  not listed in a release's `SOURCES.yml` / `NOTICE.md`, and `jpac build` is
+  unchanged. The map links to jpac by `lg_code` and nothing else.
+
 ## 4. Ambiguity policy (hard)
 
 > Leaving data unresolved is acceptable. Inventing a wrong 1:1 mapping is a defect.

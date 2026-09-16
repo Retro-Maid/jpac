@@ -2,6 +2,8 @@
 # artifacts as LF regardless of platform, so `sha256sum -c SHA256SUMS` works the
 # same way on every machine; the repository should not disagree with that.
 * text=auto eol=lf
+# cmd.exe misreads LF-only batch files in some constructs; keep them CRLF.
+*.bat text eol=crlf
 
 # Fixtures are compared byte for byte against what the publishers serve. Git must
 # not touch them.
@@ -15,6 +17,7 @@ tests/fixtures/** -text
 *.doc binary
 *.parquet binary
 *.sqlite binary
+*.bin binary
 
 # Generated from docs/diagrams/*.mmd — never hand-edited, noisy in review.
 docs/diagrams/*.svg linguist-generated=true

@@ -105,6 +105,55 @@ Three of the four publishers now adopt the same instrument — **公共データ
 - MIC datasets are **not** assumed to share one licence; each is checked individually and
   each snapshot stores its own licence fields.
 
+## V2 sources (unreleased, optional)
+
+Both are `required: false` in `config/sources.yml`: a release does not depend on them.
+Terms were read verbatim and reviewed by a person on 2026-09-14; the reasoning is in
+[`docs/LICENSE_REVIEW_2026_09.md`](docs/LICENSE_REVIEW_2026_09.md).
+
+### 国土交通省 — 国土数値情報 鉄道データ（N02）2025年版
+
+- **Terms:** 国土数値情報ダウンロードサイト 利用規約 (施行 2026-03-23), which applies
+  PDL 1.0; the dataset's detail page states 「2020年（令和2年）以降：オープンデータ（CC_BY_4.0）」.
+- Only the 2025 edition is used. Editions up to 2019 are 「商用可」 under the older
+  約款 and are not mixed in.
+- Redistribution and modification: permitted. Attribution in the publisher's own form:
+
+```
+「国土数値情報（鉄道データ）」（国土交通省）
+      https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html をもとに jp-address-crosswalk 作成
+```
+
+### 総務省統計局 — 令和2年国勢調査 小地域（町丁・字等別）境界データ
+
+- **Terms:** 政府統計の総合窓口(e-Stat)利用規約 (政府標準利用規約 第2.0版 準拠, stated to be
+  compatible with CC BY 4.0), which the 統計地理情報システム機能利用規約 §6 defers to.
+  <https://www.e-stat.go.jp/terms-of-use>
+- Redistribution and modification: permitted, with the 出典, a statement that the data
+  was processed, and without presenting it as produced by the government.
+
+```
+「令和2年国勢調査 小地域（町丁・字等別）境界データ」（総務省統計局）
+      https://www.e-stat.go.jp/gis を加工して作成
+```
+
+- **The publisher's five caveats travel with anything derived from it** (survey-district
+  boundaries that may not match the real 町丁・字; duplicated areas; areas computed from
+  the map frame; prefecture seams not joined; enclaves and water districts included). The
+  verbatim text is in `config/sources.yml` (`estat_boundary.license.publisher_caveats`)
+  and is shipped in `site/data/mesh_data.js`, where the map shows it.
+- **Where its geometry goes.** A release ships none (`docs/POLICY.md` §3.1). The static
+  map in `site/` ships it dissolved to municipalities — simplified for drawing, and
+  clipped to 3次 cells unsimplified for deciding a click (`docs/POLICY.md` §3.2). That is
+  processed data under the terms above, never described as 行政区域.
+
+### Background map of the static map — OpenStreetMap
+
+The map in `site/` displays © OpenStreetMap contributors raster tiles as a background
+only. No OpenStreetMap data is ingested into, mixed with or redistributed as part of any
+jpac data, so the ODbL share-alike does not reach it; the attribution is shown on the
+map. Tiles are subject to the OpenStreetMap tile usage policy.
+
 ## Redistribution of the unmodified payloads
 
 A release carries two different things, and they do not take the same terms.
@@ -152,6 +201,10 @@ If you redistribute the built database, or anything derived from it, you must:
 
 Requirements 2–4 are the strictest of the four sources applied uniformly, which is the
 safe reading when a derived work mixes all of them.
+
+If you redistribute the static map's data (`site/data/`), keep the e-Stat attribution
+and its five caveats with it — both are embedded in `mesh_data.js` — and do not describe
+its outlines as 行政区域 or its answers as finer than the municipality.
 
 If you redistribute the **unmodified payloads** — on their own, or bundled as this
 project does — requirements 1, 4 and 5 still apply, and 2 and 3 are replaced by their

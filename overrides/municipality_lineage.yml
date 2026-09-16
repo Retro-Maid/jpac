@@ -3,13 +3,112 @@
 # merger is not town-level evidence, so without attestation the towns get new
 # address_ids and the old ones retire (docs/IDENTITY_MODEL.md §4).
 #
-# V1 ships this empty. Populating it from official e-Stat / MIC 市町村合併情報 is
-# a known limitation (docs/LIMITATIONS.md, item 11).
+# V1 shipped this empty. Populating it from official 総務省 sources is tracked in
+# docs/LIMITATIONS.md item 11; the first entries land here.
+#
+# `old_lg_code` / `new_lg_code` are 6-digit 全国地方公共団体コード, quoted so a
+# leading zero survives (README.md "lg_code は 013100 のように先頭がゼロになります").
 version: "1.0.0"
-transitions: []
-# - old_lg_code: "012025"
-#   new_lg_code: "012033"
-#   effective_date: 2026-04-01
-#   evidence_url: "https://..."
-#   attested_by: "..."
-#   attested_on: 2026-08-23
+transitions:
+  # ---------------------------------------------------------------------------
+  # 浜松市 行政区再編 (2024-01-01): 7区 → 3区
+  #
+  # Why this is the first entry. It is the only version skew that actually shows
+  # up in the data this project joins against: e-Stat's 令和2年国勢調査 boundary
+  # set is cut on the pre-reorganisation 7 wards, while jpac's ABR snapshot
+  # carries the post-reorganisation 3. Measured against the real payloads on
+  # 2026-09-05, that gap accounts for 551 of the 590 nationwide 代表点 mismatches
+  # and all 54 of the stations whose e-Stat code is absent from jpac
+  # (docs/STATION_JOIN_PREFLIGHT.md §3.2c, §4.3). Without these rows those are
+  # unexplained; with them they are a dated, attested transition.
+  #
+  # Evidence: 総務省「全国地方公共団体コード」団体コード表（R6.1.1現在）、
+  # シート「R6.1.1政令指定都市」。旧7区（221317〜221376）は同表に存在せず、
+  # 「改正一覧表」側で欠番と明示されている。
+  # NOTE: the 改正一覧表 (000875488.xlsx) is R5.4.1 時点 and does NOT cover this
+  # reorganisation — the 団体コード表 is the source that does.
+  #
+  # These rows are a NO-OP for identity rule I3 today, and that is expected.
+  # I3 fires when a town's lg_code changes *between two ABR snapshots*. The
+  # reorganisation took effect 2024-01-01, well before jpac v1.0.0 (ABR acquired
+  # 2026-08-23), so ABR already carries only the new codes and there is no
+  # transition inside jpac's own history to carry an address_id across. Verified:
+  # the build after adding these rows reports municipality_version unchanged 1918,
+  # superseded 0, added 0.
+  # What they are for is the cross-source reconciliation — e-Stat's 令和2年 boundary
+  # set and any other 2020-vintage payload still speak the old ward codes, and this
+  # is the attested, dated mapping that explains the difference instead of leaving
+  # it as an unexplained mismatch. Recording a real 廃置分合 here is also correct on
+  # its own terms: the file is a registry of attested transitions, not a cache of
+  # ones that happen to fire.
+  #
+  # Mapping caveat, deliberately recorded: this is NOT a clean 1:1 lineage.
+  # 中央区 absorbs 中区・東区・西区・南区 and part of 北区 (三方原地区); 浜名区 takes
+  # 浜北区 and most of 北区. 北区 (221350) therefore split across two successors and
+  # is NOT listed here — I3 requires exactly one candidate, and asserting a single
+  # successor for a split would be the "inventing a wrong 1:1 mapping" that
+  # docs/POLICY.md §4 calls a defect. Towns in the former 北区 correctly get new
+  # address_ids until町字-level evidence exists.
+  - old_lg_code: "221317"        # 浜松市中区
+    new_lg_code: "221384"        # 浜松市中央区
+    effective_date: 2024-01-01
+    evidence_url: "https://www.soumu.go.jp/denshijiti/code.html"
+    evidence_note: "総務省 全国地方公共団体コード 団体コード表（R6.1.1現在）シート「R6.1.1政令指定都市」"
+    attested_by: "jp-address-crosswalk maintainer"
+    attested_on: 2026-09-05
+  - old_lg_code: "221325"        # 浜松市東区
+    new_lg_code: "221384"        # 浜松市中央区
+    effective_date: 2024-01-01
+    evidence_url: "https://www.soumu.go.jp/denshijiti/code.html"
+    evidence_note: "同上"
+    attested_by: "jp-address-crosswalk maintainer"
+    attested_on: 2026-09-05
+  - old_lg_code: "221333"        # 浜松市西区
+    new_lg_code: "221384"        # 浜松市中央区
+    effective_date: 2024-01-01
+    evidence_url: "https://www.soumu.go.jp/denshijiti/code.html"
+    evidence_note: "同上"
+    attested_by: "jp-address-crosswalk maintainer"
+    attested_on: 2026-09-05
+  - old_lg_code: "221341"        # 浜松市南区
+    new_lg_code: "221384"        # 浜松市中央区
+    effective_date: 2024-01-01
+    evidence_url: "https://www.soumu.go.jp/denshijiti/code.html"
+    evidence_note: "同上"
+    attested_by: "jp-address-crosswalk maintainer"
+    attested_on: 2026-09-05
+  # Corrected 2026-09-15. The two entries below, and the unlisted one, first
+  # carried shuffled labels (221376 as 浜北区, 221350 as 天竜区, 221368 as 北区),
+  # which mapped 北区 wholly to 天竜区 and 天竜区 to 浜名区. The publisher's own
+  # attribute table settles which code is which — e-Stat 令和2年 小地域 CITY_NAME:
+  #   22135 浜松市北区 / 22136 浜松市浜北区 / 22137 浜松市天竜区
+  # and the check digits give 221350 / 221368 / 221376 respectively.
+  - old_lg_code: "221368"        # 浜松市浜北区 (JIS 22136)
+    new_lg_code: "221392"        # 浜松市浜名区
+    effective_date: 2024-01-01
+    evidence_url: "https://www.soumu.go.jp/denshijiti/code.html"
+    evidence_note: "同上。区名とコードの対応は e-Stat 小地域境界の CITY_NAME で確認"
+    attested_by: "jp-address-crosswalk maintainer"
+    attested_on: 2026-09-15
+  - old_lg_code: "221376"        # 浜松市天竜区 (JIS 22137)
+    new_lg_code: "221406"        # 浜松市天竜区（コードのみ改定）
+    effective_date: 2024-01-01
+    evidence_url: "https://www.soumu.go.jp/denshijiti/code.html"
+    evidence_note: "同上。区域は現行のまま、コードのみ変わった。区名とコードの対応は e-Stat CITY_NAME で確認"
+    attested_by: "jp-address-crosswalk maintainer"
+    attested_on: 2026-09-15
+
+# Not listed, and why:
+#   221350 浜松市北区 (JIS 22135) — split between 中央区 (三方原地区) and 浜名区 (それ以外).
+#     Two successors, so I3 cannot fire and must not be forced. See the note above.
+unlisted:
+  - lg_code: "221350"
+    name: "浜松市北区"
+    # Every current municipality that took part of it. Not a mapping — I3 never
+    # reads this. Spatial consumers list these as candidates (ambiguous) instead
+    # of leaving the area with no answer (docs/MESH_MUNICIPALITY_LOOKUP.md R7).
+    successors: ["221384", "221392"]   # 中央区, 浜名区
+    reason: >-
+      2024-01-01 の再編で中央区と浜名区に分割された。承継先が一意でないため
+      I3 の対象にしない（docs/POLICY.md §4）。町字単位の根拠が得られれば
+      別途 manual_overrides で扱う。
