@@ -400,6 +400,8 @@ PRIMARY_KEYS = {
     "telephone_area_coverage": "coverage_id",
     "telephone_number_block": "block_id",
     "source_snapshot": "source_snapshot_id", "match_run": "match_run_id",
+    # One row per 駅グループ, so the group code is the key (docs/schema.sql).
+    "n02_station": "n02_group_code",
     "address_lineage": "lineage_id", "address_history": "history_id",
     "address_rsdt_variant": "rsdt_variant_id",
     **{b: "bridge_id" for b in [
@@ -482,7 +484,11 @@ def _write_table(conn: sqlite3.Connection, name: str, df: pl.DataFrame) -> None:
         dt = df.schema[c]
         if dt in (pl.Float64, pl.Float32):
             sql_type = "REAL"
-        elif dt in (pl.Int64, pl.Int32, pl.Boolean):
+        elif dt in (pl.Int64, pl.Int32, pl.Int16, pl.Int8,
+                    pl.UInt64, pl.UInt32, pl.UInt16, pl.UInt8, pl.Boolean):
+            # Unsigned counts are counts. Leaving them out landed n02_station's
+            # feature_count in a TEXT column, where CHECK (feature_count >= 1)
+            # compares strings and stops being the constraint it claims to be.
             sql_type = "INTEGER"
         else:
             sql_type = "TEXT"

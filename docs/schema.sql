@@ -3,8 +3,8 @@
 -- このファイルは手書きではありません。出荷済みの成果物からそのまま抽出し、
 -- 読みやすいように改行だけを入れたものです。定義そのものは一切変えていません。
 --
---   抽出元ビルド: v1.0.0+data-2026-08-23 (built_at 2026-08-23T11:53:50Z)
---   内訳: テーブル 28 / ビュー 3 / 索引 22（PRIMARY KEY の自動索引を除く）
+--   抽出元ビルド: v1.1.0+data-2026-09-16 (built_at 2026-09-16T06:13:12Z)
+--   内訳: テーブル 31 / ビュー 3 / 索引 26（PRIMARY KEY の自動索引を除く）
 --
 -- このファイルが古くならないこと自体を検証しています。
 --   py -3 tools/verify_artifacts_agree.py   の 3c で、ここに書かれた定義を
@@ -32,7 +32,7 @@
 
 
 -- ======================================================================
--- テーブル (28)
+-- テーブル (31)
 -- ======================================================================
 
 CREATE TABLE "address" (
@@ -66,7 +66,7 @@ CREATE TABLE "address" (
   "full_name_raw"         TEXT,
   "full_name_normalized"  TEXT,
   "normalization_profile" TEXT,
-  "rsdt_variant_count"    TEXT,
+  "rsdt_variant_count"    INTEGER,
   "valid_from"            TEXT,
   "valid_to"              TEXT,
   "observed_from"         TEXT,
@@ -511,7 +511,7 @@ CREATE TABLE "municipality_version" (
 
 CREATE TABLE "postal_code_entity" (
   "postal_code"        TEXT PRIMARY KEY,
-  "record_count"       TEXT,
+  "record_count"       INTEGER,
   "observed_from"      TEXT,
   "observed_to"        TEXT,
   "source_snapshot_id" TEXT,
@@ -582,10 +582,6 @@ CREATE TABLE "source_snapshot" (
   "license_text_sha256" TEXT,
   "source_version"      TEXT,
   "published_at"        TEXT,
-  -- Where source_version / published_at came from: 'observed' (the acquisition
-  -- side read the publisher's page), 'declared' (a fixed edition named in
-  -- config/sources.yml), 'mixed', or NULL when neither is known. A declaration
-  -- is not an observation and the record says which.
   "edition_origin"      TEXT,
   "downloaded_at"       TEXT,
   "etag"                TEXT,
@@ -610,17 +606,13 @@ CREATE TABLE "estat_small_area" (
   "pref_name_raw"      TEXT,
   "city_name_raw"      TEXT,
   "s_name_raw"         TEXT,
-  -- 8101 町丁・字等 / 8154 水面調査区. 8154 is 港湾区域 and 漁港の水域 (国勢調査の
-  -- 調査区の設定の基準等に関する省令 第一条4項) and is not land, so it is excluded
-  -- before any point is placed.
   "hcode"              TEXT,
-  "kigo_e"             TEXT,   -- 重複境域: one 町字 cut into several polygons
-  "area_max_f"         TEXT,   -- 'M' on the largest of those
-  "kigo_d"             TEXT,   -- 'D' 飛び地 / 'D1' 抜け地 (a hole belonging elsewhere)
+  "kigo_e"             TEXT,
+  "area_max_f"         TEXT,
+  "kigo_d"             TEXT,
   "n_ken"              TEXT,
   "n_city"             TEXT,
-  "kigo_i"             TEXT,   -- 'I' 島
-  -- pref_code || city_code. The JIS 5-digit code jpac already joins on.
+  "kigo_i"             TEXT,
   "jis_city_code"      TEXT,
   "reconcile_status"   TEXT,
   "source_snapshot_id" TEXT,
@@ -632,8 +624,6 @@ CREATE INDEX idx_esa_jis ON estat_small_area(jis_city_code);
 CREATE INDEX idx_esa_rec ON estat_small_area(reconcile_status);
 
 CREATE TABLE "n02_station" (
-  -- 駅グループコード. One row per station, not per platform: N02 ships 10,234
-  -- polyline features for 9,046 stations.
   "n02_group_code"        TEXT PRIMARY KEY,
   "feature_count"         INTEGER,
   "station_name_raw"      TEXT,
@@ -642,8 +632,6 @@ CREATE TABLE "n02_station" (
   "railway_class"         TEXT,
   "operator_class"        TEXT,
   "n02_station_code"      TEXT,
-  -- A group can span operators and lines (a shared station). The retained name
-  -- above is one of N; these say how many, so "one of N" is never read as "the".
   "station_name_variants" INTEGER,
   "line_variants"         INTEGER,
   "operator_variants"     INTEGER,
@@ -651,20 +639,33 @@ CREATE TABLE "n02_station" (
   CHECK (feature_count >= 1)
 );
 
+-- 駅 → 市区町村。読むときの前提（定義本体は出荷物そのままなので、注記はここに置く）:
+--
+--   * lg_code は6桁の全国地方公共団体コードで、他のブリッジと同じく
+--     municipality(lg_code) に繋がる。どのポリゴンにも入らなかった駅と、
+--     境界データ側が現存しない市区町村を指す場合（2020年国勢調査には旧浜松7区が
+--     残る）は NULL になる。address_id 列は意図的に持たない —— この出典から
+--     町字の粒度には到達できない（docs/POLICY.md §3.1）。
+--
+--   * boundary_jis_city_code はポリゴンが実際に持っていた5桁の JIS コード。
+--     上の lg_code が NULL のとき、黙って失われる代わりに追跡できるよう残してある。
+--     overrides/municipality_lineage.yml と突き合わせれば現行の市区町村に届く。
+--
+--   * placement_point は 'centroid' | 'point_on_line' | 'none' のいずれかで、
+--     どの代表点で駅を置いたかを示す。フォールバックが暗黙にならないようにするため。
+--
+--   * 駅は市区町村に「含まれる」だけで「等しい」ことはないので、relation_type の
+--     語彙は住所側のブリッジより狭い。
+--
+--   * verification_status の 'auto' を含有関係で認めるのは、住所側のブリッジが
+--     exact/equivalent に限っているのと異なる。あちらは2つの識別子が同じものを
+--     指すという主張だが、こちらはポリゴンが点を囲むという決定的な事実であり、
+--     レビュアーが足せるものが無い。候補が1件に定まっていることは引き続き要求する。
 CREATE TABLE "bridge_station_municipality" (
   "n02_group_code"      TEXT,
   "station_name_raw"    TEXT,
   "operator_name_raw"   TEXT,
-  -- The 6-digit 全国地方公共団体コード, joinable to municipality(lg_code) the
-  -- same way every other bridge in this schema is. NULL when the station is in
-  -- no polygon, and also when the boundary edition names a municipality that no
-  -- longer exists (the 2020 census still has 旧浜松7区). There is deliberately
-  -- no address_id column: 町字 granularity is unreachable through this source
-  -- (docs/POLICY.md §3.1).
   "lg_code"             TEXT,
-  -- The 5-digit JIS code the polygon actually carried, kept so a NULL lg_code
-  -- above stays recoverable instead of being a silent loss. Cross the two with
-  -- overrides/municipality_lineage.yml to reach a current municipality.
   "boundary_jis_city_code" TEXT,
   "relation_type"       TEXT,
   "match_method"        TEXT,
@@ -672,24 +673,16 @@ CREATE TABLE "bridge_station_municipality" (
   "candidate_count"     INTEGER,
   "is_unique_match"     INTEGER,
   "verification_status" TEXT,
-  -- 'centroid' | 'point_on_line' | 'none': which representative point placed
-  -- the station, so a fallback is visible rather than implied.
   "placement_point"     TEXT,
   "mismatch_note"       TEXT,
   "source_snapshot_id"  TEXT,
   CHECK (confidence >= 0.0 AND confidence <= 1.0),
   CHECK (candidate_count >= 0),
   CHECK (NOT (is_unique_match = 1 AND candidate_count > 1)),
-  -- A station is contained by a municipality, never equal to one, so the
-  -- relation vocabulary here is narrower than the address bridges'.
-  CHECK (relation_type IN ('contains', 'ambiguous', 'unresolved')),
-  CHECK (match_method IN ('spatial_containment', 'unresolved')),
+  CHECK (relation_type IN ('contains','ambiguous','unresolved')),
+  CHECK (match_method IN ('spatial_containment','unresolved')),
   CHECK (verification_status IN ('auto', 'review_required', 'manually_verified',
                                  'manually_rejected')),
-  -- 'auto' is admitted for containment, unlike the address bridges which reserve
-  -- it for exact/equivalent. Those assert two identifiers name the same thing;
-  -- this asserts a polygon encloses a point, which is deterministic and leaves a
-  -- reviewer nothing to add. It still requires a single settled candidate.
   CHECK (verification_status <> 'auto' OR (
     relation_type = 'contains' AND candidate_count = 1 AND is_unique_match = 1
     AND confidence = 1.0 AND mismatch_note IS NULL)),
@@ -873,7 +866,7 @@ CREATE VIEW unmatched_records AS
    WHERE relation_type = 'unresolved' AND target_id IS NULL;
 
 -- ======================================================================
--- 索引 (22)
+-- 索引 (26)
 -- ======================================================================
 
 CREATE INDEX idx_addr_jis_norm ON address(jis_city_code, full_name_normalized);
