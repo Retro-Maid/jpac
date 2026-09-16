@@ -63,6 +63,8 @@ SORT_KEYS: dict[str, list[str]] = {
     "bridge_line_municipality": [
         "line_name_raw", "operator_name_raw", "boundary_jis_city_code",
     ],
+    "p11_bus_stop": ["p11_stop_id"],
+    "bridge_bus_stop_municipality": ["p11_stop_id", "boundary_jis_city_code"],
 }
 
 # Columns that must never be written as a numeric type (docs/POLICY.md §8).
@@ -365,6 +367,11 @@ V2_INDEXES = {
         " ON bridge_line_municipality(line_name_raw, operator_name_raw)",
         "CREATE INDEX IF NOT EXISTS idx_blm_lg ON bridge_line_municipality(lg_code)",
     ],
+    "bridge_bus_stop_municipality": [
+        "CREATE INDEX IF NOT EXISTS idx_bbm_stop"
+        " ON bridge_bus_stop_municipality(p11_stop_id)",
+        "CREATE INDEX IF NOT EXISTS idx_bbm_lg ON bridge_bus_stop_municipality(lg_code)",
+    ],
 }
 
 
@@ -431,6 +438,11 @@ PRIMARY_KEYS = {
     # the four-column composite splits 10 real lines that change 鉄道区分 along
     # their length (src/jp_address_crosswalk/build/railroad.py).
     "n02_railroad_line": ("line_name_raw", "operator_name_raw"),
+    # A surrogate row id, not an entity identity: P11 gives a bus stop no
+    # identifier and no combination of its attributes is unique — even
+    # (name, operator, coordinates) collides 12 times nationwide
+    # (src/jp_address_crosswalk/sources/mlit_ksj_p11.py).
+    "p11_bus_stop": "p11_stop_id",
     "address_lineage": "lineage_id", "address_history": "history_id",
     "address_rsdt_variant": "rsdt_variant_id",
     **{b: "bridge_id" for b in [
@@ -502,6 +514,11 @@ SMALL_AREA_CHECKS = [
 
 N02_STATION_CHECKS = ["CHECK (feature_count >= 1)"]
 
+BUS_STOP_CHECKS = [
+    "CHECK (length(pref_code) = 2)",
+    "CHECK (length(stop_name_raw) > 0)",
+]
+
 RAILROAD_LINE_CHECKS = [
     "CHECK (section_count >= 1)",
     "CHECK (railway_class_variants >= 1)",
@@ -565,7 +582,10 @@ def _write_table(conn: sqlite3.Connection, name: str, df: pl.DataFrame) -> None:
     if len(pk_cols) > 1:
         types.append("PRIMARY KEY (" + ", ".join(f'"{c}"' for c in pk_cols) + ")")
 
-    if name == "bridge_station_municipality":
+    if name in ("bridge_station_municipality", "bridge_bus_stop_municipality"):
+        # Same shape and same vocabulary: a published point either falls inside a
+        # polygon or it does not. Shared rather than copied so the two cannot
+        # drift apart into differently-guarded versions of one claim.
         types.extend(STATION_BRIDGE_CHECKS)
     elif name == "bridge_line_municipality":
         types.extend(LINE_BRIDGE_CHECKS)
@@ -575,6 +595,8 @@ def _write_table(conn: sqlite3.Connection, name: str, df: pl.DataFrame) -> None:
         types.extend(BRIDGE_CHECKS)
     if name == "n02_railroad_line":
         types.extend(RAILROAD_LINE_CHECKS)
+    if name == "p11_bus_stop":
+        types.extend(BUS_STOP_CHECKS)
     if name == "estat_small_area":
         types.extend(SMALL_AREA_CHECKS)
     if name == "n02_station":

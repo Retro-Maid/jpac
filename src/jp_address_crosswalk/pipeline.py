@@ -18,6 +18,9 @@ import yaml
 
 from . import PARSER_VERSION, __version__
 from .build import (
+    busstop as busstop_build,
+)
+from .build import (
     canonical,
     diffing,
     mlit_bridge,
@@ -50,14 +53,19 @@ from .logging_setup import get_logger, stage_context
 from .normalize import NORMALIZATION_PROFILE_VERSION
 from .payload import (
     MANIFEST_NAME,
+    SHP_POINT,
     SHP_POLYGON,
     SHP_POLYLINE,
     FetchResult,
     PayloadManifest,
     load_payload_manifest,
+    open_zip_bytes_safely,
+    read_dbf,
     read_dbf_member,
     read_prj_member,
     read_shp_member,
+    read_shp_shapes,
+    safe_zip_members,
 )
 from .snapshot import (
     SourceSnapshot,
@@ -66,6 +74,7 @@ from .snapshot import (
     sha256_file,
     utcnow,
 )
+from .sources import mlit_ksj_p11 as p11_source
 from .sources.abr import AbrSource
 from .sources.base import DiscoveredResource, Discovery
 from .sources.estat import EstatBoundarySource
@@ -797,12 +806,21 @@ def _build_station_tables(
     """
     boundaries_raw = outcome.parsed.get("estat_boundary", {}).get("estat_small_area")
     stations_raw = outcome.parsed.get("mlit_ksj_n02", {}).get("n02_station")
-    if boundaries_raw is None and stations_raw is None:
+    stops_raw = outcome.parsed.get("mlit_ksj_p11", {}).get("p11_bus_stop")
+    if boundaries_raw is None and stations_raw is None and stops_raw is None:
         return {}
 
     out: dict[str, pl.DataFrame] = {}
     lineage = _load_municipality_lineage(paths)
     unlisted = _load_unlisted_municipalities(paths)
+
+    # Emitted whether or not the boundaries are present: the stops are a payload
+    # in their own right, and shipping them without the bridge is honest in a way
+    # that silently dropping them would not be.
+    if stops_raw is not None:
+        out["p11_bus_stop"] = stops_raw.with_columns(
+            pl.lit(snapshot_for("mlit_ksj_p11")).alias("source_snapshot_id")
+        )
 
     if boundaries_raw is not None:
         labelled, reconciliation = estat_build.reconcile(
@@ -878,6 +896,14 @@ def _build_station_tables(
         out["bridge_line_municipality"] = railroad_build.build_line_municipality_bridge(
             lines, line_geometry, boundary_geometry, lg_by_jis
         ).with_columns(pl.lit(snap_station).alias("source_snapshot_id"))
+
+    # バス停留所. A published point, so no representative point is derived.
+    if stops_raw is not None:
+        with stage_context("busstop", "geometry"):
+            stop_points = _read_p11_geometry(paths)
+        out["bridge_bus_stop_municipality"] = busstop_build.build_bus_stop_bridge(
+            stops_raw, stop_points, boundary_geometry, lg_by_jis
+        ).with_columns(pl.lit(snapshot_for("mlit_ksj_p11")).alias("source_snapshot_id"))
     return out
 
 
@@ -969,6 +995,47 @@ def _read_railroad_geometry(
                 key = (key[1], key[0])
             geometry.setdefault(key, []).extend(shape[1])
     _assert_one_datum(datums, "mlit_ksj_n02")
+    return geometry
+
+
+def _read_p11_geometry(paths: Paths) -> dict[str, tuple[float, float]]:
+    """The published point of every bus stop, keyed by ``p11_stop_id``.
+
+    The id is rebuilt with the adapter's own ``stop_id`` rather than re-spelled
+    here, because the pairing is positional: a stop's point is the shape at the
+    same index as its DBF row. ``read_dbf`` skips deleted records and the .shp
+    does not, so the counts are compared before the index is trusted — a silent
+    off-by-one would attach every later stop to the wrong municipality.
+    """
+    src_dir = paths.raw / "mlit_ksj_p11"
+    geometry: dict[str, tuple[float, float]] = {}
+    datums: set[str] = set()
+    for path in sorted(src_dir.glob("*.zip")):
+        for pref, member, data in p11_source.inner_archives(path):
+            with open_zip_bytes_safely(data, p11_source.P11_LIMITS) as iz:
+                inner = safe_zip_members(iz, p11_source.P11_LIMITS)
+                names = {suffix: [m for m in inner if m.filename.lower().endswith(suffix)]
+                         for suffix in (".dbf", ".shp", ".prj")}
+                for suffix, found in names.items():
+                    if len(found) != 1:
+                        raise ValidationFailed(
+                            "expected exactly one file of this kind in the P11 "
+                            "prefecture archive",
+                            member=member, suffix=suffix,
+                            found=[m.filename for m in found],
+                        )
+                datums.add(_datum(iz.read(names[".prj"][0]).decode("ascii", "replace")))
+                _, rows = read_dbf(iz.read(names[".dbf"][0]), p11_source.ENCODING)
+                shapes = read_shp_shapes(iz.read(names[".shp"][0]), expect=SHP_POINT)
+                if len(shapes) != len(rows):
+                    raise ValidationFailed(
+                        "bus stop geometry and attribute counts disagree",
+                        member=member, shapes=len(shapes), rows=len(rows),
+                    )
+                for seq, shape in enumerate(shapes):
+                    if shape is not None:
+                        geometry[p11_source.stop_id(pref, seq)] = shape[1][0][0]
+    _assert_one_datum(datums, "mlit_ksj_p11")
     return geometry
 
 

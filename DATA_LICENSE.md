@@ -107,9 +107,10 @@ Three of the four publishers now adopt the same instrument — **公共データ
 
 ## V2 sources (unreleased, optional)
 
-Both are `required: false` in `config/sources.yml`: a release does not depend on them.
-Terms were read verbatim and reviewed by a person on 2026-09-14; the reasoning is in
-[`docs/LICENSE_REVIEW_2026_09.md`](docs/LICENSE_REVIEW_2026_09.md).
+All three are `required: false` in `config/sources.yml`: a release does not depend on
+them. Terms were read verbatim and reviewed by a person — N02 and e-Stat on 2026-09-14
+([`docs/LICENSE_REVIEW_2026_09.md`](docs/LICENSE_REVIEW_2026_09.md)), P11 on 2026-09-17
+([`docs/LICENSE_REVIEW_P11_2026_09.md`](docs/LICENSE_REVIEW_P11_2026_09.md)).
 
 ### 国土交通省 — 国土数値情報 鉄道データ（N02）2025年版
 
@@ -130,6 +131,38 @@ Terms were read verbatim and reviewed by a person on 2026-09-14; the reasoning i
   per station group**, computed from N02's own polyline for that station
   (`docs/POLICY.md` §3.2). Like the MLIT coordinates above it must never be described
   as a 駅舎 or 出入口 location, and the page says so where it shows one.
+
+### 国土交通省 — 国土数値情報 バス停留所（P11）令和4年度版
+
+- **Terms:** 国土数値情報ダウンロードサイト 利用規約 (施行 2026-03-23), which applies
+  PDL 1.0. The dataset's detail page states the per-edition condition, and **the two
+  editions do not take the same terms**:
+
+  | 版 | 利用許諾条件 |
+  |---|---|
+  | 令和4年度 (2022) | 「国土数値情報ダウンロードサイトコンテンツ利用規約」に基づく（**オープンデータ**） |
+  | 平成22年度 (2010) | **非商用** |
+
+- **Only the 令和4年度 edition is used.** The 平成22年度 edition falls under §1.3(2) of the
+  current terms, which routes 「商用可」/「非商用」 data to the older 国土情報利用約款 —
+  and that agreement defines 非商用 as 「非商用目的のみでの利用（**ただし複製物の再配布を
+  除く**）」. Redistribution is excluded outright, so that edition is unusable for a project
+  that redistributes derived data, and the two are never mixed. This is the same
+  edition-scoping already applied to N02.
+- Redistribution and modification of the 令和4年度 edition: permitted. Attribution in the
+  publisher's own form (「…をもとに…作成」, per PDL 1.0 §1.1):
+
+```
+「国土数値情報（バス停留所データ）」（国土交通省）
+      https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P11-v3_0.html をもとに jp-address-crosswalk 作成
+```
+
+- **Where the stop points go.** A release ships no bus-stop coordinates:
+  `bridge_bus_stop_municipality` carries `lg_code` and nothing spatial
+  (`docs/POLICY.md` §3.1). The points are read at build time to place each stop in a
+  polygon and are not emitted, re-derived, or published.
+- **Excluded on licence grounds: N07 バスルート.** Every edition is 非商用, with no open
+  edition, so it is not fetched, parsed or shipped.
 
 ### 総務省統計局 — 令和2年国勢調査 小地域（町丁・字等別）境界データ
 

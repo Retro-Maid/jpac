@@ -17,6 +17,7 @@ not part of this repository; see README. What remains is everything needed to
 
 from __future__ import annotations
 
+import io
 import struct
 import zipfile
 from collections.abc import Iterator, Sequence
@@ -165,6 +166,23 @@ def open_zip_safely(path: Path, limits: ArchiveLimits) -> zipfile.ZipFile:
     if size > limits.max_archive_bytes:
         raise UnsafeArchive("archive larger than the accepted size cap", size=size)
     return zipfile.ZipFile(path)
+
+
+def open_zip_bytes_safely(data: bytes, limits: ArchiveLimits) -> zipfile.ZipFile:
+    """``open_zip_safely`` for an archive that is itself a member of another.
+
+    P11 ships one archive per prefecture inside a national archive, so the inner
+    bytes never exist as a file on disk and the on-disk size check above has
+    nothing to look at. The same bound is applied here to the decompressed
+    member instead, so nesting does not quietly cost the archive-safety property
+    that ``open_zip_safely`` exists to provide. ``safe_zip_members`` then applies
+    unchanged to the result.
+    """
+    if len(data) > limits.max_archive_bytes:
+        raise UnsafeArchive(
+            "nested archive larger than the accepted size cap", size=len(data)
+        )
+    return zipfile.ZipFile(io.BytesIO(data))
 
 
 def safe_zip_members(zf: zipfile.ZipFile, limits: ArchiveLimits) -> list[zipfile.ZipInfo]:
@@ -324,14 +342,16 @@ def read_dbf_member(
             return read_dbf(fh.read(), encoding)
 
 
-# Shapefile geometry. Only the two shape types these sources use are handled:
-# Polygon (5) for the e-Stat 小地域 boundaries and PolyLine (3) for N02 stations.
+# Shapefile geometry. Only the shape types these sources use are handled:
+# Polygon (5) for the e-Stat 小地域 boundaries, PolyLine (3) for N02 stations and
+# railway sections, and Point (1) for P11 bus stops.
 #
 # Parsed here for the same reason as the DBF above. The format is frozen, the
 # subset needed is small, and the alternative is a pinned spatial dependency for
 # the two record layouts below. The point-in-polygon logic that consumes this
 # lives in build/spatial.py and is validated against an independent
 # implementation (see tests/test_spatial.py).
+SHP_POINT = 1
 SHP_POLYLINE = 3
 SHP_POLYGON = 5
 _SHP_HEADER_BYTES = 100
@@ -351,6 +371,12 @@ def read_shp_shapes(
     point array — so one reader covers both. Ring orientation is not normalised;
     the even-odd rule used downstream does not need it, and rewriting the
     publisher's rings would be an undeclared modification.
+
+    Point is a *different* layout — just the two doubles, with no bbox and no
+    part table — so it gets its own branch. It is returned in the same shape as
+    the others, as a degenerate bbox and a single one-point part, so that every
+    caller and the index-alignment rule above stay uniform rather than each
+    consumer learning a second return type.
     """
     shapes: list[tuple[tuple[float, float, float, float], list[list[tuple[float, float]]]] | None] = []
     offset = _SHP_HEADER_BYTES
@@ -373,6 +399,11 @@ def read_shp_shapes(
             raise SourceFetchFailed(
                 "unexpected shapefile shape type", expected=expect, observed=shape_type
             )
+        if shape_type == SHP_POINT:
+            x, y = struct.unpack("<2d", data[body + 4 : body + 20])
+            shapes.append(((x, y, x, y), [[(x, y)]]))
+            offset = end
+            continue
         box = struct.unpack("<4d", data[body + 4 : body + 36])
         n_parts = int.from_bytes(data[body + 36 : body + 40], "little")
         n_points = int.from_bytes(data[body + 40 : body + 44], "little")
