@@ -67,8 +67,10 @@ to a 町字 through them would be expanding a municipality-level statement to
 町字 level — which §4 below already lists as a defect.
 
 The schema enforces it: `bridge_station_municipality` carries `lg_code` and has
-no `address_id` column. A table that cannot express the wrong answer cannot
-drift into it.
+no `address_id` column, and the 路線 tables built later on the same sources
+(`bridge_line_municipality`, `bridge_station_line`, added 2026-09-16 —
+`docs/RAILROAD_LINE_PLAN.md`) follow the same rule. A table that cannot express
+the wrong answer cannot drift into it.
 
 ### New data class: geometry that is read but not distributed
 
