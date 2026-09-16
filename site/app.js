@@ -706,6 +706,8 @@ function footer() {
 // --- 駅・郵便番号・市外局番（data/jpac_data.js）
 // どれも jpac が市区町村単位で持っているもの。町字には降りない（POLICY.md §4）。
 const SHOW_MAX = 12;
+// 呼ぶ側が市区町村を1つに決めたときだけ出す。候補が複数のままの地点で両方の
+// 郵便番号・市外局番を並べても、どちらのものか言えない（POLICY.md §4）。
 function jpacSections(lg, meshCode) {
   if (!S.jpac || !lg) return "";
   const rows = [];
@@ -726,12 +728,14 @@ function jpacSections(lg, meshCode) {
       ic: "train", text: `この市区町村の駅 ${inLg.length} 件`,
       sub: inMesh.length ? "上のメッシュ内の駅を含む" : "地図を拡大すると駅のピンが出ます",
     }));
-    for (const st of inLg.slice(0, inMesh.length ? 6 : SHOW_MAX)) {
-      if (inMesh.some((m) => m.id === st.id)) continue;
+    // メッシュの節に出したものは繰り返さない。「ほか N 件」は実際に出した行から数える。
+    const rest = inLg.filter((st) => !inMesh.some((m) => m.id === st.id));
+    const shown = rest.slice(0, inMesh.length ? 6 : SHOW_MAX);
+    for (const st of shown) {
       rows.push(row({ ic: "train", text: esc(st.n), sub: esc(st.o), act: "station", i: st.id }));
     }
-    if (inLg.length > SHOW_MAX) {
-      rows.push(row({ ic: "train", text: `ほか ${inLg.length - SHOW_MAX} 件`, note: true }));
+    if (rest.length > shown.length) {
+      rows.push(row({ ic: "train", text: `ほか ${rest.length - shown.length} 件`, note: true }));
     }
   }
 
@@ -790,6 +794,7 @@ function openStation(st) {
   S.station = st;
   map.setView([st.y, st.x], Math.max(map.getZoom(), 15));
   keepVisible([st.y, st.x]);
+  updateHash();
 }
 
 // --- a point (dropped pin, searched coordinates, searched mesh code)
@@ -969,8 +974,9 @@ $("panelBody").addEventListener("click", (e) => {
   switch (el.dataset.act) {
     case "back": if (S.back) S.back(); break;
     case "muni": {
+      // restoreView handles every view type; a station panel has no lat/lng.
       const v = S.view;
-      openMunicipality(i, { back: () => openPoint(v.lat, v.lng) });
+      openMunicipality(i, { back: () => restoreView(v) });
       break;
     }
     case "muni-first": {
@@ -1328,6 +1334,7 @@ function updateHash() {
   let h = `@${c.lat.toFixed(6)},${c.lng.toFixed(6)},${map.getZoom()}z`;
   if (S.view && S.view.type === "pin") h += `&pin=${fix(S.view.lat)},${fix(S.view.lng)}`;
   else if (S.view && S.view.type === "m") h += `&m=${S.munis[S.view.idx].lg_code}`;
+  else if (S.view && S.view.type === "station") h += `&st=${encodeURIComponent(S.view.id)}`;
   history.replaceState(null, "", `#${h}`);
 }
 map.on("moveend", () => { if (S.table) updateHash(); });
@@ -1340,9 +1347,13 @@ function fromHash() {
   const pinM = h.match(/(?:^|&)pin=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
   const legacy = h.match(/^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
   const mM = h.match(/(?:^|&)m=(\d{6})/);
+  const stM = h.match(/(?:^|&)st=([^&]+)/);
   if (pinM || legacy) {
     const [, a, b] = pinM || legacy;
     openPoint(+a, +b, { zoom: view ? null : 15 });
+  } else if (stM && S.jpac) {
+    const st = S.jpac.stations.find((s) => s.id === stM[1]);
+    if (st) openStation(st);
   } else if (mM) {
     const i = S.munis.findIndex((x) => x.lg_code === mM[1]);
     if (i >= 0) openMunicipality(i, { fit: !view });
