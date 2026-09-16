@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>メッシュ市区町村マップ</title>
+<meta name="description" content="地図をクリックすると、その地点の緯度経度・標準地域メッシュコード（3次）・市区町村を表示します。">
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 27 43'%3E%3Cpath d='M13.5 1C6.6 1 1 6.6 1 13.5 1 23.2 13.5 42 13.5 42S26 23.2 26 13.5C26 6.6 20.4 1 13.5 1z' fill='%23ea4335'/%3E%3Ccircle cx='13.5' cy='13.5' r='4.6' fill='%23b31412'/%3E%3C/svg%3E">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500&family=Roboto:wght@400;500&display=swap">
+<link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+      integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY=" crossorigin="">
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="map" aria-label="地図"></div>
+
+<div id="searchbox" role="search">
+  <button class="sb-btn" id="menuBtn" type="button" aria-label="メニュー" data-icon="menu"></button>
+  <input id="q" type="text" autocomplete="off" spellcheck="false" enterkeyhint="search"
+         placeholder="市区町村・住所・緯度経度・メッシュコード"
+         aria-label="検索" role="combobox" aria-autocomplete="list" aria-expanded="false" aria-controls="suggest">
+  <button class="sb-btn" id="searchBtn" type="button" aria-label="検索" data-icon="search"></button>
+  <button class="sb-btn" id="clearBtn" type="button" aria-label="閉じる" data-icon="close" hidden></button>
+  <ul id="suggest" role="listbox" hidden></ul>
+</div>
+
+<div id="notice" hidden>
+  <span data-icon="info"></span>
+  <div>ファイルを直接開いているため背景地図を表示できません（OpenStreetMap はリファラの無いタイル要求を拒否します）。
+    <b>open-local.bat</b> をダブルクリックして開くと表示されます。判定・検索はこのまま使えます。</div>
+  <button class="sb-btn" id="noticeClose" type="button" aria-label="閉じる" data-icon="close"></button>
+</div>
+
+<aside id="panel" hidden aria-live="polite">
+  <button id="sheetHandle" class="sheet-handle" type="button" aria-label="パネルを開閉"></button>
+  <div id="panelBody"></div>
+</aside>
+<button id="collapse" type="button" aria-label="サイドパネルを折りたたむ" data-icon="chevron_left" hidden></button>
+
+<div id="card" hidden></div>
+<div id="ctxmenu" role="menu" hidden></div>
+
+<div id="scrim" hidden></div>
+<nav id="drawer" hidden aria-label="メニュー">
+  <div class="dr-head"><span>メッシュ市区町村マップ</span>
+    <button class="sb-btn" id="drawerClose" type="button" aria-label="閉じる" data-icon="close"></button></div>
+  <button class="dr-item" id="drMesh" type="button"><span data-icon="grid_on"></span>メッシュの色分け<span class="switch on" id="drMeshSwitch"></span></button>
+  <button class="dr-item" id="drAbout" type="button"><span data-icon="info"></span>このマップについて・出典</button>
+  <a class="dr-item" href="https://github.com/Retro-Maid/jpac" target="_blank" rel="noopener"><span data-icon="code"></span>ソースコード（GitHub）</a>
+</nav>
+
+<div id="controls">
+  <button class="ctl" id="locateBtn" type="button" aria-label="現在地を表示" data-icon="my_location"></button>
+  <div class="zoom">
+    <button id="zin" type="button" aria-label="拡大" data-icon="add"></button>
+    <div class="sep"></div>
+    <button id="zout" type="button" aria-label="縮小" data-icon="remove"></button>
+  </div>
+</div>
+
+<button id="layersBtn" class="on" type="button" aria-pressed="true" aria-label="メッシュの色分けを切り替え">
+  <canvas width="96" height="96"></canvas><span>メッシュ</span>
+</button>
+<div id="legend">
+  <span class="lg"><i class="sw sw-u"></i>1つの市区町村</span>
+  <span class="lg"><i class="sw sw-m"></i>境界をまたぐ</span>
+  <span class="lg"><i class="sw sw-x"></i>所属未定</span>
+  <span class="lg-hint" id="lgHint">拡大すると色分けを表示</span>
+</div>
+
+<div id="snackbar" role="status" hidden></div>
+
+<template id="aboutTpl">
+  <div class="about">
+    <h2>判定の仕組み</h2>
+    <p>緯度経度から<strong>標準地域メッシュ（JIS X 0410・3次＝約1km四方）</strong>を計算し、2段階で市区町村を決めます。</p>
+    <ul>
+      <li><strong>メッシュ全体が1つの市区町村に収まる場合</strong>は、メッシュごとの対応表でそのまま決まります。</li>
+      <li><strong>市区町村の境界や海岸線が通るメッシュ</strong>では、その部分の境界線（簡略化していない元の形）を読み込み、
+        クリックした<strong>地点そのもの</strong>がどの市区町村に入るかを判定します。</li>
+      <li>境界データに含まれない地点（海・埋立地の一部・県境の境界データの隙間）は「判定なし」とし、<strong>最寄りの市区町村に寄せることはしません</strong>。</li>
+      <li>それでも決まらないのは、県境で境界データが重なっている数メートル幅の場所と、浜松市の旧北区（下記）だけです。その場合は候補をすべて表示します。</li>
+      <li>住所で検索した場合も、分かるのは市区町村までです。町字・番地は扱いません。</li>
+      <li>地図の境界線は表示用に簡略化してあり、実際の判定には使っていません（最大で約20m、縮小表示ではさらに粗くずれます）。</li>
+    </ul>
+    <h2>注意事項</h2>
+    <ul>
+      <li>使っている境界は<strong>国勢調査の調査区の境界</strong>で、行政区域そのものではありません。表示している線も「行政界」ではありません。</li>
+      <li>境界データは令和2年（2020年）時点です。市区町村は現行のコードに読み替えています。
+        浜松市の区再編（2024年）は読み替え済みですが、旧北区は中央区と浜名区に分かれ、その区界が2020年のデータに無いため、
+        旧北区の範囲では地点でも2候補のままになります。</li>
+    </ul>
+    <p>発行元の注意事項：</p>
+    <ul data-slot="caveats"></ul>
+    <h2>出典</h2>
+    <p data-slot="attribution"></p>
+    <p>メッシュ対応表：jp-address-crosswalk（<span data-slot="generated"></span> 作成）。上記データを加工して作成したもので、発行元が作成したものではありません。</p>
+    <p>背景地図：© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></p>
+    <h2>ローカルで開くには</h2>
+    <p>Windows では <code>open-local.bat</code> をダブルクリックします。ほかの環境では <code>site</code> フォルダで
+      <code>python3 -m http.server</code> を実行し、表示された URL を開いてください。
+      <code>index.html</code> を直接開くと、背景地図だけが表示されません。</p>
+  </div>
+</template>
+
+<!-- All deferred: they run in this order, after the page has painted. -->
+<script defer src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+        integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo=" crossorigin=""></script>
+<script defer src="data/mesh_data.js"></script>
+<script defer src="lookup.js"></script>
+<script defer src="geo.js"></script>
+<!-- Optional: without it the page falls back to cell-level answers. -->
+<script defer src="data/geo/units.js"></script>
+<script defer src="app.js"></script>
+</body>
+</html>

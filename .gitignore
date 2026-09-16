@@ -5,6 +5,11 @@ data/previous/
 data/verify/
 data/discovery_state.json
 dist/
+# site/data: only mesh_data.js and geo/ are committed (Pages serves them). The
+# mesh tool also writes the .bin / .json / .parquet there; the page reads none.
+site/data/*
+!site/data/mesh_data.js
+!site/data/geo/
 reports/*.csv
 !reports/.gitkeep
 
@@ -30,12 +35,21 @@ venv/
 .coverage.*
 htmlcov/
 
-# --- editors and OS ---
+# --- editors, OS and local tooling ---
 .vscode/
 .idea/
 *.swp
 .DS_Store
 Thumbs.db
+desktop.ini
+.claude/
+node_modules/
+.env
+.env.*
+
+# --- logs and profiling output ---
+*.log
+*.cpuprofile
 
 # --- stray temporaries ---
 *.tmp

@@ -21,11 +21,23 @@ licensing permits redistribution; 地番 additionally needs 登記所備付地�
 clearance (`LICENSE_POLICY.md` §3). Trial-status availability is explicitly not a reason
 to adopt early.
 
+V2 (unreleased) adds two recorded exceptions to this list, each scoped in `POLICY.md`
+rather than by editing the list above:
+
+- **§3.1** — 鉄道駅 (国土数値情報 N02) and 統計境界 (e-Stat 国勢調査 小地域), at
+  municipality granularity only. Boundary geometry is read at build time and never
+  shipped in a release.
+- **§3.2** — the static map in `site/`, which answers 緯度経度 → 市区町村 through 3次/6次
+  standard-area mesh codes and ships simplified and clipped e-Stat geometry. It is a
+  separate product from the release.
+
 ## Never
 
-Web API or web UI; commercial or community-processed address data as input; any
-inference of address structure by a language model; any promise that a representative
-coordinate is a building location.
+Web API or hosted service; commercial or community-processed address data as input;
+any inference of address structure by a language model; any promise that a
+representative coordinate is a building location. (The static map in `site/` is a
+client-only page — no server, no API, no user data — and not a way to query the
+release.)
 
 ## Known limitations
 
@@ -72,7 +84,28 @@ coordinate is a building location.
    metadata from a persisted acquisition record rather than from the clock
    (independent review 2, partially-resolved P1).
 11. **Municipality mergers do not carry `address_id` forward.** Identity rule I3 needs an
-   attested `lg_code` transition in `overrides/municipality_lineage.yml`, and V1 ships
-   that file empty. A town whose municipality code changes is retired and a new id is
-   minted (`IDENTITY_MODEL.md` §4). Populating the registry from official 廃置分合
-   sources is the first thing planned after V1.
+   attested `lg_code` transition in `overrides/municipality_lineage.yml`. V1 shipped
+   that file empty; V2 records one reorganisation (浜松市, 2024-01-01: five 1:1
+   transitions and one split with two successors), which the boundary and mesh stages
+   use. It fires no I3 today because ABR already carried the new codes when jpac first
+   observed them. Any other 廃置分合 still retires the town and mints a new id
+   (`IDENTITY_MODEL.md` §4).
+
+## V2 (unreleased): stations, mesh and the map
+
+12. **Stations and map answers stop at the municipality.** e-Stat's 小地域 are ~3.1×
+   coarser than jpac's 町字, so neither a station nor a map point is ever tied to an
+   `address_id` (`POLICY.md` §3.1, §4).
+13. **The boundary is the 2020 census survey-district boundary**, not the
+   administrative boundary, and the publisher does not join prefecture seams. A point
+   inside a few-metre overlap at a seam keeps both municipalities; a point in a seam gap
+   gets none, never the nearest.
+14. **旧浜松市北区 cannot be split.** It became part of 中央区 and part of 浜名区 in
+   2024, and that new ward line is absent from 2020 data, so points there keep two
+   candidates (`bridge_station_municipality`, the mesh table and the map alike).
+15. **Station rows for superseded codes keep `lg_code` NULL.** The 54 stations in the
+   former 浜松 wards carry `boundary_jis_city_code`; the station bridge does not yet read
+   the lineage file (the mesh table and the map do).
+16. **The map's mesh colouring is an approximation for display** (each 6次 cell sampled
+   at its centre and corners) and its outlines are simplified; neither decides anything.
+   The clicked point is decided against the unsimplified boundary.

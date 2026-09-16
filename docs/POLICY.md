@@ -95,6 +95,44 @@ Both V2 sources are `required: false` in `config/sources.yml`. A V1 release must
 not depend on them and must not be blocked by their absence, their licence
 review, or a publisher outage.
 
+## 3.2 Map extension: boundary geometry in `site/` only
+
+Added 2026-09-15, on the maintainer's decision. **§3.1 is left as written and
+still governs every release artifact** (`jpac build`, `dist/`): the release ships
+no geometry. This section adds one exception, scoped to the static map in
+`site/`.
+
+### Why
+
+The map answers "which municipality is this point in". A 3次メッシュ-level
+answer cannot settle a point in a cell that two municipalities — or two
+prefectures — share; it can only list both. The maintainer requires the clicked
+point itself to be decided, and that needs the boundary where it runs.
+
+### What `site/` may ship (built by `tools/build_site_geo.py`)
+
+| Payload | Geometry | Used for |
+|---|---|---|
+| `exact/` | e-Stat 小地域 dissolved per municipality, **unsimplified**, clipped to every 3次 cell a boundary or the coastline crosses. Coordinates quantised to 1e-6° (~10 cm; the census boundary itself is accurate to metres) | Deciding a click by point-in-polygon |
+| `line/`, `coarse/` | The same, simplified (coverage-preserving, per prefecture) | Drawing only. **Never used to decide anything** |
+
+### Conditions
+
+- **Source: e-Stat only.** Its terms permit redistribution with the 出典 and a
+  statement that it was processed (`config/sources.yml`
+  `estat_boundary.attribution.processed`), both shown on the page. N03 and
+  基盤地図情報 remain excluded: the 国土地理院長承認 question in
+  `docs/N03_BOUNDARY_DESIGN.md` §8 is unresolved.
+- **Never called 行政界 / 行政区域.** It is the census survey-district boundary
+  as of 2020 (the publisher's own first caveat), and the page says so.
+- **§4 holds at point level.** A point inside pieces of two municipalities (the
+  prefecture seams e-Stat does not join) keeps both. A point inside none is not
+  snapped to the nearest. 旧浜松市北区 — split in 2024, its new ward line absent
+  from 2020 data — stays two candidates even at point level.
+- **Not a release artifact.** `site/data/geo/` is produced by a separate tool, is
+  not listed in a release's `SOURCES.yml` / `NOTICE.md`, and `jpac build` is
+  unchanged. The map links to jpac by `lg_code` and nothing else.
+
 ## 4. Ambiguity policy (hard)
 
 > Leaving data unresolved is acceptable. Inventing a wrong 1:1 mapping is a defect.

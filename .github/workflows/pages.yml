@@ -1,0 +1,49 @@
+name: Pages
+
+# Publishes site/ (the mesh → municipality map) to GitHub Pages.
+# Enable once in the repository: Settings → Pages → Source: "GitHub Actions".
+on:
+  push:
+    branches: [main]
+    paths: ["site/**", ".github/workflows/pages.yml"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - uses: actions/checkout@v4
+      # The map's data is committed under site/data and is never rebuilt here:
+      # it is derived from boundary polygons that stay on the build machine
+      # (docs/POLICY.md §3.1). Regenerate with
+      #   python tools/build_mesh_table.py --out site/data
+      - name: Data file is present
+        run: test -s site/data/mesh_data.js || { echo "missing site/data/mesh_data.js"; exit 1; }
+      # Optional: without it the page still answers, at cell level only.
+      - name: Boundary data (optional)
+        run: test -s site/data/geo/units.js || echo "::warning::site/data/geo is missing — the map will fall back to cell-level answers (python tools/build_site_geo.py)"
+      # Publish the page and its data only. serve.ps1 / open-local.bat exist to
+      # view the map locally and mean nothing on a web server.
+      - name: Assemble the site
+        run: |
+          mkdir -p _site
+          rsync -a --exclude 'serve.ps1' --exclude 'open-local.bat' site/ _site/
+          du -sh _site
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
+        with:
+          path: _site
+      - id: deployment
+        uses: actions/deploy-pages@v4

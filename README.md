@@ -29,7 +29,8 @@
 [収録データと統計](#収録データと統計) ・ [元データ](#元データ) ・
 [confidence と relation_type](#confidence-と-relation_type) ・ [クエリ例](#クエリ例) ・
 [テーブル構成と ER 図](#テーブル構成と-er-図) ・ [ビルド](#ビルド) ・
-[ライセンス](#ライセンス)
+[ライセンス](#ライセンス) ・ [V2（開発中）](#v2開発中) ・ [静的マップ](#静的マップ) ・
+[リポジトリ構成](#リポジトリ構成)
 
 ---
 
@@ -324,11 +325,90 @@ Parquet と SQLite は型を保持しますが、CSV を数値として読み込
 - 地図の座標を出すものではありません。国土交通省の緯度経度は町全体の代表点であり、建物の
   位置ではないため、配送や経路探索には使えません。
 - 番地・号は扱いません。粒度は「西新宿一丁目」までで、「1-2-3」は入っていません。
-- Web サービスではありません。ダウンロードして使うファイルです。
+- Web サービスではありません。ダウンロードして使うファイルです。地点から市区町村を引く
+  [静的マップ](#静的マップ)はありますが、サーバを持たない別の成果物で、リリースデータを
+  問い合わせる手段ではありません。
 - すべての住所に対応先があるわけではありません。対応が見つからなかったものは、埋めずに
   `unresolved` として残しています。
 
 対象外の一覧と、V1 で分かっている制約は [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md)。
+
+---
+
+## V2（開発中）
+
+v1.0.0 以降に加えた機能です。**まだリリースしていません。** 数値は 2026-09-14〜16 の
+手元ビルドでの実測です。どれも市区町村までの対応で、町字（`address_id`）には結びません
+（e-Stat の小地域は jpac の町字より約3.1倍粗く、面を町字に展開すると誤りになるため）。
+
+### 駅 → 市区町村
+
+国土数値情報の鉄道データ（N02、2025年版）の駅を、e-Stat の国勢調査 小地域境界（2020年）で
+市区町村に結びます。この2つの元データはどちらも任意で、`data/raw/` にあるときだけ
+`jpac build` が次の3テーブルを追加で出力します（v1.0.0 の28テーブル → 31テーブル）。
+
+| テーブル | 行数 | 中身 |
+|---|---:|---|
+| `n02_station` | 9,046 | 駅（駅グループ単位） |
+| `bridge_station_municipality` | 9,047 | 駅 ↔ 市区町村。自動確定 8,987行 ／ 要確認 60行（旧浜松市の区コード 54・大阪空港 2〔府県境をまたぐため2候補〕・どの境界にも入らない 4） |
+| `estat_small_area` | 232,019 | e-Stat 小地域の属性。**形状は含みません** |
+
+どの境界にも入らない駅（埋立地や水域）は最寄りの市区町村に寄せず、`unresolved` のまま
+残します。境界の形状はビルド時に読むだけで、リリースデータには入りません
+（[`docs/POLICY.md`](docs/POLICY.md) §3.1）。
+
+### 緯度経度 → 市区町村（標準地域メッシュ）
+
+3次メッシュ（約1km四方）ごとに、そのメッシュにかかる市区町村を表にします
+（陸地メッシュ 380,894。81.9% は1つの市区町村に収まり、残りは候補をすべて持ちます）。
+境界データは2020年時点なので、浜松市の区再編（2024年）は
+[`overrides/municipality_lineage.yml`](overrides/municipality_lineage.yml) で現行コードに
+読み替えています。この表は `jpac build` の出力ではなく、下の静的マップのデータです。
+
+設計と検証: [`docs/STATION_JOIN_PLAN.md`](docs/STATION_JOIN_PLAN.md) ・
+[`docs/ESTAT_BOUNDARY_VERIFICATION.md`](docs/ESTAT_BOUNDARY_VERIFICATION.md) ・
+[`docs/MESH_MUNICIPALITY_LOOKUP.md`](docs/MESH_MUNICIPALITY_LOOKUP.md)。
+
+---
+
+## 静的マップ
+
+地図をクリックすると、その地点の緯度経度・メッシュコード・市区町村を表示する Web ページです
+（[`site/`](site/)）。サーバ処理は無く、GitHub Pages にそのまま置けます。jpac のリリース
+データとは別の成果物です。
+
+- **地点そのものを判定します。** 境界や海岸線が通るメッシュでは、e-Stat の境界線
+  （簡略化していない形）に対してクリックした点を判定します。府県境をまたぐメッシュの中の点も
+  1つの市区町村に決まり、海の上は「判定なし」になります。
+- **決まらないものは決めません。** 県境で境界データが数メートル重なる場所は両方を、旧浜松市
+  北区（2024年の新しい区界が2020年のデータに無い）は中央区・浜名区の2候補を表示します。
+  どの境界にも入らない地点を最寄りの市区町村に寄せることはしません。
+- **表示:** 全国の市区町村の境界線と、メッシュの色分け。ズーム13以上は6次メッシュ
+  （約125m四方）、それより広域は3次メッシュ（約1km四方）で塗ります。
+- **検索:** 市区町村名、住所（分かるのは市区町村まで。町字・番地は扱いません）、緯度経度、
+  メッシュコード（3次〜6次、8〜11桁）。
+- **検証:** 45,001 地点で、ページと同じ判定処理と、元の境界ポリゴンに対する別実装
+  （shapely）の答えを突き合わせ、不一致 0。
+
+| 開き方 | |
+|---|---|
+| GitHub Pages | `main` へ push すると [`.github/workflows/pages.yml`](.github/workflows/pages.yml) が公開します（初回のみ Settings → Pages → Source を「GitHub Actions」に） |
+| Windows | [`site/open-local.bat`](site/open-local.bat) をダブルクリック（PowerShell だけで `http://localhost` に配信） |
+| その他 | `cd site && python3 -m http.server` で表示された URL を開く |
+| `index.html` を直接 | 判定と検索は動きますが、背景地図は出ません（OpenStreetMap がリファラの無い要求を拒否するため） |
+
+データを作り直すとき:
+
+```bash
+pip install -e ".[geo]"                              # shapely。このツールだけが使います
+python tools/build_mesh_table.py --out site/data     # メッシュ → 市区町村 の表
+python tools/build_site_geo.py                       # 境界線（表示用・判定用）→ site/data/geo/
+```
+
+どちらも `data/raw/estat_boundary/`（e-Stat 境界、47都道府県）と `jpac build` の出力
+（`dist/parquet/municipality_version.parquet`）を読みます。境界データを `site/` で配布する
+のは [`docs/POLICY.md`](docs/POLICY.md) §3.2 の例外で、リリースデータには入りません。
+使っている境界は国勢調査の調査区の境界であり、行政区域そのものではありません。
 
 ---
 
@@ -554,6 +634,8 @@ Parquet 35.2 MB ／ CSV.gz 41.3 MB ／ SQLite 1.81 GiB ／ テーブル別 Parqu
 | 国土交通省 | 位置参照情報 大字・町丁目レベル | コード + 代表点の緯度経度 | 年1回（年度単位） |
 | 総務省 | 市外局番の一覧 | 番号区画 ↔ 市外局番 ↔ 対象地域 | 不定期 |
 | 総務省 | 電気通信番号指定状況（固定電話等） | 市内局番の割り当て | 年1回 |
+| 国土交通省 | 国土数値情報 鉄道データ（N02）2025年版 | V2・任意：駅 | 年1回 |
+| 総務省統計局 | 令和2年国勢調査 小地域（町丁・字等別）境界データ | V2・任意：駅と地図の市区町村判定 | 国勢調査ごと（5年） |
 
 日本郵便の月次差分ファイル（追加・廃止）は受け入れて来歴に記録していますが、V1 では
 テーブルに取り込んでいません。変更履歴として扱うには連続した月数の観測が必要なためです。
@@ -799,6 +881,8 @@ CHECK (relation_type IN ('exact','equivalent','parent','child','contains',
   `jpac build` は必要なソースが無い旨（`RequiredSourceMissing`）を報告して終了コード 2 で
   停止します。以下の手順は、受け入れ済みの元データが手元にある場合のものです。
 - 全国ビルドのピークメモリは概ね 4〜6 GB。8 GB のマシンが実質的な下限です。
+- `jpac build` は shapely を使いません。静的マップの境界データを作る
+  `tools/build_site_geo.py` だけが追加依存 `pip install -e ".[geo]"` を必要とします。
 - 版番号はコード版とデータ版を分離しています（`v1.0.0+data-2026-08-23`）。
 
 ```bash
@@ -941,6 +1025,10 @@ jpac verify diagrams                      # 図が元の .mmd と同期してい
 ruff check src tests tools
 ```
 
+`tests/test_site_lookup.py` と `tests/test_geo_pack.py` は、静的マップの JavaScript
+（`site/lookup.js`・`site/geo.js`）を node で動かし、Python 側の書き出しと突き合わせます。
+node が無い環境ではスキップされます。
+
 CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が回しているのはこの一式です。
 テストは `data/raw/` を必要とせずフィクスチャで完結するため、出典に到達できないマシンでも
 走ります。一方、`jpac verify` は実データを必要とするため CI では回りません。方針は
@@ -979,6 +1067,11 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が回している
 | 国土交通省 | 公共データ利用規約（第1.0版）PDL 1.0 | 出典表示 + 加工した旨の明示が必要 |
 | 総務省 | 公共データ利用規約（第1.0版）PDL 1.0 | 出典表示 + 加工した旨の明示が必要 |
 | 日本郵便 | 著作権を主張しない / 自由配布可 | 条件なし。出典表示は本プロジェクトの自主的な記載 |
+| 国土交通省 国土数値情報 N02（V2） | 公共データ利用規約（第1.0版）PDL 1.0 | 出典表示 +「をもとに作成」の明示が必要 |
+| 総務省統計局 e-Stat（V2） | e-Stat 利用規約（政府標準利用規約 第2.0版 準拠、CC BY 4.0 互換） | 出典表示 + 加工した旨の明示が必要。発行元の注意事項5項目を併記 |
+
+静的マップの背景は OpenStreetMap のタイルを表示しているだけで、そのデータは取り込んでいません
+（© OpenStreetMap contributors）。
 
 出典表示は `dist/NOTICE.md` に出力されます。実際に使用したファイルから生成されるため、
 ビルドとずれることがありません。規約本文は毎回再ハッシュされ、人手レビュー済みのベース
@@ -1016,3 +1109,37 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が回している
 | [`docs/QUALITY_POLICY.md`](docs/QUALITY_POLICY.md) | 指標としきい値、リリースを止める条件 |
 | [`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md) | テスト層とフィクスチャ、検証ツールの役割分担 |
 | [`docs/LICENSE_POLICY.md`](docs/LICENSE_POLICY.md) | ライセンス判断とドリフト検出 |
+
+**V2（駅・メッシュ・地図）**
+
+| | |
+|---|---|
+| [`docs/MESH_MUNICIPALITY_LOOKUP.md`](docs/MESH_MUNICIPALITY_LOOKUP.md) | 静的マップの要件・データ形式・検証・軽量化 |
+| [`docs/STATION_JOIN_PLAN.md`](docs/STATION_JOIN_PLAN.md) | 駅 → 市区町村 の実装手順と進め方 |
+| [`docs/STATION_JOIN_PREFLIGHT.md`](docs/STATION_JOIN_PREFLIGHT.md) | 実装前の実測調査 |
+| [`docs/ESTAT_BOUNDARY_VERIFICATION.md`](docs/ESTAT_BOUNDARY_VERIFICATION.md) | e-Stat 境界データの実測検証 |
+| [`docs/LICENSE_REVIEW_2026_09.md`](docs/LICENSE_REVIEW_2026_09.md) | V2 の元データの規約を逐語で読んだ記録 |
+| [`docs/N03_BOUNDARY_DESIGN.md`](docs/N03_BOUNDARY_DESIGN.md) | 国土数値情報 N03（行政区域）の設計と、配布を見送っている理由 |
+| [`docs/GEO_EXPANSION_RESEARCH.md`](docs/GEO_EXPANSION_RESEARCH.md) | 地理情報の拡張候補の調査 |
+
+`docs/schema.sql` と上の統計は v1.0.0 のリリースデータのものです。V2 の3テーブルは
+次のリリースで反映します。
+
+---
+
+## リポジトリ構成
+
+| パス | 中身 | Git |
+|---|---|---|
+| `src/jp_address_crosswalk/` | ビルド本体（`jpac` コマンド） | 管理 |
+| `config/` | 元データの定義・照合規則・品質しきい値・期待スキーマ | 管理 |
+| `overrides/` | 人手の上書きと、市区町村の廃置分合の登録簿 | 管理 |
+| `identity/address_id_ledger.csv.gz` | `address_id` の台帳 | 管理 |
+| `tests/` | テストとフィクスチャ（小さな元データ） | 管理 |
+| `tools/` | `jpac verify` の検証スクリプト、図の生成、静的マップのデータ生成 | 管理 |
+| `site/` | 静的マップ。`site/data/` は `mesh_data.js` と `geo/` だけを管理 | 管理 |
+| `docs/` | 設計・方針・検証の記録、図、SQL の例 | 管理 |
+| `data/raw/` | 受け入れ済みの元データ | 対象外 |
+| `data/cache/` ・ `data/previous/` | ビルドの一時ファイルと前回リリースの控え | 対象外 |
+| `dist/` | ビルド出力（リリースデータ） | 対象外 |
+| `reports/*.csv` | ビルドが書くレビュー用の一覧 | 対象外 |
