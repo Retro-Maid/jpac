@@ -133,6 +133,37 @@ point itself to be decided, and that needs the boundary where it runs.
   not listed in a release's `SOURCES.yml` / `NOTICE.md`, and `jpac build` is
   unchanged. The map links to jpac by `lg_code` and nothing else.
 
+### Station points and municipality-level jpac data (added 2026-09-16)
+
+The map also answers "what else does jpac already know about this municipality".
+Three payloads join the geometry above, built by `tools/build_site_data.py` into
+`site/data/jpac_data.js`:
+
+| Payload | What it is | Key |
+|---|---|---|
+| `stations` | One **representative point** per N02 station group, with name and operator | `lg_code`, 0 or more |
+| `postal` | 郵便番号 per municipality; P3 records (「以下に掲載がない場合」等) resolved to their real 7 digits, with the class kept | `lg_code` |
+| `telephone` | 市外局番 per municipality via the numbering area, carrying the publisher's partial-coverage note verbatim | `lg_code` |
+
+- **A station point is N02's own geometry, not a boundary-derived coordinate.**
+  §3.1's "not re-derived into coordinates" rule guards the *boundary* sources: a
+  centroid of an e-Stat polygon would state a municipality's location as though
+  it had been measured. A station's representative point is computed from that
+  station's N02 polyline and from nothing else, by the same rule in
+  `build/spatial.py` that the station→municipality join already uses — so a pin
+  on the map and `bridge_station_municipality` cannot disagree.
+- **Representative point, never a 駅舎 or 出入口.** The same restriction the MLIT
+  coordinates carry in `DATA_LICENSE.md`. The panel says so where it shows one.
+- **市区町村 stays the ceiling.** §3.1's granularity rule is unchanged and §4
+  still holds: nothing here descends to 町字, and a station whose point falls on
+  a boundary keeps every candidate municipality rather than picking one.
+- **Not a release artifact either.** `site/data/jpac_data.js` is produced by a
+  separate tool, is absent from `SOURCES.yml` / `NOTICE.md`, and `jpac build` is
+  unchanged. It is a projection of tables the release already ships, keyed by
+  `lg_code`.
+- **Attribution travels with it.** The N02, 日本郵便 and 総務省 attributions are
+  in the page in `DATA_LICENSE.md`'s wording, shown with the rest of the 出典.
+
 ## 4. Ambiguity policy (hard)
 
 > Leaving data unresolved is acceptable. Inventing a wrong 1:1 mapping is a defect.

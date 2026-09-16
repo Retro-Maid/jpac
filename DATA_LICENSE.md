@@ -124,6 +124,13 @@ Terms were read verbatim and reviewed by a person on 2026-09-14; the reasoning i
       https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html をもとに jp-address-crosswalk 作成
 ```
 
+- **Where the station points go.** A release ships no station coordinates:
+  `bridge_station_municipality` carries `lg_code` and nothing spatial
+  (`docs/POLICY.md` §3.1). The static map in `site/` shows one **representative point
+  per station group**, computed from N02's own polyline for that station
+  (`docs/POLICY.md` §3.2). Like the MLIT coordinates above it must never be described
+  as a 駅舎 or 出入口 location, and the page says so where it shows one.
+
 ### 総務省統計局 — 令和2年国勢調査 小地域（町丁・字等別）境界データ
 
 - **Terms:** 政府統計の総合窓口(e-Stat)利用規約 (政府標準利用規約 第2.0版 準拠, stated to be
@@ -204,7 +211,10 @@ safe reading when a derived work mixes all of them.
 
 If you redistribute the static map's data (`site/data/`), keep the e-Stat attribution
 and its five caveats with it — both are embedded in `mesh_data.js` — and do not describe
-its outlines as 行政区域 or its answers as finer than the municipality.
+its outlines as 行政区域 or its answers as finer than the municipality. `jpac_data.js`
+additionally carries N02 station points, 郵便番号 and 市外局番: keep the 国土交通省 and
+総務省 attributions above with it (日本郵便 requires none, and it is given voluntarily),
+and do not describe a station's representative point as a building location.
 
 If you redistribute the **unmodified payloads** — on their own, or bundled as this
 project does — requirements 1, 4 and 5 still apply, and 2 and 3 are replaced by their
