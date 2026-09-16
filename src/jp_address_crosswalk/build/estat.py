@@ -32,6 +32,22 @@ log = get_logger(__name__)
 
 HCODE_TOWN = "8101"
 
+# 抜け地. The polygon carries the *enclosing* municipality's code, but the area
+# is another municipality's 飛び地 cut into it: measured, each of the 7 is
+# 83-99% covered by that neighbour's own ``KIGO_D = 'D'`` polygon. Keeping it
+# would place a point there in both municipalities, one of them wrongly.
+KIGO_D_HOLE = "D1"
+
+
+def is_land_polygon(hcode: str, kigo_d: str) -> bool:
+    """Whether a 小地域 polygon may decide which municipality a point is in.
+
+    One predicate for every spatial consumer, so the station join and the mesh
+    table cannot disagree about what counts as land — they did, once: the
+    station reader kept 抜け地 while the mesh builder dropped them.
+    """
+    return hcode == HCODE_TOWN and kigo_d != KIGO_D_HOLE
+
 # 国勢調査 is not conducted here, so the absence of a boundary is the correct
 # state and not a defect to chase. 北方領土6村 (根室振興局).
 NOT_SURVEYED = {"01695", "01696", "01697", "01698", "01699", "01700"}

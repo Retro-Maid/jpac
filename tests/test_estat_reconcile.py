@@ -115,12 +115,12 @@ class TestReconcile:
         it has been investigated and recorded.
         """
         _, rec = eb.reconcile(
-            _small_area([("22136", "浜松市北区", "8101")]),
+            _small_area([("22135", "浜松市北区", "8101")]),
             _municipality([]),
             lineage={},
-            unlisted={"221368": "中央区と浜名区に分割された"},
+            unlisted={"221350": "中央区と浜名区に分割された"},
         )
-        assert _status(rec, "22136") == "split_no_single_successor"
+        assert _status(rec, "22135") == "split_no_single_successor"
         assert rec.filter(pl.col("reconcile_status").is_in(list(eb.UNEXPLAINED))).height == 0
 
     def test_a_nameless_polygon_is_unassigned_not_a_mismatch(self) -> None:
@@ -163,3 +163,21 @@ class TestStatusVocabulary:
         )
         produced = set(labelled["reconcile_status"]) | set(rec["reconcile_status"])
         assert produced <= set(eb.STATUSES), f"undeclared: {produced - set(eb.STATUSES)}"
+
+
+class TestLandPolygon:
+    """One definition of "land" for every spatial consumer (station, mesh)."""
+
+    def test_an_ordinary_town_polygon_is_land(self) -> None:
+        assert eb.is_land_polygon("8101", "")
+
+    def test_a_detached_part_is_land(self) -> None:
+        """飛び地 (D) is a genuine part of its own municipality."""
+        assert eb.is_land_polygon("8101", "D")
+
+    def test_a_hole_is_not_land(self) -> None:
+        """抜け地 (D1) carries the enclosing code over another municipality's 飛び地."""
+        assert not eb.is_land_polygon("8101", "D1")
+
+    def test_a_water_district_is_not_land(self) -> None:
+        assert not eb.is_land_polygon("8154", "")

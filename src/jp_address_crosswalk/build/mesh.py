@@ -108,10 +108,23 @@ def classify_cells(
 ) -> dict[int, set[str]]:
     """Packed cell -> the JIS city codes that actually reach into it.
 
-    Edges decide the shared cells; a cell no edge enters lies wholly within one
-    小地域, so its centre alone identifies it. Cells whose centre falls in no
-    polygon are absent rather than present-and-empty — they are sea, or one of
-    the prefecture seams, and the caller must not fill them in.
+    Two sources, unioned for every cell:
+
+    * **Edges** — a polygon whose boundary passes through the cell reaches into it.
+    * **The centre** — every polygon containing the cell's centre. A cell no edge
+      enters lies wholly within one 小地域, so this alone identifies it.
+
+    The centre test must also run on cells edges already claimed. e-Stat does not
+    join prefecture seams, so neighbouring prefectures' polygons overlap: a
+    sliver of one prefecture's edge can enter a cell that another prefecture's
+    polygon covers entirely, with none of *that* polygon's edges inside. Edges
+    alone then name only the sliver. Measured before this was fixed: 51 border
+    cells shipped as ``contains``/``auto`` for a municipality holding under 1% of
+    the cell, while the one holding ~100% was missing.
+
+    Cells whose centre falls in no polygon and that no edge enters are absent
+    rather than present-and-empty — they are sea, or a seam gap, and the caller
+    must not fill them in.
     """
     out: dict[int, set[str]] = {}
     for code, _box, rings in boundaries:
@@ -130,44 +143,82 @@ def classify_cells(
             for col in range(int(x0 // DLNG_3), int(x1 // DLNG_3) + 1):
                 candidates.add(row * _PACK + col)
 
-    todo = [c for c in candidates if c not in out]
+    todo = sorted(candidates)
     for n, cell in enumerate(todo, 1):
         x, y = cell_centre(cell)
         for i in index.candidates(x, y):
             if point_in_rings(x, y, ringsets[i]):
-                out[cell] = {codes[i]}
-                break
+                out.setdefault(cell, set()).add(codes[i])
         if progress and n % 50_000 == 0:
             progress(n, len(todo))
     return out
+
+
+def _candidates(
+    jis_codes: Iterable[str], lg_by_jis: dict[str, str], successors: dict[str, list[str]]
+) -> list[tuple[str | None, list[str], bool]]:
+    """``(lg_code, source JIS codes, via_lineage)`` per distinct candidate.
+
+    A cell is decided in *current* municipalities, so two old codes carried to
+    the same successor (浜松市中区・東区 → 中央区) are one candidate, not two. A
+    code with no current match and no successor stays a NULL candidate of its
+    own — never merged with another, never dropped.
+    """
+    by_lg: dict[str, tuple[list[str], bool]] = {}
+    unknown: list[tuple[None, list[str], bool]] = []
+    for jis in sorted(jis_codes):
+        if jis in lg_by_jis:
+            targets, via = [lg_by_jis[jis]], False
+        elif jis in successors:
+            targets, via = successors[jis], True
+        else:
+            unknown.append((None, [jis], False))
+            continue
+        for lg in targets:
+            sources, was_via = by_lg.get(lg, ([], False))
+            by_lg[lg] = (sources + [jis], was_via or via)
+    return [(lg, s, v) for lg, (s, v) in sorted(by_lg.items())] + unknown
 
 
 def build_mesh_municipality(
     boundaries: Sequence[tuple[str, tuple[float, float, float, float], list]],
     lg_by_jis: dict[str, str],
     progress: Callable[[int, int], None] | None = None,
+    *,
+    successors: dict[str, list[str]] | None = None,
 ) -> pl.DataFrame:
     """One row per (mesh cell, candidate municipality).
 
     Deliberately the same shape as ``bridge_station_municipality``: the two
     answer the same question about different inputs, and a reader who has
     learned one should not have to learn the other.
+
+    ``successors`` maps a boundary JIS code the current municipalities lack to
+    the current ``lg_code``\\s that took over its area, from
+    ``overrides/municipality_lineage.yml`` (docs/MESH_MUNICIPALITY_LOOKUP.md R7).
+    One successor is a 1:1 transition and resolves the cell; several (旧浜松市
+    北区) make every one of them a candidate. A containment carried through an
+    attested transition is still a containment — the old ward's area lies inside
+    the new ward's — so a uniform cell resolved that way stays ``auto``.
+    ``boundary_jis_city_code`` holds the first source code; the note lists all.
     """
+    successors = successors or {}
     with stage_context("mesh", "classify"):
         cells = classify_cells(boundaries, progress=progress)
 
         rows: list[dict] = []
+        uniform = 0
         for cell, jis_codes in cells.items():
-            ordered = sorted(jis_codes)
-            n = len(ordered)
+            cands = _candidates(jis_codes, lg_by_jis, successors)
+            n = len(cands)
+            uniform += n == 1
             relation = RELATION_CONTAINS if n == 1 else RELATION_AMBIGUOUS
             code = cell_code(cell)
-            for jis in ordered:
-                lg = lg_by_jis.get(jis)
+            for lg, sources, via in cands:
                 rows.append({
                     "mesh_code": code,
                     "lg_code": lg,
-                    "boundary_jis_city_code": jis,
+                    "boundary_jis_city_code": sources[0],
                     "relation_type": relation,
                     "match_method": MATCH_MESH,
                     # Containment held or it did not (docs/POLICY.md §6).
@@ -175,13 +226,12 @@ def build_mesh_municipality(
                     "candidate_count": n,
                     "is_unique_match": 1 if n == 1 else 0,
                     "verification_status": "auto" if n == 1 and lg else "review_required",
-                    "mismatch_note": _note(n, lg, jis),
+                    "mismatch_note": _note(n, lg, sources, via),
                 })
 
         table = pl.DataFrame(rows, schema=_SCHEMA).sort(
-            ["mesh_code", "boundary_jis_city_code"]
+            ["mesh_code", "lg_code", "boundary_jis_city_code"], nulls_last=True
         )
-        uniform = sum(1 for v in cells.values() if len(v) == 1)
         log.info(
             "built mesh -> municipality table",
             land_cells=len(cells),
@@ -189,8 +239,125 @@ def build_mesh_municipality(
             mixed=len(cells) - uniform,
             rows=table.height,
             unresolved_lg_code=table.filter(pl.col("lg_code").is_null()).height,
+            via_lineage=table.filter(
+                pl.col("mismatch_note").str.contains("lineage", literal=True)
+            ).height,
         )
         return table
+
+
+def successors_from_lineage(lineage: dict, lg_by_jis: dict[str, str]) -> dict[str, list[str]]:
+    """Boundary JIS code -> the current ``lg_code``\\s that took over its area.
+
+    Read from ``overrides/municipality_lineage.yml`` (docs/MESH_MUNICIPALITY_LOOKUP.md
+    R7): a 1:1 ``transitions`` entry resolves the code; an ``unlisted`` entry
+    with ``successors`` (a split) makes every successor a candidate. A code the
+    current municipalities still carry is never overridden.
+    """
+    out: dict[str, list[str]] = {}
+    for e in lineage.get("transitions") or []:
+        old, new = str(e["old_lg_code"]), str(e["new_lg_code"])
+        if old[:5] not in lg_by_jis:
+            out[old[:5]] = [new]
+    for e in lineage.get("unlisted") or []:
+        if e.get("successors") and str(e["lg_code"])[:5] not in lg_by_jis:
+            out[str(e["lg_code"])[:5]] = [str(x) for x in e["successors"]]
+    return out
+
+
+UNKNOWN_INDEX = 0xFFFF
+
+
+def _uvarint(n: int, out: bytearray) -> None:
+    """Unsigned LEB128."""
+    while True:
+        b = n & 0x7F
+        n >>= 7
+        if n:
+            out.append(b | 0x80)
+        else:
+            out.append(b)
+            return
+
+
+def _runs(items: list[tuple[int, tuple[int, ...]]]) -> list[tuple[int, int, tuple[int, ...]]]:
+    """(start code, length, value) for maximal runs of consecutive codes with one value.
+
+    Consecutive in the numeric sense: the last two digits of a 3次 code are its
+    row and column inside a 2次 mesh, so 00..99 is one whole 2次 mesh, and a
+    municipality usually holds long stretches of it.
+    """
+    runs: list[tuple[int, int, tuple[int, ...]]] = []
+    for code, val in items:
+        if runs and runs[-1][2] == val and runs[-1][0] + runs[-1][1] == code:
+            s, n, v = runs[-1]
+            runs[-1] = (s, n + 1, v)
+        else:
+            runs.append((code, 1, val))
+    return runs
+
+
+def pack_lookup(table: pl.DataFrame) -> tuple[bytes, bytes, list[str]]:
+    """The two binaries the static map reads (docs/MESH_MUNICIPALITY_LOOKUP.md R8).
+
+    Both are streams of unsigned LEB128 varints, holding **runs** of
+    consecutive mesh codes that share one answer, in ascending order:
+
+    * ``mesh_uniform.bin`` — cells with exactly one candidate that names a
+      current municipality. Run count, then per run: gap from the previous
+      run's end, run length, municipality index.
+    * ``mesh_mixed.bin`` — every other land cell. Run count, then per run: gap,
+      length, candidate count, candidate indices.
+
+    Measured: the fixed-width first version (``<IH`` per cell) was 1.87 MB +
+    0.63 MB; as runs the page's initial payload shrinks several-fold, which is
+    most of what the page parses before it can answer anything.
+
+    A candidate with no ``lg_code`` is written as ``UNKNOWN_INDEX``, never
+    dropped. Dropped, it shrinks a mixed cell to one candidate — which reads as
+    settled — or removes the cell altogether, which reads as sea.
+
+    Returns both byte strings and the ``lg_code`` each index stands for. The
+    reader is ``site/lookup.js``; tests/test_site_lookup.py runs one against
+    the other.
+    """
+    order = sorted(table["lg_code"].drop_nulls().unique().to_list())
+    if len(order) >= UNKNOWN_INDEX:
+        raise ValueError(f"{len(order)} municipalities do not fit a uint16 index")
+    index = {lg: i for i, lg in enumerate(order)}
+
+    uniform = table.filter(
+        (pl.col("candidate_count") == 1) & pl.col("lg_code").is_not_null()
+    ).sort("mesh_code")
+    u_items = [(int(c), (index[lg],)) for c, lg in uniform.select("mesh_code", "lg_code").iter_rows()]
+
+    rest = (
+        table.join(uniform.select("mesh_code"), on="mesh_code", how="anti")
+        .group_by("mesh_code")
+        .agg(pl.col("lg_code"))
+        .sort("mesh_code")
+    )
+    m_items = [
+        (int(c), tuple(sorted({UNKNOWN_INDEX if lg is None else index[lg] for lg in lgs})))
+        for c, lgs in rest.iter_rows()
+    ]
+
+    def encode(items: list[tuple[int, tuple[int, ...]]], with_count: bool) -> bytes:
+        runs = _runs(items)
+        out = bytearray()
+        _uvarint(len(runs), out)
+        end = 0
+        for start, n, val in runs:
+            _uvarint(start - end, out)
+            _uvarint(n, out)
+            if with_count:
+                _uvarint(len(val), out)
+            for v in val:
+                _uvarint(v, out)
+            end = start + n
+        return bytes(out)
+
+    return encode(u_items, False), encode(m_items, True), order
 
 
 _SCHEMA = {
@@ -207,12 +374,18 @@ _SCHEMA = {
 }
 
 
-def _note(n: int, lg: str | None, jis: str) -> str | None:
+def _note(n: int, lg: str | None, sources: list[str], via: bool) -> str | None:
+    parts: list[str] = []
     if lg is None:
-        return (
-            f"境界データ側のコード {jis} が jpac の現行市区町村に無いため lg_code は NULL。"
+        parts.append(
+            f"境界データ側のコード {sources[0]} が jpac の現行市区町村に無いため lg_code は NULL。"
             "断面のズレ。overrides/municipality_lineage.yml を参照"
         )
+    elif via:
+        parts.append(
+            f"境界データ側のコード {', '.join(sources)} を廃置分合の承継先 {lg} に読み替えた"
+            "（overrides/municipality_lineage.yml）"
+        )
     if n > 1:
-        return "セルが複数の市区町村にまたがる。候補を残す（POLICY.md §4）"
-    return None
+        parts.append("セルが複数の市区町村にまたがる。候補を残す（POLICY.md §4）")
+    return "。".join(parts) or None

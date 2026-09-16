@@ -22,19 +22,25 @@ if hasattr(_sys.stdout, "reconfigure") and (_sys.stdout.encoding or "").lower() 
         _sys.stderr.reconfigure(errors="replace")
 
 import argparse
+import base64
 import json
-import struct
 import sys
 import time
+from datetime import date
 from pathlib import Path
 
 import polars as pl
+import yaml
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
+from jp_address_crosswalk.build.estat import KIGO_D_HOLE, is_land_polygon  # noqa: E402
 from jp_address_crosswalk.build.mesh import (  # noqa: E402
+    UNKNOWN_INDEX,
     build_mesh_municipality,
+    pack_lookup,
+    successors_from_lineage,
 )
 from jp_address_crosswalk.payload import (  # noqa: E402
     SHP_POLYGON,
@@ -43,7 +49,6 @@ from jp_address_crosswalk.payload import (  # noqa: E402
     read_shp_member,
 )
 
-HCODE_TOWN = "8101"
 HCODE_WATER = "8154"
 
 ap = argparse.ArgumentParser()
@@ -65,11 +70,14 @@ t0 = time.time()
 boundaries: list[tuple[str, tuple[float, float, float, float], list]] = []
 datums: set[str] = set()
 dropped = {"water": 0, "hole": 0}
+estat_names: dict[str, str] = {}   # JIS 5桁 → e-Stat の CITY_NAME（lineage の目視確認用）
 
 for n, path in enumerate(sorted(RAW.glob("*.zip")), 1):
     datums.add(read_prj_member(path).split(",", 1)[0].strip())
     cols, rows = read_dbf_member(path)
-    ix = {c: cols.index(c) for c in ("PREF", "CITY", "HCODE", "KIGO_D")}
+    ix = {c: cols.index(c) for c in ("PREF", "CITY", "HCODE", "KIGO_D", "CITY_NAME")}
+    for row in rows:
+        estat_names.setdefault(row[ix["PREF"]] + row[ix["CITY"]], row[ix["CITY_NAME"]])
     shapes = read_shp_member(path, expect=SHP_POLYGON)
     if len(shapes) != len(rows):
         sys.exit(f"{path.name}: 図形と属性の件数が一致しない")
@@ -79,10 +87,8 @@ for n, path in enumerate(sorted(RAW.glob("*.zip")), 1):
         if row[ix["HCODE"]] == HCODE_WATER:
             dropped["water"] += 1
             continue
-        if row[ix["HCODE"]] != HCODE_TOWN:
-            continue
-        if row[ix["KIGO_D"]] == "D1":
-            dropped["hole"] += 1
+        if not is_land_polygon(row[ix["HCODE"]], row[ix["KIGO_D"]]):
+            dropped["hole"] += row[ix["KIGO_D"]] == KIGO_D_HOLE
             continue
         boundaries.append((row[ix["PREF"]] + row[ix["CITY"]], shape[0], shape[1]))
     print(f"  [{n:2}/47] {path.name}  累計 {len(boundaries):,}", flush=True)
@@ -102,13 +108,53 @@ if dupes.len():
 lg_by_jis = dict(pairs.filter(~pl.col("jis_city_code").is_in(dupes.to_list())).iter_rows())
 print(f"現行市区町村 {len(lg_by_jis):,}")
 
+
+def _find(node, key):
+    """First value under `key` anywhere in the source spec (depth-first)."""
+    if isinstance(node, dict):
+        if key in node:
+            return node[key]
+        for v in node.values():
+            found = _find(v, key)
+            if found is not None:
+                return found
+    return None
+
+
+spec = yaml.safe_load((ROOT / "config" / "sources.yml").read_text(encoding="utf-8"))
+spec = spec["sources"]["estat_boundary"]
+attribution = _find(spec, "attribution") or {}
+caveats = _find(spec, "publisher_caveats") or {}
+if not attribution.get("processed") or not caveats.get("items"):
+    sys.exit("config/sources.yml の estat_boundary に attribution.processed / publisher_caveats.items が無い")
+ATTRIBUTION = " ".join(s.strip() for s in attribution["processed"].splitlines() if s.strip())
+CAVEATS = [str(c) for c in caveats["items"]]
+
+# R7: 現行に無いコードは lineage の承継先に読み替える。1:1 の transitions は
+# 解決し、分割（unlisted の successors）は全承継先を候補に残す。
+lineage = yaml.safe_load((ROOT / "overrides" / "municipality_lineage.yml")
+                         .read_text(encoding="utf-8")) or {}
+current_lg = set(lg_by_jis.values())
+successors = successors_from_lineage(lineage, lg_by_jis)
+stale = sorted({lg for v in successors.values() for lg in v} - current_lg)
+if stale:
+    sys.exit(f"lineage の承継先が現行市区町村に無い: {stale}")
+# 旧名と承継先の名前を並べて出す。コードだけだと「北区→天竜区」のような取り違えが
+# 目に入らない（実際に lineage.yml のラベルが入れ替わっていた。2026-09-15 修正）。
+_cur = {r["lg_code"]: "".join(filter(None, [r["city"], r["ward"]]))
+        for r in mv.filter(pl.col("is_current") == 1).iter_rows(named=True)}
+print(f"lineage による読み替え {len(successors)} コード:")
+for k, v in sorted(successors.items()):
+    print(f"  {k} {estat_names.get(k, '?')} → " + " / ".join(f"{lg} {_cur.get(lg, '?')}" for lg in v))
+
 # -------------------------------------------------------------------- build
 def progress(done: int, total: int) -> None:
-    print(f"    内部セル {done:,}/{total:,} ({time.time()-t0:.0f}s)", flush=True)
+    print(f"    セル {done:,}/{total:,} ({time.time()-t0:.0f}s)", flush=True)
 
 
 print("\nセルを分類中…", flush=True)
-table = build_mesh_municipality(boundaries, lg_by_jis, progress=progress)
+table = build_mesh_municipality(boundaries, lg_by_jis, progress=progress,
+                                successors=successors)
 
 uniform = table.filter(pl.col("relation_type") == "contains")
 mixed = table.filter(pl.col("relation_type") == "ambiguous")
@@ -118,7 +164,8 @@ land = cells_uniform + cells_mixed
 
 print(f"\n陸地セル {land:,}  均一 {cells_uniform:,} ({cells_uniform/land:.1%})  "
       f"混在 {cells_mixed:,} ({cells_mixed/land:.1%})")
-print(f"lg_code が NULL の行: {table.filter(pl.col('lg_code').is_null()).height:,}")
+print(f"lg_code が NULL の行: {table.filter(pl.col('lg_code').is_null()).height:,}  "
+      f"内訳 {dict(table.filter(pl.col('lg_code').is_null())['boundary_jis_city_code'].value_counts().iter_rows())}")
 
 # ------------------------------------------------------------------- write
 OUT.mkdir(parents=True, exist_ok=True)
@@ -127,47 +174,27 @@ table.write_parquet(OUT / "mesh_municipality.parquet")
 # R8: 均一セルは mesh_code(uint32) + 市区町村インデックス(uint16) の昇順配列。
 # 市区町村は 1,918 件なので uint16 に収まる。lg_code を文字列のまま配ると
 # 6倍になるうえ、先頭ゼロを落とす実装に出会う危険がある。
-index: dict[str, int] = {}
-order: list[str] = []
-for lg in sorted(x for x in table["lg_code"].drop_nulls().unique().to_list()):
-    index[lg] = len(order)
-    order.append(lg)
+ub, mb, order = pack_lookup(table)
+(OUT / "mesh_uniform.bin").write_bytes(ub)
+(OUT / "mesh_mixed.bin").write_bytes(mb)
+print(f"mesh_uniform.bin {len(ub):,} B  mesh_mixed.bin {len(mb):,} B  "
+      f"lg_code が NULL の候補を含むセル {table.filter(pl.col('lg_code').is_null())['mesh_code'].n_unique():,}")
 
-u = uniform.filter(pl.col("lg_code").is_not_null()).sort("mesh_code")
-buf = bytearray()
-for code, lg in zip(u["mesh_code"].to_list(), u["lg_code"].to_list(), strict=True):
-    buf += struct.pack("<IH", int(code), index[lg])
-(OUT / "mesh_uniform.bin").write_bytes(bytes(buf))
-
-# 混在セルは可変長。mesh_code(uint32) + 候補数(uint8) + 候補(uint16 * n)。
-grouped = (mixed.filter(pl.col("lg_code").is_not_null())
-                .group_by("mesh_code")
-                .agg(pl.col("lg_code"))
-                .sort("mesh_code"))
-buf = bytearray()
-for code, lgs in grouped.iter_rows():
-    ids = sorted({index[x] for x in lgs})
-    buf += struct.pack("<IB", int(code), len(ids))
-    for i in ids:
-        buf += struct.pack("<H", i)
-(OUT / "mesh_mixed.bin").write_bytes(bytes(buf))
-
+# 政令指定都市の区は `ward` 列にある。落とすと 浜松市中央区 と 浜名区 が
+# どちらも「静岡県浜松市」になり、候補2件が同じ名前で並ぶ。
 names = (mv.filter(pl.col("is_current") == 1)
-           .select("lg_code", "jis_city_code", "pref", "county", "city")
+           .select("lg_code", "jis_city_code", "pref", "county", "city", "ward")
            .unique(subset=["lg_code"]))
 by_lg = {r["lg_code"]: r for r in names.iter_rows(named=True)}
-(OUT / "municipality.json").write_text(json.dumps({
-    "generated": "2026-09-14",
+meta = {
+    "generated": date.today().isoformat(),
     "boundary_edition": "令和2年国勢調査 小地域（町丁・字等別）JGD2011",
-    "attribution": "出典：「令和2年国勢調査 小地域（町丁・字等別）境界データ」"
-                   "（総務省統計局 e-Stat）を加工して作成",
-    "caveats": [
-        "調査区の境界を基に作成しているため、実際の町丁・字の境界および名称と一致しない場合があります。",
-        "一つの市区町村内に同一の基本単位区又は町丁・字番号を持つ境域が複数存在する場合があります。",
-        "面積は境界データの図郭により算出したものであり、国土地理院等の公式な面積と一致しません。",
-        "都道府県の境界線は接合処理を行っていないため、県境にずれが生じる場合があります。",
-        "他県の飛び地の境域および水面調査区の情報が含まれます。",
-    ],
+    # mesh_mixed.bin の候補にこの値が現れたら「市区町村を特定できない候補」。
+    "unknown_index": UNKNOWN_INDEX,
+    # 出典の文言と注意事項は人がレビューした config/sources.yml から取る。
+    # ここに書き写すと、レビュー済みの文言と黙って食い違いうる（R9）。
+    "attribution": ATTRIBUTION,
+    "caveats": CAVEATS,
     "municipalities": [
         {
             "lg_code": lg,
@@ -176,13 +203,29 @@ by_lg = {r["lg_code"]: r for r in names.iter_rows(named=True)}
                 (by_lg.get(lg) or {}).get("pref"),
                 (by_lg.get(lg) or {}).get("county"),
                 (by_lg.get(lg) or {}).get("city"),
+                (by_lg.get(lg) or {}).get("ward"),
             ])),
         }
         for lg in order
     ],
-}, ensure_ascii=False, indent=1), encoding="utf-8")
+}
+(OUT / "municipality.json").write_text(
+    json.dumps(meta, ensure_ascii=False, indent=1), encoding="utf-8")
 
-for f in ("mesh_uniform.bin", "mesh_mixed.bin", "municipality.json",
+# 静的マップ（site/）用。中身は上の2つの .bin と municipality.json を1本にしたもの。
+# fetch ではなく <script> で読むので、index.html をダブルクリックで開いた file:// でも
+# 動く（ブラウザは file:// からの fetch を CORS で塞ぐ）。base64 で約 1.33 倍になるが、
+# GitHub Pages は .js を gzip で配るので転送量はむしろ減る。
+(OUT / "mesh_data.js").write_text(
+    "// generated by tools/build_mesh_table.py — do not edit\n"
+    "window.MESH_DATA = " + json.dumps({
+        "uniform": base64.b64encode(ub).decode("ascii"),
+        "mixed": base64.b64encode(mb).decode("ascii"),
+        "meta": meta,
+    }, ensure_ascii=False, separators=(",", ":")) + ";\n",
+    encoding="utf-8")
+
+for f in ("mesh_uniform.bin", "mesh_mixed.bin", "municipality.json", "mesh_data.js",
           "mesh_municipality.parquet"):
     p = OUT / f
     print(f"  {f:28} {p.stat().st_size/1024/1024:7.2f} MB")

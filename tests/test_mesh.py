@@ -71,11 +71,56 @@ class TestClassify:
         straddling = cell_of(35.05, 139.10)
         assert cells[straddling] == {"11111", "22222"}
 
+    def test_a_sliver_edge_does_not_hide_the_polygon_covering_the_cell(self) -> None:
+        """Unjoined prefecture seam: the regression that shipped 51 wrong `auto` cells.
+
+        OWNER covers the whole cell and none of its edges enter it; the other
+        prefecture's polygon overlaps it by a sliver whose edge does. Edges
+        alone name only the sliver.
+        """
+        owner = _square("11111", 139.00, 35.00, 139.20, 35.10)
+        sliver = _square("22222", 139.0995, 35.03, 139.30, 35.07)
+        cell = cell_of(35.046, 139.095)
+        assert classify_cells([owner, sliver])[cell] == {"11111", "22222"}
+        assert classify_cells([sliver, owner])[cell] == {"11111", "22222"}
+
+    def test_overlapping_polygons_both_count_at_the_centre(self) -> None:
+        """No edge enters, two polygons cover: both, not whichever came first."""
+        a = _square("11111", 139.00, 35.00, 139.20, 35.10)
+        b = _square("22222", 138.90, 34.90, 139.30, 35.20)
+        assert classify_cells([a, b])[cell_of(35.05, 139.10)] == {"11111", "22222"}
+
     def test_a_cell_outside_every_polygon_is_absent(self) -> None:
         """Sea and prefecture seams: absent, never filled in from a neighbour."""
         cells = classify_cells([WEST, EAST])
         assert cell_of(35.05, 138.50) not in cells
         assert cell_of(36.50, 139.05) not in cells
+
+
+class TestSuccessorsFromLineage:
+    """The lineage file read the way both map tools read it."""
+
+    LINEAGE = {
+        "transitions": [
+            {"old_lg_code": "221317", "new_lg_code": "221384"},   # 中区 → 中央区
+            {"old_lg_code": "221376", "new_lg_code": "221406"},   # 天竜区 → 天竜区
+            {"old_lg_code": "131016", "new_lg_code": "999999"},   # still current: ignored
+        ],
+        "unlisted": [
+            {"lg_code": "221350", "successors": ["221384", "221392"]},  # 北区: split
+            {"lg_code": "999990"},                                     # no successors given
+        ],
+    }
+    CURRENT = {"13101": "131016", "22138": "221384", "22139": "221392", "22140": "221406"}
+
+    def test_one_to_one_and_split(self) -> None:
+        from jp_address_crosswalk.build.mesh import successors_from_lineage
+        got = successors_from_lineage(self.LINEAGE, self.CURRENT)
+        assert got == {"22131": ["221384"], "22137": ["221406"], "22135": ["221384", "221392"]}
+
+    def test_a_current_code_is_never_overridden(self) -> None:
+        from jp_address_crosswalk.build.mesh import successors_from_lineage
+        assert "13101" not in successors_from_lineage(self.LINEAGE, self.CURRENT)
 
 
 class TestTable:
@@ -110,6 +155,42 @@ class TestTable:
         assert all(r["boundary_jis_city_code"] == "99999" for r in rows)
         assert all(r["verification_status"] == "review_required" for r in rows)
         assert all("断面のズレ" in r["mismatch_note"] for r in rows)
+
+    def test_a_one_to_one_transition_resolves_the_cell(self) -> None:
+        """旧浜松市中区 → 中央区: lineage-attested, so the cell is answered."""
+        t = build_mesh_municipality([GONE], LG_BY_JIS, successors={"99999": ["999996"]})
+        rows = t.to_dicts()
+        assert rows
+        assert all(r["lg_code"] == "999996" for r in rows)
+        assert all(r["boundary_jis_city_code"] == "99999" for r in rows)
+        assert all(r["relation_type"] == "contains" for r in rows)
+        assert all(r["verification_status"] == "auto" for r in rows)
+        assert all("lineage" in r["mismatch_note"] for r in rows)
+
+    def test_a_split_code_keeps_every_successor_as_a_candidate(self) -> None:
+        """旧浜松市北区 → 中央区 + 浜名区: never collapsed to one."""
+        t = build_mesh_municipality(
+            [GONE], LG_BY_JIS, successors={"99999": ["111116", "222226"]}
+        )
+        code = cell_code(cell_of(35.025, 140.025))
+        rows = t.filter(t["mesh_code"] == code).to_dicts()
+        assert {r["lg_code"] for r in rows} == {"111116", "222226"}
+        assert {r["relation_type"] for r in rows} == {"ambiguous"}
+        assert {r["candidate_count"] for r in rows} == {2}
+        assert {r["verification_status"] for r in rows} == {"review_required"}
+
+    def test_two_old_codes_with_one_successor_are_one_candidate(self) -> None:
+        """中区 and 東区 meeting inside a cell are both 中央区 today."""
+        old_a = _square("99991", 140.00, 35.00, 140.05, 35.05)
+        old_b = _square("99992", 140.05, 35.00, 140.10, 35.05)
+        t = build_mesh_municipality(
+            [old_a, old_b], {}, successors={"99991": ["999996"], "99992": ["999996"]}
+        )
+        rows = t.filter(t["mesh_code"] == cell_code(cell_of(35.025, 140.05))).to_dicts()
+        assert len(rows) == 1
+        assert rows[0]["lg_code"] == "999996"
+        assert rows[0]["relation_type"] == "contains"
+        assert "99991" in rows[0]["mismatch_note"] and "99992" in rows[0]["mismatch_note"]
 
     def test_lg_code_is_six_digits_and_jis_is_five(self) -> None:
         t = build_mesh_municipality([WEST, EAST], LG_BY_JIS)

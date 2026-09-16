@@ -867,7 +867,7 @@ def _read_boundary_geometry(
 
     水面調査区 (``HCODE`` 8154) is dropped here rather than downstream: it is 港湾
     区域 and 漁港の水域 by 省令, so a station "inside" one would be a station in
-    the sea.
+    the sea. 抜け地 (``KIGO_D`` D1) go too — see ``estat.is_land_polygon``.
     """
     src_dir = paths.raw / "estat_boundary"
     out: list[tuple[str, tuple[float, float, float, float], list]] = []
@@ -875,7 +875,9 @@ def _read_boundary_geometry(
     for path in sorted(src_dir.glob("*.zip")):
         datums.add(_datum(read_prj_member(path)))
         names, rows = read_dbf_member(path)
-        i_pref, i_city, i_hcode = names.index("PREF"), names.index("CITY"), names.index("HCODE")
+        i_pref, i_city, i_hcode, i_kigo_d = (
+            names.index("PREF"), names.index("CITY"), names.index("HCODE"), names.index("KIGO_D")
+        )
         shapes = read_shp_member(path, expect=SHP_POLYGON)
         if len(shapes) != len(rows):
             raise ValidationFailed(
@@ -884,7 +886,7 @@ def _read_boundary_geometry(
                 file=path.name, shapes=len(shapes), rows=len(rows),
             )
         for row, shape in zip(rows, shapes, strict=True):
-            if shape is None or row[i_hcode] != estat_build.HCODE_TOWN:
+            if shape is None or not estat_build.is_land_polygon(row[i_hcode], row[i_kigo_d]):
                 continue
             out.append((row[i_pref] + row[i_city], shape[0], shape[1]))
     _assert_one_datum(datums, "estat_boundary")
