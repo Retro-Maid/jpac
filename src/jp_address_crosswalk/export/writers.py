@@ -51,6 +51,18 @@ SORT_KEYS: dict[str, list[str]] = {
     "bridge_address_telephone": ["bridge_id"],
     "bridge_municipality_postal": ["bridge_id"],
     "bridge_municipality_telephone": ["bridge_id"],
+    # V2. These were missing, which made _sorted() a no-op for them: their byte
+    # reproducibility rested entirely on sorts inside the builders, so a builder
+    # that forgot to sort would have produced a different file on every rebuild
+    # with nothing reporting it (docs/ARCHITECTURE.md §6).
+    "estat_small_area": ["key_code"],
+    "n02_station": ["n02_group_code"],
+    "bridge_station_municipality": ["n02_group_code", "boundary_jis_city_code"],
+    "n02_railroad_line": ["line_name_raw", "operator_name_raw"],
+    "bridge_station_line": ["n02_group_code", "line_name_raw", "operator_name_raw"],
+    "bridge_line_municipality": [
+        "line_name_raw", "operator_name_raw", "boundary_jis_city_code",
+    ],
 }
 
 # Columns that must never be written as a numeric type (docs/POLICY.md §8).
@@ -342,6 +354,17 @@ V2_INDEXES = {
         " ON bridge_station_municipality(n02_group_code)",
         "CREATE INDEX IF NOT EXISTS idx_bsm_lg ON bridge_station_municipality(lg_code)",
     ],
+    "bridge_station_line": [
+        "CREATE INDEX IF NOT EXISTS idx_bsl_station"
+        " ON bridge_station_line(n02_group_code)",
+        "CREATE INDEX IF NOT EXISTS idx_bsl_line"
+        " ON bridge_station_line(line_name_raw, operator_name_raw)",
+    ],
+    "bridge_line_municipality": [
+        "CREATE INDEX IF NOT EXISTS idx_blm_line"
+        " ON bridge_line_municipality(line_name_raw, operator_name_raw)",
+        "CREATE INDEX IF NOT EXISTS idx_blm_lg ON bridge_line_municipality(lg_code)",
+    ],
 }
 
 
@@ -402,6 +425,12 @@ PRIMARY_KEYS = {
     "source_snapshot": "source_snapshot_id", "match_run": "match_run_id",
     # One row per 駅グループ, so the group code is the key (docs/schema.sql).
     "n02_station": "n02_group_code",
+    # N02 codes stations but not lines, so a line's identity has to be the
+    # publisher's own (路線名, 運営会社) — verified unique across all 597. A
+    # surrogate id would invent an identifier the source already supplies, and
+    # the four-column composite splits 10 real lines that change 鉄道区分 along
+    # their length (src/jp_address_crosswalk/build/railroad.py).
+    "n02_railroad_line": ("line_name_raw", "operator_name_raw"),
     "address_lineage": "lineage_id", "address_history": "history_id",
     "address_rsdt_variant": "rsdt_variant_id",
     **{b: "bridge_id" for b in [
@@ -473,6 +502,38 @@ SMALL_AREA_CHECKS = [
 
 N02_STATION_CHECKS = ["CHECK (feature_count >= 1)"]
 
+RAILROAD_LINE_CHECKS = [
+    "CHECK (section_count >= 1)",
+    "CHECK (railway_class_variants >= 1)",
+    "CHECK (operator_class_variants >= 1)",
+]
+
+# 駅 → 路線 is an attribute join, not a spatial one: N02 states each feature's
+# line on the feature itself. It carries no relation_type because there is no
+# relation to characterise — the publisher said so directly.
+STATION_LINE_CHECKS = [
+    "CHECK (feature_count >= 1)",
+    "CHECK (match_method = 'n02_attribute')",
+]
+
+# A line is not a point, so this differs from STATION_BRIDGE_CHECKS in the one
+# place that matters: there is no uniqueness requirement. A line running through
+# 40 municipalities is 40 correct rows, not an ambiguity — so `auto` asks only
+# that the municipality resolved and nothing needed noting.
+LINE_BRIDGE_CHECKS = [
+    "CHECK (confidence >= 0.0 AND confidence <= 1.0)",
+    "CHECK (municipality_count >= 0)",
+    "CHECK (sample_hits IS NULL OR sample_hits >= 1)",
+    "CHECK (relation_type IN ('overlap','unresolved'))",
+    "CHECK (match_method IN ('spatial_sampling','unresolved'))",
+    f"CHECK (verification_status IN ('{_STATUSES}'))",
+    "CHECK (verification_status <> 'auto' OR ("
+    " relation_type = 'overlap' AND lg_code IS NOT NULL"
+    " AND confidence = 1.0 AND mismatch_note IS NULL))",
+    "CHECK (relation_type <> 'unresolved' OR ("
+    " lg_code IS NULL AND boundary_jis_city_code IS NULL AND confidence = 0.0))",
+]
+
 
 def _write_table(conn: sqlite3.Connection, name: str, df: pl.DataFrame) -> None:
     if df.is_empty() and not df.columns:
@@ -480,6 +541,13 @@ def _write_table(conn: sqlite3.Connection, name: str, df: pl.DataFrame) -> None:
     cols = df.columns
     types = []
     pk = PRIMARY_KEYS.get(name)
+    pk_cols = (pk,) if isinstance(pk, str) else tuple(pk or ())
+    absent = [c for c in pk_cols if c not in cols]
+    if absent:
+        # Asserted rather than skipped: a typo here would ship a table with no
+        # key at all, which is exactly how n02_station lost its PRIMARY KEY once.
+        raise ValueError(f"{name}: PRIMARY KEY columns absent from frame: {absent}")
+    inline_pk = pk_cols[0] if len(pk_cols) == 1 else None
     for c in cols:
         dt = df.schema[c]
         if dt in (pl.Float64, pl.Float32):
@@ -492,13 +560,21 @@ def _write_table(conn: sqlite3.Connection, name: str, df: pl.DataFrame) -> None:
             sql_type = "INTEGER"
         else:
             sql_type = "TEXT"
-        suffix = " PRIMARY KEY" if c == pk else ""
+        suffix = " PRIMARY KEY" if c == inline_pk else ""
         types.append(f'"{c}" {sql_type}{suffix}')
+    if len(pk_cols) > 1:
+        types.append("PRIMARY KEY (" + ", ".join(f'"{c}"' for c in pk_cols) + ")")
 
     if name == "bridge_station_municipality":
         types.extend(STATION_BRIDGE_CHECKS)
+    elif name == "bridge_line_municipality":
+        types.extend(LINE_BRIDGE_CHECKS)
+    elif name == "bridge_station_line":
+        types.extend(STATION_LINE_CHECKS)
     elif name.startswith("bridge_") and "relation_type" in cols:
         types.extend(BRIDGE_CHECKS)
+    if name == "n02_railroad_line":
+        types.extend(RAILROAD_LINE_CHECKS)
     if name == "estat_small_area":
         types.extend(SMALL_AREA_CHECKS)
     if name == "n02_station":

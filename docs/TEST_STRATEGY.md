@@ -13,7 +13,7 @@
 | Schema drift | fingerprint computation and mismatch detection | no |
 | License drift | terms-hash comparison, and the encoding a terms page is hashed under | no |
 | Licensing | attribution wording per publisher, and what a shipped record can evidence | no |
-| Spatial (V2) | ray cast edge cases, station bridge, mesh classification, lineage successors | no |
+| Spatial (V2) | ray cast edge cases, station bridge, 路線 identity and its sampled municipality join, mesh classification, lineage successors | no |
 | Page (V2) | `site/lookup.js` and `site/geo.js` run under node against the Python writers (`mesh.pack_lookup`, `geo_pack`), 3次〜6次 mesh codes against an independent derivation | no — skipped where node is absent |
 | Live smoke | discovery only, against real sources | yes, `-m live` |
 

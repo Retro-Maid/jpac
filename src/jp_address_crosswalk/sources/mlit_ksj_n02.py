@@ -139,8 +139,9 @@ class MlitKsjN02Source(BaseSource):
                 # and lines — measured: 399 stations have more than one operator
                 # (盛岡 is JR + IGR いわて銀河鉄道) and 816 more than one line — so
                 # these are "one of N", and the *_variants counts beside them are
-                # what tells a reader that. Nothing is discarded: the ungrouped
-                # n02_station_feature table keeps every row.
+                # what tells a reader that. Nothing is discarded: every
+                # (station, line) pair survives in bridge_station_line, built
+                # from the ungrouped frame returned below.
                 pl.col("station_name_raw").first(),
                 pl.col("line_name_raw").first(),
                 pl.col("operator_name_raw").first(),

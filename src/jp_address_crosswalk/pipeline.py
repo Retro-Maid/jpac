@@ -34,6 +34,9 @@ from .build import (
     overrides as overrides_mod,
 )
 from .build import (
+    railroad as railroad_build,
+)
+from .build import (
     station as station_build,
 )
 from .build.common import BuildContext, assert_bridge_invariants
@@ -500,7 +503,7 @@ def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str,
             ]
         ).unique(subset=["block_id"], keep="first").sort("block_id")
 
-    # --- V2: 駅 → 市区町村 (docs/POLICY.md §3.1)
+    # --- V2: 駅・路線 → 市区町村 (docs/POLICY.md §3.1)
     # Optional by construction. Both sources are `required: false`, so a build
     # without their payloads produces the V1 release unchanged rather than a
     # half-built one — which is also what makes the licence gate on them unable
@@ -782,7 +785,7 @@ def _snapshot_role(dataset_name: str) -> str:
 def _build_station_tables(
     paths: Paths, outcome: FetchOutcome, municipality: pl.DataFrame, snapshot_for
 ) -> dict[str, pl.DataFrame]:
-    """The three V2 tables, or nothing at all.
+    """The six V2 tables, or nothing at all.
 
     Geometry is read here rather than in the source adapters because it is only
     ever a build-time instrument: nothing about it reaches a release artifact
@@ -857,6 +860,24 @@ def _build_station_tables(
     out["bridge_station_municipality"] = station_build.build_station_bridge(
         stations_raw, station_geometry, boundary_geometry, lg_by_jis
     ).with_columns(pl.lit(snap_station).alias("source_snapshot_id"))
+
+    # 路線. The adapter has always parsed these two frames; until now nothing
+    # consumed them (docs/POLICY.md §3.1 names 鉄道路線 as a V2 subject).
+    sections_raw = outcome.parsed.get("mlit_ksj_n02", {}).get("n02_railroad_section")
+    features_raw = outcome.parsed.get("mlit_ksj_n02", {}).get("n02_station_feature")
+    if sections_raw is not None and features_raw is not None:
+        lines, swapped = railroad_build.build_railroad_lines(sections_raw, features_raw)
+        out["n02_railroad_line"] = lines.with_columns(
+            pl.lit(snap_station).alias("source_snapshot_id")
+        )
+        out["bridge_station_line"] = railroad_build.build_station_line_bridge(
+            features_raw
+        ).with_columns(pl.lit(snap_station).alias("source_snapshot_id"))
+        with stage_context("railroad", "geometry"):
+            line_geometry = _read_railroad_geometry(paths, swapped)
+        out["bridge_line_municipality"] = railroad_build.build_line_municipality_bridge(
+            lines, line_geometry, boundary_geometry, lg_by_jis
+        ).with_columns(pl.lit(snap_station).alias("source_snapshot_id"))
     return out
 
 
@@ -912,6 +933,41 @@ def _read_station_geometry(paths: Paths) -> dict[str, list]:
         for row, shape in zip(rows, shapes, strict=True):
             if shape is not None:
                 geometry.setdefault(row[i_group], []).extend(shape[1])
+    _assert_one_datum(datums, "mlit_ksj_n02")
+    return geometry
+
+
+def _read_railroad_geometry(
+    paths: Paths, swapped: list[tuple[str, str]]
+) -> dict[tuple[str, str], list]:
+    """Polyline parts per 路線, keyed by the *corrected* (路線名, 運営会社).
+
+    The correction is applied to the key here as well as to the line table, or
+    the one reversed record's geometry would be filed under a key no line has
+    and that line would come back with no municipalities at all.
+    """
+    src_dir = paths.raw / "mlit_ksj_n02"
+    member = ("UTF-8/", "_RailroadSection")
+    reversed_pairs = set(swapped)
+    geometry: dict[tuple[str, str], list] = {}
+    datums: set[str] = set()
+    for path in sorted(src_dir.glob("*.zip")):
+        datums.add(_datum(read_prj_member(path, contains=member)))
+        names, rows = read_dbf_member(path, encoding="utf-8", contains=member)
+        i_line, i_operator = names.index("N02_003"), names.index("N02_004")
+        shapes = read_shp_member(path, contains=member, expect=SHP_POLYLINE)
+        if len(shapes) != len(rows):
+            raise ValidationFailed(
+                "railroad geometry and attribute counts disagree",
+                file=path.name, shapes=len(shapes), rows=len(rows),
+            )
+        for row, shape in zip(rows, shapes, strict=True):
+            if shape is None:
+                continue
+            key = (row[i_line], row[i_operator])
+            if key in reversed_pairs:
+                key = (key[1], key[0])
+            geometry.setdefault(key, []).extend(shape[1])
     _assert_one_datum(datums, "mlit_ksj_n02")
     return geometry
 

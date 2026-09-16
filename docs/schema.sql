@@ -595,8 +595,9 @@ CREATE TABLE "source_snapshot" (
   "status"              TEXT
 );
 
--- V2 (駅 → 市区町村). Present only when the optional boundary/railway payloads
--- were available at build time; a V1 release omits all three (docs/POLICY.md §3.1).
+-- V2 (駅・路線 → 市区町村). Present only when the optional boundary/railway
+-- payloads were available at build time; a V1 release omits all six
+-- (docs/POLICY.md §3.1).
 
 CREATE TABLE "estat_small_area" (
   "key_code"           TEXT,
@@ -690,6 +691,86 @@ CREATE TABLE "bridge_station_municipality" (
 );
 CREATE INDEX idx_bsm_station ON bridge_station_municipality(n02_group_code);
 CREATE INDEX idx_bsm_lg ON bridge_station_municipality(lg_code);
+
+-- 鉄道路線。N02 は駅にはグループコードを与えるが、路線には与えない。そのため
+-- 路線の同一性は発行元自身の (路線名, 運営会社) で、597路線すべてで一意であること
+-- を確認してある。鉄道区分・事業者種別を鍵に含めると、自分の路線内で区分が変わる
+-- 10路線（富山地方鉄道の本線は普通鉄道と軌道の両方）が分裂するため含めない。
+-- 単一値の横にある *_variants がその値は「N個のうちの1つ」だと読み手に伝える。
+CREATE TABLE "n02_railroad_line" (
+  "line_name_raw"           TEXT,
+  "operator_name_raw"       TEXT,
+  "section_count"           INTEGER,
+  "railway_class"           TEXT,
+  "operator_class"          TEXT,
+  "railway_class_variants"  INTEGER,
+  "operator_class_variants" INTEGER,
+  "source_snapshot_id"      TEXT,
+  PRIMARY KEY ("line_name_raw", "operator_name_raw"),
+  CHECK (section_count >= 1),
+  CHECK (railway_class_variants >= 1),
+  CHECK (operator_class_variants >= 1)
+);
+
+-- 駅 → 路線。属性だけで決まる（N02 は各駅フィーチャにその路線を書いている）ので
+-- 空間演算は無く、relation_type も持たない —— 特徴づけるべき関係が無いからである。
+-- 乗換駅は複数行になり、これが n02_station.line_variants を「数える」だけでなく
+-- 「辿れる」ものにする。
+CREATE TABLE "bridge_station_line" (
+  "n02_group_code"     TEXT,
+  "station_name_raw"   TEXT,
+  "line_name_raw"      TEXT,
+  "operator_name_raw"  TEXT,
+  "feature_count"      INTEGER,
+  "match_method"       TEXT,
+  "source_snapshot_id" TEXT,
+  CHECK (feature_count >= 1),
+  CHECK (match_method = 'n02_attribute')
+);
+CREATE INDEX idx_bsl_station ON bridge_station_line(n02_group_code);
+CREATE INDEX idx_bsl_line ON bridge_station_line(line_name_raw, operator_name_raw);
+
+-- 路線 → 市区町村。駅のブリッジと違い、一意性は要求しない —— 40の市区町村を通る
+-- 路線は「40行の正しい答え」であって、解消すべき曖昧さではない。
+--
+--   * 判定は点のサンプリングによる。駅は1点だが路線は総延長27,845kmの線で、
+--     区間長は中央値47m・最大8.4kmある。頂点だけを判定すると、離れた2頂点の間で
+--     横切る市区町村を取りこぼす。全頂点に加え、SAMPLE_STEP_M より長い区間には
+--     内挿した点を置く。
+--
+--   * sample_hits はその市区町村に入ったサンプル点の数。長さでも割合でもなく、
+--     その行の根拠の量であり、かすめただけの1点と40km走る路線を区別できるようにする。
+--
+--   * lg_code / boundary_jis_city_code の2本立ての理由は
+--     bridge_station_municipality と同じ。
+CREATE TABLE "bridge_line_municipality" (
+  "line_name_raw"       TEXT,
+  "operator_name_raw"   TEXT,
+  "lg_code"             TEXT,
+  "boundary_jis_city_code" TEXT,
+  "relation_type"       TEXT,
+  "match_method"        TEXT,
+  "confidence"          REAL,
+  "sample_hits"         INTEGER,
+  "municipality_count"  INTEGER,
+  "verification_status" TEXT,
+  "mismatch_note"       TEXT,
+  "source_snapshot_id"  TEXT,
+  CHECK (confidence >= 0.0 AND confidence <= 1.0),
+  CHECK (municipality_count >= 0),
+  CHECK (sample_hits IS NULL OR sample_hits >= 1),
+  CHECK (relation_type IN ('overlap','unresolved')),
+  CHECK (match_method IN ('spatial_sampling','unresolved')),
+  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified',
+                                 'manually_rejected')),
+  CHECK (verification_status <> 'auto' OR (
+    relation_type = 'overlap' AND lg_code IS NOT NULL
+    AND confidence = 1.0 AND mismatch_note IS NULL)),
+  CHECK (relation_type <> 'unresolved' OR (
+    lg_code IS NULL AND boundary_jis_city_code IS NULL AND confidence = 0.0))
+);
+CREATE INDEX idx_blm_line ON bridge_line_municipality(line_name_raw, operator_name_raw);
+CREATE INDEX idx_blm_lg ON bridge_line_municipality(lg_code);
 
 CREATE TABLE "telephone_area" (
   "numbering_area_code"        TEXT PRIMARY KEY,
