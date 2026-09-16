@@ -96,6 +96,17 @@
     <ul data-slot="caveats"></ul>
     <h2>出典</h2>
     <p data-slot="attribution"></p>
+    <p data-slot="jpac-attribution" hidden>駅・郵便番号・市外局番を表示している場合、それぞれ次の出典によります。</p>
+    <ul data-slot="jpac-sources" hidden>
+      <li>「国土数値情報（鉄道データ）」（国土交通省）
+        <a href="https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html" target="_blank" rel="noopener">https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html</a>
+        をもとに jp-address-crosswalk 作成</li>
+      <li>郵便番号データ：日本郵便株式会社
+        <a href="https://www.post.japanpost.jp/zipcode/dl/utf-zip.html" target="_blank" rel="noopener">https://www.post.japanpost.jp/zipcode/dl/utf-zip.html</a></li>
+      <li>出典：「市外局番の一覧」（総務省）
+        <a href="https://www.soumu.go.jp/main_sosiki/joho_tsusin/top/tel_number/shigai_list.html" target="_blank" rel="noopener">https://www.soumu.go.jp/main_sosiki/joho_tsusin/top/tel_number/shigai_list.html</a>
+        を加工して作成</li>
+    </ul>
     <p>メッシュ対応表：jp-address-crosswalk（<span data-slot="generated"></span> 作成）。上記データを加工して作成したもので、発行元が作成したものではありません。</p>
     <p>背景地図：© <a href="https://www.openstreetmap.org/copyright" target="_blank" rel="noopener">OpenStreetMap contributors</a></p>
     <h2>ローカルで開くには</h2>
@@ -113,6 +124,8 @@
 <script defer src="geo.js"></script>
 <!-- Optional: without it the page falls back to cell-level answers. -->
 <script defer src="data/geo/units.js"></script>
+<!-- Optional: 駅・郵便番号・市外局番。無ければその節を出さないだけ。 -->
+<script defer src="data/jpac_data.js"></script>
 <script defer src="app.js"></script>
 </body>
 </html>

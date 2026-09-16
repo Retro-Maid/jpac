@@ -355,11 +355,24 @@ jpac の `municipality` / `bridge_municipality_postal` / `bridge_municipality_te
 `lg_code` の等値結合だけで繋がる。旧コード（e-Stat 側の JIS 5桁）は `boundary_jis_city_code` /
 `units[].jis` に残し、`overrides/municipality_lineage.yml` 経由の読み替えであることを追えるようにしてある。
 
+**段階1（実装済み・2026-09-16）:**
+地点パネルと市区町村パネルから、その市区町村の**駅・郵便番号・市外局番**を表示する。
+`tools/build_site_data.py` が `site/data/jpac_data.js`（1.27 MB）に書き出す:
+
+| 中身 | 件数 | 備考 |
+|---|---|---|
+| 駅 | 9,046 グループ（うち市区町村に結び付くもの 8,988） | N02 のポリラインから求めた代表点つき。`build/spatial.py` の規則は駅→市区町村の結合と同じなので、地図のピンと `bridge_station_municipality` は食い違わない |
+| 郵便番号 | 10,117 行 / 1,892 市区町村 | P3（「以下に掲載がない場合」等）は `postal_record_version` で実際の7桁に解決し、種別を残す |
+| 市外局番 | 2,189 行 / 1,912 市区町村 | 番号区画経由。区画の一部だけを含む 479 行は発行元の但し書きをそのまま持つ |
+
+駅は代表点を持つので3次メッシュごとにも索けるようにしてあり、地点パネルには
+「このメッシュ内の駅」と「この市区町村の駅」を分けて出す。鍵はすべて `lg_code`。
+前提だった出典表示はページに入れた（`POLICY.md` §3.2、`DATA_LICENSE.md` の文言のまま）。
+
 **今後（未実装）:**
 
 | 段階 | 内容 | 前提 |
 |---|---|---|
-| 1 | 地点パネルから jpac の市区町村情報（読み・郵便番号・市外局番）を表示 | 各ソースの出典表示をページに追加する（`DATA_LICENSE.md` の作法） |
 | 2 | `mesh_municipality` を jpac のリリース表として出す（`jpac build` の成果物に加える） | `POLICY.md` §3 のスコープ記録（mesh codes は V1 で対象外と明記されている）と、`SOURCES.yml` への境界ソースの記載 |
 | 3 | 町字（`address_id`）への紐づけ | **しない。** e-Stat 小地域は jpac の町字より約3.1倍粗く、面を町字に展開すると `POLICY.md` §4 の欠陥になる |
 

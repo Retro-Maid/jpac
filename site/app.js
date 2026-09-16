@@ -56,6 +56,9 @@ const ICONS = {
   arrow_back: "M20 11H7.83l5.59-5.59L12 4l-8 8 8 8 1.41-1.41L7.83 13H20v-2z",
   city: "M15 11V5l-3-3-3 3v2H3v14h18V11h-6zm-8 8H5v-2h2v2zm0-4H5v-2h2v2zm0-4H5V9h2v2zm6 8h-2v-2h2v2zm0-4h-2v-2h2v2zm0-4h-2V9h2v2zm0-4h-2V5h2v2zm6 12h-2v-2h2v2zm0-4h-2v-2h2v2z",
   tag: "M20 10V8h-4V4h-2v4h-4V4H8v4H4v2h4v4H4v2h4v4h2v-4h4v4h2v-4h4v-4h-4v-4h4zm-6 4h-4v-4h4v4z",
+  train: "M12 2c-4 0-8 .5-8 4v9.5C4 17.43 5.57 19 7.5 19L6 20.5v.5h12v-.5L16.5 19c1.93 0 3.5-1.57 3.5-3.5V6c0-3.5-3.58-4-8-4zM7.5 17c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm3.5-7H6V6h5v4zm2 0V6h5v4h-5zm3.5 7c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z",
+  mail: "M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z",
+  call: "M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z",
   fit: "M3 5v4h2V5h4V3H5c-1.1 0-2 .9-2 2zm2 10H3v4c0 1.1.9 2 2 2h4v-2H5v-4zm14 4h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4zm0-16h-4v2h4v4h2V5c0-1.1-.9-2-2-2z",
   code: "M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
 };
@@ -76,7 +79,16 @@ const S = {
   units: null,      // boundary units (data/geo/units.js), each with its municipality indices
   outlined: -1,     // municipality drawn in red on the highlight layer
   seq: 0,           // latest point request; an older one that resolves late is dropped
+  jpac: null,       // data/jpac_data.js: 駅・郵便番号・市外局番（無ければその節を出さない）
+  stationsByLg: null,
+  stationsByMesh: null,
 };
+
+function push(map, key, value) {
+  let list = map.get(key);
+  if (!list) { list = []; map.set(key, list); }
+  list.push(value);
+}
 
 // ------------------------------------------------------------------ data
 function b64ToBuffer(s) {
@@ -105,6 +117,19 @@ function load() {
       ...u,
       ids: u.lg.length ? u.lg.map((lg) => (byLg.has(lg) ? byLg.get(lg) : UNKNOWN)) : [UNKNOWN],
     }));
+  }
+  // jpac が既に持っている対応。鍵は lg_code で、町字には降りない（POLICY.md §4）。
+  // 駅は代表点も持つので、3次メッシュごとにも引けるようにしておく。
+  const jd = window.JPAC_DATA;
+  if (jd) {
+    S.jpac = jd;
+    S.stationsByLg = new Map();
+    S.stationsByMesh = new Map();
+    for (const st of jd.stations) {
+      for (const lg of st.lg) push(S.stationsByLg, lg, st);
+      const [r6, c6] = rowCol6Of(st.y, st.x);
+      push(S.stationsByMesh, codeOf(Math.floor(r6 / 8), Math.floor(c6 / 8)), st);
+    }
   }
 }
 
@@ -497,10 +522,53 @@ const highlight = new OutlineLayer({
 function setOutlined(idx) {
   if (S.outlined === idx) return;
   S.outlined = idx;
+  refreshStations();          // 選択中の市区町村の駅は、ズームが浅くても出す
   if (idx < 0) { map.removeLayer(highlight); return; }
   if (!S.units) return;
   if (map.hasLayer(highlight)) highlight.redraw(); else highlight.addTo(map);
 }
+
+// ------------------------------------------------------------- 駅のピン
+// 駅の所属市区町村は jpac が境界で判定済み（bridge_station_municipality）。地図に出す
+// のはその代表点で、クリック地点の判定には一切使わない。選択中の市区町村の駅は、
+// ズームが浅くても出す —— 「この市区町村の駅」を一覧から辿れるようにするため。
+const STATION_MIN_ZOOM = 12;
+const stationLayer = L.layerGroup();
+function stationsOfSelected() {
+  if (S.outlined < 0 || !S.stationsByLg) return [];
+  const m = S.munis[S.outlined];
+  return m ? (S.stationsByLg.get(m.lg_code) || []) : [];
+}
+function refreshStations() {
+  if (!S.jpac) return;
+  const z = map.getZoom();
+  const selected = stationsOfSelected();
+  if (z < STATION_MIN_ZOOM && !selected.length) {
+    if (map.hasLayer(stationLayer)) map.removeLayer(stationLayer);
+    return;
+  }
+  stationLayer.clearLayers();
+  if (!map.hasLayer(stationLayer)) stationLayer.addTo(map);
+  const bounds = map.getBounds();
+  const pool = z >= STATION_MIN_ZOOM ? S.jpac.stations : selected;
+  const mine = new Set(selected.map((s) => s.id));
+  let drawn = 0;
+  for (const st of pool) {
+    if (!bounds.contains([st.y, st.x])) continue;
+    if (++drawn > 500) break;                 // a tile-dense view stays responsive
+    const highlighted = mine.has(st.id);
+    L.circleMarker([st.y, st.x], {
+      radius: highlighted ? 6 : 5,
+      color: highlighted ? "#d93025" : "#1967d2",
+      weight: 2, fillColor: "#fff", fillOpacity: 1,
+    })
+      .bindTooltip(`${esc(st.n)}<span style="color:#70757a">（${esc(st.o)}）</span>`,
+                   { direction: "top", opacity: 1 })
+      .on("click", () => openStation(st))
+      .addTo(stationLayer);
+  }
+}
+map.on("moveend", refreshStations);
 
 // --------------------------------------------------------------- markers
 const pinSvg = (w, h, fill, stroke, dot) =>
@@ -635,6 +703,100 @@ function footer() {
     <button class="link" data-act="about">このデータについて</button></div>`;
 }
 
+// --- 駅・郵便番号・市外局番（data/jpac_data.js）
+// どれも jpac が市区町村単位で持っているもの。町字には降りない（POLICY.md §4）。
+const SHOW_MAX = 12;
+// 呼ぶ側が市区町村を1つに決めたときだけ出す。候補が複数のままの地点で両方の
+// 郵便番号・市外局番を並べても、どちらのものか言えない（POLICY.md §4）。
+function jpacSections(lg, meshCode) {
+  if (!S.jpac || !lg) return "";
+  const rows = [];
+  const inMesh = meshCode ? (S.stationsByMesh.get(meshCode) || []) : [];
+  const inLg = S.stationsByLg.get(lg) || [];
+
+  if (inMesh.length) {
+    rows.push(row({
+      ic: "train", text: `このメッシュ内の駅 ${inMesh.length} 件`,
+      sub: "クリックした3次メッシュ（約1km四方）の中にある駅",
+    }));
+    for (const st of inMesh.slice(0, SHOW_MAX)) {
+      rows.push(row({ ic: "train", text: esc(st.n), sub: esc(st.o), act: "station", i: st.id }));
+    }
+  }
+  if (inLg.length) {
+    rows.push(row({
+      ic: "train", text: `この市区町村の駅 ${inLg.length} 件`,
+      sub: inMesh.length ? "上のメッシュ内の駅を含む" : "地図を拡大すると駅のピンが出ます",
+    }));
+    // メッシュの節に出したものは繰り返さない。「ほか N 件」は実際に出した行から数える。
+    const rest = inLg.filter((st) => !inMesh.some((m) => m.id === st.id));
+    const shown = rest.slice(0, inMesh.length ? 6 : SHOW_MAX);
+    for (const st of shown) {
+      rows.push(row({ ic: "train", text: esc(st.n), sub: esc(st.o), act: "station", i: st.id }));
+    }
+    if (rest.length > shown.length) {
+      rows.push(row({ ic: "train", text: `ほか ${rest.length - shown.length} 件`, note: true }));
+    }
+  }
+
+  const postal = (S.jpac.postal || {})[lg] || [];
+  if (postal.length) {
+    const shown = postal.slice(0, SHOW_MAX)
+      .map(([code, kind]) => (kind ? `${code}<span style="color:#70757a">（${esc(kind === "no_listing" ? "以下に掲載がない場合" : kind)}）</span>` : code))
+      .join("、");
+    rows.push(row({
+      ic: "mail", text: shown + (postal.length > SHOW_MAX ? ` ほか ${postal.length - SHOW_MAX} 件` : ""),
+      sub: `この市区町村の郵便番号 ${postal.length} 件（町ごとの対応は下の「この地点の住所」では扱いません）`,
+      copy: postal.map((p) => p[0]).join(","),
+    }));
+  }
+
+  const tel = (S.jpac.telephone || {})[lg] || [];
+  for (const t of tel) {
+    rows.push(row({
+      ic: "call", text: esc(t.a),
+      sub: t.c === "partial"
+        ? `番号区画 ${esc(t.z)}。この市区町村の一部のみ${t.t ? "：" + esc(String(t.t).slice(0, 60)) + (String(t.t).length > 60 ? "…" : "") : ""}`
+        : `番号区画 ${esc(t.z)}。市区町村全域`,
+      copy: t.a,
+    }));
+  }
+  if (!rows.length) return "";
+  return `<div class="rows">${rows.join("")}</div>`;
+}
+
+// --- a station
+function openStation(st) {
+  const lgs = st.lg.map((lg) => S.munis.findIndex((m) => m.lg_code === lg)).filter((i) => i >= 0);
+  const prev = S.view;
+  S.view = { type: "station", id: st.id };
+  S.back = prev ? () => restoreView(prev) : null;
+  map.removeLayer(dropPin);
+  pin.setLatLng([st.y, st.x]).addTo(map);
+  map.removeLayer(cellRect);
+  const [r6, c6] = rowCol6Of(st.y, st.x);
+  const rows = [
+    row({ ic: "train", text: esc(st.o), sub: "事業者（N02 の表記のまま）" }),
+    ...lgs.map((i) => row({ ic: "place", text: esc(S.munis[i].name), sub: "市区町村", act: "muni", i })),
+    row({ ic: "my_location", text: `${fix(st.y)}, ${fix(st.x)}`, sub: "駅の代表点（N02 のポリラインから算出）", copy: `${fix(st.y)}, ${fix(st.x)}` }),
+    row({ ic: "grid_on", text: code6Of(r6, c6), sub: "6次メッシュコード（約125m四方）", copy: code6Of(r6, c6) }),
+    row({ ic: "info", note: true, text: st.lg.length > 1
+      ? "この駅は複数の市区町村の境界にかかっています。候補をすべて表示しています。"
+      : "駅の位置は路線の形から求めた代表点で、駅舎や出入口の位置ではありません。" }),
+  ];
+  openPanel(header({ title: st.n, sub: lgs.length ? S.munis[lgs[0]].name : "市区町村は未確定", chip: { kind: "muni", label: "駅" }, back: true })
+    + actions([
+      { act: "fit-station", icon: "fit", label: "地図で見る" },
+      { act: "copy-station", icon: "copy", label: "名前をコピー" },
+      { act: "share", icon: "share", label: "共有" },
+    ])
+    + `<div class="rows">${rows.join("")}</div>` + footer());
+  S.station = st;
+  map.setView([st.y, st.x], Math.max(map.getZoom(), 15));
+  keepVisible([st.y, st.x]);
+  updateHash();
+}
+
 // --- a point (dropped pin, searched coordinates, searched mesh code)
 async function openPoint(lat, lng, { zoom = null, fromSearch = false } = {}) {
   const token = ++S.seq;
@@ -674,7 +836,9 @@ async function openPoint(lat, lng, { zoom = null, fromSearch = false } = {}) {
       { act: "copy-coords", icon: "copy", label: "座標をコピー" },
       { act: "share", icon: "share", label: "共有" },
     ])
-    + `<div class="rows">${rows.join("")}</div>` + footer());
+    + `<div class="rows">${rows.join("")}</div>`
+    + (one ? jpacSections(S.munis[p.ids[0]].lg_code, p.code) : "")
+    + footer());
   S.pointIds = p.ids;
   $("q").value = fromSearch ? $("q").value : `${fix(lat)}, ${fix(lng)}`;
   if (zoom !== null) map.setView([lat, lng], Math.max(map.getZoom(), zoom));
@@ -732,7 +896,9 @@ function openMunicipality(idx, { rest = "", fit = true, back = null } = {}) {
       { act: "copy-code", icon: "copy", label: "コードをコピー" },
       { act: "share", icon: "share", label: "共有" },
     ])
-    + `<div class="rows">${rows.join("")}</div>` + footer());
+    + `<div class="rows">${rows.join("")}</div>`
+    + jpacSections(m.lg_code, null)
+    + footer());
   S.bounds = bounds;
   $("q").value = m.name + (rest || "");
   if (fit) fitMunicipality();
@@ -779,6 +945,12 @@ function openAbout() {
   node.querySelector('[data-slot="caveats"]').innerHTML = S.meta.caveats.map((c) => `<li>${esc(c)}</li>`).join("");
   node.querySelector('[data-slot="attribution"]').textContent = S.meta.attribution;
   node.querySelector('[data-slot="generated"]').textContent = S.meta.generated;
+  // 駅・郵便番号・市外局番を出しているなら、その出典も併せて出す（DATA_LICENSE.md）。
+  if (S.jpac) {
+    for (const el of node.querySelectorAll('[data-slot="jpac-attribution"], [data-slot="jpac-sources"]')) {
+      el.hidden = false;
+    }
+  }
   const wrap = document.createElement("div");
   wrap.appendChild(node);
   openPanel(header({ title: "このマップについて", back: true }) + wrap.innerHTML);
@@ -788,6 +960,10 @@ function restoreView(v) {
   if (v.type === "pin") openPoint(v.lat, v.lng);
   else if (v.type === "m") openMunicipality(v.idx, { fit: false });
   else if (v.type === "results" && S.lastResults) openResults(S.lastResults.q, S.lastResults.list);
+  else if (v.type === "station" && S.jpac) {
+    const st = S.jpac.stations.find((s) => s.id === v.id);
+    if (st) openStation(st);
+  }
 }
 
 $("panelBody").addEventListener("click", (e) => {
@@ -798,8 +974,9 @@ $("panelBody").addEventListener("click", (e) => {
   switch (el.dataset.act) {
     case "back": if (S.back) S.back(); break;
     case "muni": {
+      // restoreView handles every view type; a station panel has no lat/lng.
       const v = S.view;
-      openMunicipality(i, { back: () => openPoint(v.lat, v.lng) });
+      openMunicipality(i, { back: () => restoreView(v) });
       break;
     }
     case "muni-first": {
@@ -812,6 +989,15 @@ $("panelBody").addEventListener("click", (e) => {
       openMunicipality(i, { back: () => openResults(r.q, r.list) });
       break;
     }
+    case "station": {
+      const st = S.jpac && S.jpac.stations.find((s) => s.id === el.dataset.i);
+      if (st) openStation(st);
+      break;
+    }
+    case "fit-station":
+      if (S.station) map.setView([S.station.y, S.station.x], Math.max(map.getZoom(), 16));
+      break;
+    case "copy-station": if (S.station) copyText(S.station.n); break;
     case "copy-coords": copyText(`${fix(S.view.lat)}, ${fix(S.view.lng)}`); break;
     case "copy-code": copyText(S.munis[S.view.idx].lg_code); break;
     case "fit": fitMunicipality(); break;
@@ -1148,6 +1334,7 @@ function updateHash() {
   let h = `@${c.lat.toFixed(6)},${c.lng.toFixed(6)},${map.getZoom()}z`;
   if (S.view && S.view.type === "pin") h += `&pin=${fix(S.view.lat)},${fix(S.view.lng)}`;
   else if (S.view && S.view.type === "m") h += `&m=${S.munis[S.view.idx].lg_code}`;
+  else if (S.view && S.view.type === "station") h += `&st=${encodeURIComponent(S.view.id)}`;
   history.replaceState(null, "", `#${h}`);
 }
 map.on("moveend", () => { if (S.table) updateHash(); });
@@ -1160,9 +1347,13 @@ function fromHash() {
   const pinM = h.match(/(?:^|&)pin=(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)/);
   const legacy = h.match(/^(-?\d+(?:\.\d+)?),(-?\d+(?:\.\d+)?)$/);
   const mM = h.match(/(?:^|&)m=(\d{6})/);
+  const stM = h.match(/(?:^|&)st=([^&]+)/);
   if (pinM || legacy) {
     const [, a, b] = pinM || legacy;
     openPoint(+a, +b, { zoom: view ? null : 15 });
+  } else if (stM && S.jpac) {
+    const st = S.jpac.stations.find((s) => s.id === stM[1]);
+    if (st) openStation(st);
   } else if (mM) {
     const i = S.munis.findIndex((x) => x.lg_code === mM[1]);
     if (i >= 0) openMunicipality(i, { fit: !view });
