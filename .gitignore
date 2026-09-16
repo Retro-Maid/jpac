@@ -5,11 +5,14 @@ data/previous/
 data/verify/
 data/discovery_state.json
 dist/
-# site/data: only mesh_data.js and geo/ are committed (Pages serves them). The
-# mesh tool also writes the .bin / .json / .parquet there; the page reads none.
+# site/data: only mesh_data.js, geo/ and jpac_data.js are committed (Pages serves
+# them). The mesh tool also writes the .bin / .json / .parquet there; the page
+# reads none. A new payload the page loads must be allow-listed here, or Pages
+# serves a 404 for it while everything else looks green.
 site/data/*
 !site/data/mesh_data.js
 !site/data/geo/
+!site/data/jpac_data.js
 reports/*.csv
 !reports/.gitkeep
 
