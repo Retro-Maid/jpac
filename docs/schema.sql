@@ -772,6 +772,13 @@ CREATE TABLE "bridge_line_municipality" (
 CREATE INDEX idx_blm_line ON bridge_line_municipality(line_name_raw, operator_name_raw);
 CREATE INDEX idx_blm_lg ON bridge_line_municipality(lg_code);
 
+-- バス停留所の2表（p11_bus_stop / bridge_bus_stop_municipality）は、まだここに無い。
+-- tools/verify_artifacts_agree.py §3c は「出荷物に無いものを schema.sql が載せていない
+-- こと」も検査するので、ソースを SOURCE_CLASSES に登録してテーブルが実際に生成される
+-- ようになるまで DDL を載せると、その検査が落ちる。登録に必要な来歴（observed_url と
+-- 詳細ページの text_sha256）は取得側から来る値なので、DDL は登録と同じ変更で入れる。
+-- 設計は docs/BUS_STOP_PLAN.md にある。
+
 CREATE TABLE "telephone_area" (
   "numbering_area_code"        TEXT PRIMARY KEY,
   "first_observed_snapshot_id" TEXT

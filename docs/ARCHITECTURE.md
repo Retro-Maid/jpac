@@ -35,6 +35,7 @@ src/jp_address_crosswalk/
     spatial.py          V2: point-in-polygon, grid index (no spatial dependency)
     station.py          V2: 駅 → 市区町村 bridge
     railroad.py         V2: 路線 table, 駅 → 路線, 路線 → 市区町村 (sampled along the line)
+    busstop.py          V2: バス停留所 → 市区町村 (a published point; no representative point)
     mesh.py             V2: 3次メッシュ → 市区町村 table, its packed form for the map
     geo_pack.py         V2: boundary chunks for the map (pure Python writer)
   export/
