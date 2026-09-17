@@ -1442,3 +1442,17 @@ try {
   $("notice").hidden = false;
   $("notice").querySelector("div").textContent = `データを読み込めませんでした：${err.message}`;
 }
+
+// 初期表示でもピンを描く。moveend まかせにすると、ハッシュで直接深いズームを開いた
+// 場合やズームボタンで拡大した場合に、いちどパンするまで出ない。駅は setOutlined()
+// からも呼ばれるので目立たなかったが、バス停にはその経路が無かった。
+//
+// 上の try の中には入れない。ピンが出ないのは見た目の問題だが、あの catch は
+// 「データを読み込めませんでした」を出す —— 判定も検索も動いているのに、ページ全体が
+// 壊れたように見せてしまう。
+try {
+  refreshStations();
+  refreshBusStops();
+} catch (err) {
+  console.error("ピンの初期描画に失敗しました", err);
+}
