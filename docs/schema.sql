@@ -772,12 +772,62 @@ CREATE TABLE "bridge_line_municipality" (
 CREATE INDEX idx_blm_line ON bridge_line_municipality(line_name_raw, operator_name_raw);
 CREATE INDEX idx_blm_lg ON bridge_line_municipality(lg_code);
 
--- バス停留所の2表（p11_bus_stop / bridge_bus_stop_municipality）は、まだここに無い。
--- tools/verify_artifacts_agree.py §3c は「出荷物に無いものを schema.sql が載せていない
--- こと」も検査するので、ソースを SOURCE_CLASSES に登録してテーブルが実際に生成される
--- ようになるまで DDL を載せると、その検査が落ちる。登録に必要な来歴（observed_url と
--- 詳細ページの text_sha256）は取得側から来る値なので、DDL は登録と同じ変更で入れる。
--- 設計は docs/BUS_STOP_PLAN.md にある。
+-- バス停留所（国土数値情報 P11 令和4年度）。p11_stop_id は「行の識別子」であって
+-- 「実体の同一性」ではない —— IDENTITY_MODEL.md が定めるのは address_id であり、
+-- bridge_id や block_id と同じ位置づけの代理キーである。
+--
+-- そうせざるを得ない理由: P11 は発行元の ID を与えず、属性のどの組み合わせも一意に
+-- ならない。実測で 278,515 停留所に対し (バス停名, 事業者名) は 276,169 通りしかなく、
+-- 衝突する 2,035 グループは上り/下りのペアではない —— グループ内の最大距離は中央値
+-- 16.4 km、p90 で 55 km、129 グループは県をまたぐ。名前で集約すれば 16 km 離れた別の
+-- バス停を1行に融合することになり、POLICY.md §4 の欠陥そのものになる。座標を加えても
+-- なお 12 組が重複する。
+--
+-- 値は発行元の県内レコード順で、版を固定している限り決定的。座標は用いない
+-- （§3.1 により座標はリリースに出さない）。設計は docs/BUS_STOP_PLAN.md。
+CREATE TABLE "p11_bus_stop" (
+  "p11_stop_id"        TEXT PRIMARY KEY,
+  "pref_code"          TEXT,
+  "stop_name_raw"      TEXT,
+  "operator_name_raw"  TEXT,
+  "note_raw"           TEXT,
+  "source_snapshot_id" TEXT,
+  CHECK (length(pref_code) = 2),
+  CHECK (length(stop_name_raw) > 0)
+);
+
+-- バス停留所 → 市区町村。駅のブリッジと同じ規則で、同じ CHECK を共有する。
+-- 違いは placement_point を持たないこと —— 駅はポリラインから代表点を導くので
+-- 「どの点で判定したか」を開示する必要があるが、バス停は発行元が点そのものを
+-- 与えているため、開示すべき選択が存在しない。
+CREATE TABLE "bridge_bus_stop_municipality" (
+  "p11_stop_id"         TEXT,
+  "stop_name_raw"       TEXT,
+  "operator_name_raw"   TEXT,
+  "lg_code"             TEXT,
+  "boundary_jis_city_code" TEXT,
+  "relation_type"       TEXT,
+  "match_method"        TEXT,
+  "confidence"          REAL,
+  "candidate_count"     INTEGER,
+  "is_unique_match"     INTEGER,
+  "verification_status" TEXT,
+  "mismatch_note"       TEXT,
+  "source_snapshot_id"  TEXT,
+  CHECK (confidence >= 0.0 AND confidence <= 1.0),
+  CHECK (candidate_count >= 0),
+  CHECK (NOT (is_unique_match = 1 AND candidate_count > 1)),
+  CHECK (relation_type IN ('contains','ambiguous','unresolved')),
+  CHECK (match_method IN ('spatial_containment','unresolved')),
+  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified',
+                                 'manually_rejected')),
+  CHECK (verification_status <> 'auto' OR (
+    relation_type = 'contains' AND candidate_count = 1 AND is_unique_match = 1
+    AND confidence = 1.0 AND mismatch_note IS NULL)),
+  CHECK (relation_type <> 'unresolved' OR (lg_code IS NULL AND confidence = 0.0))
+);
+CREATE INDEX idx_bbm_stop ON bridge_bus_stop_municipality(p11_stop_id);
+CREATE INDEX idx_bbm_lg ON bridge_bus_stop_municipality(lg_code);
 
 CREATE TABLE "telephone_area" (
   "numbering_area_code"        TEXT PRIMARY KEY,

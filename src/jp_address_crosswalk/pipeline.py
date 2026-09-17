@@ -95,6 +95,7 @@ SOURCE_CLASSES = {
     # V2, required: false — a release is not blocked by its absence.
     "estat_boundary": EstatBoundarySource,
     "mlit_ksj_n02": MlitKsjN02Source,
+    "mlit_ksj_p11": p11_source.MlitKsjP11Source,
 }
 
 

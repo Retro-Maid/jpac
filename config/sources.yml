@@ -497,6 +497,116 @@ sources:
       - name: "N02 v2.3"
         reason: "N02_005c / N02_005g を持たない。駅のグループ化ができない。"
 
+  mlit_ksj_p11:
+    provider: "国土交通省 国土政策局 国土情報課"
+    provider_en: "MLIT"
+    required: false
+    landing_page: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P11-v3_0.html"
+    discovery:
+      method: static_url
+      observed_url: "https://nlftp.mlit.go.jp/ksj/gml/data/P11/P11-22/P11-22_SHP.zip"
+      observed_sha256: "12132cc1c349d5d84c1ae90e7e5fff7c12a79540f4487edfae46e9f640bc1c72"
+      observed_bytes: 39202472
+      edition: "2022"
+      version_source: >-
+        詳細ページの版（第3.0版・令和4年度）。版ごとに別ファイルで、利用許諾条件も
+        版ごとに異なる（year_note）。
+    license:
+      name: "公共データ利用規約（第1.0版） (PDL 1.0)"
+      url: "https://nlftp.mlit.go.jp/ksj/other/agreement.html"
+      reviewed_on: "2026-09-17"
+      reviewed_by: "jp-address-crosswalk"
+      review_2026_09_17: >-
+        2026-09-17、メンテナが P11 の詳細ページを自ら開き、令和4年度版の「利用許諾条件」が
+        「『国土数値情報ダウンロードサイトコンテンツ利用規約』に基づく（オープンデータ）」
+        であることを確認した。新規ソースの追加は LICENSE_POLICY.md §4 が自動受理の経路を
+        持たず人に残している工程であり、この確認がそれにあたる。取得URLも同日にメンテナが
+        確認し、HEAD 応答の content-length が受理済みペイロードのバイト数と一致することを
+        併せて検証した。平成22年度版と N07 を除外する理由は
+        docs/LICENSE_REVIEW_P11_2026_09.md にある。
+      # ⚠️ 以下は AI による下読みであって人の判断ではない。上の review_2026_09_17 が
+      # ゲートを通す署名である。この下読みは一度誤答しており、その記録も残してある。
+      ai_pre_read_2026_09_16: >-
+        P11 の一覧ページを自動取得した際、最初は「非商用」とだけ報告し、令和4年度版が
+        オープンデータであることを捉え損ねた。版ごとに許諾条件が異なるページ構造を要約が
+        平坦化したためで、続けて版別ページを読んで誤りに気づいた。この経緯自体が、要約を
+        経由した情報をベースラインにしないという方針（LICENSE_POLICY.md §4）の裏づけに
+        なっている。読み取った内容は次のとおり: 現行規約 §1.3 の適用外トリガーは
+        「オープンデータ（CC BY 4.0）一部制限」「商用可」「非商用」「記載なし」の4種で、
+        素の「オープンデータ」表記はこれに該当しない。§1.2（個別法令）は国土調査系の成果に
+        限定されており、測量法・国土地理院長承認の要件は P11 に及ばない。N07 バスルートは
+        全版が「非商用」で開放版が無く、代替にならない。
+      year_scoped: true
+      year_note: >-
+        令和4年度版は「オープンデータ」、平成22年度版は「非商用」。旧国土情報利用約款の
+        「非商用」は「非商用目的のみでの利用（ただし複製物の再配布を除く）」であり再配布を
+        除外するため、両者を混在させない。取得は令和4年度版のファイルに限る。N02 と同じ
+        版スコープの扱いである。
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。加工物には利用したコンテンツの名称及び加工した旨を併記し、あたかも国が
+          作成したかのような態様で公表・利用しない。
+      attribution:
+        # 規約 §1.1 の出典記載例は「…をもとに○○作成」。発行元の記載例が PDL 1.0 §1.1 に
+        # よりデフォルトに優先する（mlit / mlit_ksj_n02 と同じ）。
+        unmodified: |
+          出典：国土交通省国土数値情報ダウンロードサイト
+                https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P11-v3_0.html
+        processed: |
+          「国土数値情報（バス停留所データ）」（国土交通省）
+                https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P11-v3_0.html をもとに jp-address-crosswalk 作成
+      artifacts:
+        - role: primary_terms
+          name: "国土数値情報ダウンロードサイト 利用規約 (2026-03-23 施行)"
+          url: "https://nlftp.mlit.go.jp/ksj/other/agreement.html"
+          text_sha256: "4c44671c4183abdad0fa8f117b98fd7594fc0990048e4d410917076284837e3a"
+          text_sha256_decoded: "4c44671c4183abdad0fa8f117b98fd7594fc0990048e4d410917076284837e3a"
+          note: >-
+            mlit（位置参照情報）および mlit_ksj_n02 と同じページ・同じハッシュ。
+            agreement.html は三者をまとめて統べるが、レイヤごとに §1.2/§1.3 の判定が別なので
+            丸めずに個別記録する（DATA_LICENSE.md）。2026-09-17 に
+            snapshot.license_text_hash_bytes() で再計算し、既存ベースラインを完全に再現した。
+        - role: detail_page
+          name: "国土数値情報 バス停留所データ 第3.0版 詳細ページ（利用許諾条件の出所）"
+          url: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P11-v3_0.html"
+          text_sha256: "02a11c832fff794f7f78212159bd974635fbd930e81076fa2737ef3c84742dd9"
+          text_sha256_decoded: "02a11c832fff794f7f78212159bd974635fbd930e81076fa2737ef3c84742dd9"
+          note: >-
+            版ごとの利用許諾条件はこのページにあり、agreement.html には無い。P11 は令和4年度版が
+            「オープンデータ」・平成22年度版が「非商用」と版で分かれるため、取得範囲を決めるのは
+            このページである（N03 を再分類したのと同じ構造の門）。2026-09-17 に取得し
+            （179,604 bytes、content-type に charset=UTF-8、BOM あり）、
+            snapshot.license_text_hash_bytes() で計算した。同じ手順が agreement.html の
+            既存ベースラインをビット一致で再現することを確認済みで、誤デコード時の値とは
+            一致しないため、この値は正しくデコードした側である。
+    datasets:
+      p11_bus_stop:
+        title: "バス停留所 (令和4年度版・第3.0版)"
+        member: "P11-22_{pref}_GML.zip 内の P11-22_{pref}/P11-22_{pref}.shp / .dbf"
+        encoding: cp932
+        datum: "JGD2011"
+        geometry: point
+        features: 278515
+        nested_archive: true
+        note: >-
+          全国1ファイルの中に47都道府県分の zip が入る入れ子構造で、内側は名前が _GML でも
+          シェープファイルを含む。DBF は73列すべてが C 254 の固定長のため全国で 4.81 GiB に
+          展開され、圧縮比が既定上限（200）を47県中38県で超える。上限は全体では緩めず、
+          アダプタが ArchiveLimits を個別に与える（mlit_ksj_p11.P11_LIMITS）。
+    excluded_datasets:
+      - name: "平成22年度版 (P11-10)"
+        reason: >-
+          利用許諾条件が「非商用」。旧約款が複製物の再配布を除外しており、派生データを
+          再配布するこのプロジェクトでは使えない。令和4年度版と混在させない。
+      - name: "国土数値情報 N07 バスルート（全版）"
+        reason: "全版が「非商用」。開放版が存在せず、再配布できない。"
+      - name: "バス系統の属性 (P11_003_01..35 / P11_004_01..35)"
+        reason: >-
+          経路の属性であって、このプロジェクトが横断させる対象ではない。粒度の上限は
+          市区町村（POLICY.md §3.1）。ファイル容量の大半を占めるのもこの70列である。
+
   estat_boundary:
     provider: "総務省統計局"
     provider_en: "Statistics Bureau of Japan"
