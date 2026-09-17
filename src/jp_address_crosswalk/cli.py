@@ -232,6 +232,26 @@ def export(
     typer.echo(f"export: OK ({flat.height:,} flat rows, SHA256SUMS rewritten)")
 
 
+def restore_orphaned_baselines(directory: Path, kept: dict[str, bytes]) -> list[str]:
+    """Put back the baselines a regeneration could not produce, and name them.
+
+    ``baseline`` clears the directory and rebuilds it from whatever payloads are
+    in ``data/raw``. A payload that is merely absent on this machine would
+    otherwise take its committed gate with it — and because the run *succeeded*,
+    the failure path that restores everything never fires, so the loss is
+    silent. Anything the regeneration did not write back is restored here
+    instead, which keeps retiring a baseline an explicit act rather than a
+    side effect of which files happen to be on disk.
+
+    Regenerated files are left exactly as written: this only fills the gaps.
+    """
+    regenerated = {f.name for f in directory.glob("*.yml")}
+    orphaned = sorted(set(kept) - regenerated)
+    for name in orphaned:
+        (directory / name).write_bytes(kept[name])
+    return orphaned
+
+
 @app.command()
 def baseline(
     root: str = ROOT_OPT,
@@ -241,6 +261,13 @@ def baseline(
 
     Kept separate from `build` on purpose: if a release build could write its
     own baseline, a truncated payload would install itself as the reference.
+
+    **A baseline whose payload is not in ``data/raw`` on this machine is kept,
+    not dropped.** Regeneration can only see the payloads that are present, so a
+    developer holding a subset of them would otherwise delete the gates for all
+    the rest — and the loss is invisible precisely *because* the run succeeded.
+    The failure path below never fires for it. Retiring a baseline for good is
+    therefore an explicit act: delete the file and commit that.
     """
     _setup(verbose)
     p = _paths(root)
@@ -265,6 +292,14 @@ def baseline(
                 f"baseline: failed, restored {len(kept)} previous schema files",
                 err=True,
             )
+    orphaned = restore_orphaned_baselines(p.expected_schema, kept)
+    if orphaned:
+        typer.echo(
+            f"baseline: kept {len(orphaned)} existing schema file(s) whose payload "
+            f"is not in data/raw ({', '.join(orphaned)}). Delete the file "
+            "deliberately if the gate is meant to go.",
+            err=True,
+        )
     written = sorted(f.name for f in p.expected_schema.glob("*.yml"))
     typer.echo(f"baseline: wrote {len(written)} schema files to {p.expected_schema}")
 
