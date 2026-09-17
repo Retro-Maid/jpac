@@ -95,7 +95,9 @@ def build_bus_stop_bridge(
             outside_jpac=bridge.filter(
                 pl.col("boundary_jis_city_code").is_not_null() & pl.col("lg_code").is_null()
             )["p11_stop_id"].n_unique(),
-            municipalities_with_a_stop=resolved["lg_code"].n_unique(),
+            # drop_nulls() が要る: n_unique() は null を1種類として数えるので、
+            # 断面のズレで lg_code が NULL の行があるだけで +1 される。
+            municipalities_with_a_stop=resolved["lg_code"].drop_nulls().n_unique(),
         )
         return bridge
 

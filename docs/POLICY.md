@@ -166,6 +166,41 @@ Three payloads join the geometry above, built by `tools/build_site_data.py` into
 - **Attribution travels with it.** The N02, 日本郵便 and 総務省 attributions are
   in the page in `DATA_LICENSE.md`'s wording, shown with the rest of the 出典.
 
+### Bus stop points, and 路線 (added 2026-09-17)
+
+Two more payloads join the map. They are not the same kind of addition, so they
+are stated separately rather than waved through together.
+
+**路線 needs no exception.** `n02_railroad_line`, `bridge_station_line` and
+`bridge_line_municipality` carry no geometry at all — a line is named by
+`(路線名, 運営会社)` and attributed to municipalities by `lg_code`. That is
+municipality-level jpac data exactly like 郵便番号 and 市外局番 above, and the
+existing rule already covers it.
+
+**Bus stop points do need one, and it is granted here on the same reasoning as
+the station points** — with one difference that makes the case easier rather
+than harder:
+
+- **The point is the publisher's own, not a derived one.** A station has no
+  published point, so `build/spatial.py` derives a representative one from its
+  polylines. P11 publishes the stop's position directly, so nothing is computed
+  and there is no derivation to disclose. §3.1's "not re-derived into
+  coordinates" rule guards the *boundary* sources and is untouched.
+- **Volume is handled by how it loads, not by dropping stops.** There are
+  278,515 of them, far too many for the eagerly-loaded `jpac_data.js`, so they
+  ship as payloads the page fetches only when it needs them. Thinning the set to
+  make a file smaller is not available: a partial set would answer "which stops
+  are here" wrongly while looking complete.
+- **市区町村 stays the ceiling**, and §4 holds at point level: a stop in two
+  municipalities keeps both, and a stop in none is not snapped to the nearest.
+- **Still not a release artifact.** `jpac build` is unchanged and the release
+  ships `bridge_bus_stop_municipality` with `lg_code` and nothing spatial. The
+  points exist in `site/` only.
+- **Attribution travels with it.** The 国土数値情報（バス停留所データ）
+  attribution in `DATA_LICENSE.md`'s wording, shown with the rest of the 出典.
+- **Never described as a 停留所標識の位置.** It is the point the publisher
+  gives for the stop, in the same spirit as the 駅舎・出入口 restriction above.
+
 ## 4. Ambiguity policy (hard)
 
 > Leaving data unresolved is acceptable. Inventing a wrong 1:1 mapping is a defect.

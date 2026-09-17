@@ -13,6 +13,7 @@ site/data/*
 !site/data/mesh_data.js
 !site/data/geo/
 !site/data/jpac_data.js
+!site/data/bus/
 reports/*.csv
 !reports/.gitkeep
 

@@ -259,7 +259,9 @@ def build_line_municipality_bridge(
             outside_jpac=bridge.filter(
                 pl.col("boundary_jis_city_code").is_not_null() & pl.col("lg_code").is_null()
             ).select(LINE_KEY).unique().height,
-            municipalities_with_a_line=resolved["lg_code"].n_unique(),
+            # drop_nulls() が要る: n_unique() は null を1種類として数えるので、
+            # 断面のズレで lg_code が NULL の行があるだけで +1 される。
+            municipalities_with_a_line=resolved["lg_code"].drop_nulls().n_unique(),
             max_municipalities_per_line=int(
                 resolved.group_by(LINE_KEY).len()["len"].max() or 0
             ),

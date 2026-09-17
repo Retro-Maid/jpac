@@ -59,6 +59,7 @@ const ICONS = {
   train: "M12 2c-4 0-8 .5-8 4v9.5C4 17.43 5.57 19 7.5 19L6 20.5v.5h12v-.5L16.5 19c1.93 0 3.5-1.57 3.5-3.5V6c0-3.5-3.58-4-8-4zM7.5 17c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm3.5-7H6V6h5v4zm2 0V6h5v4h-5zm3.5 7c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z",
   mail: "M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z",
   call: "M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z",
+  bus: "M4 16c0 .88.39 1.67 1 2.22V20c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h8v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM18 11H6V6h12v5z",
   fit: "M3 5v4h2V5h4V3H5c-1.1 0-2 .9-2 2zm2 10H3v4c0 1.1.9 2 2 2h4v-2H5v-4zm14 4h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4zm0-16h-4v2h4v4h2V5c0-1.1-.9-2-2-2z",
   code: "M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
 };
@@ -130,6 +131,9 @@ function load() {
       const [r6, c6] = rowCol6Of(st.y, st.x);
       push(S.stationsByMesh, codeOf(Math.floor(r6 / 8), Math.floor(c6 / 8)), st);
     }
+    // バス停は27万件あるので点は持たせていない。どのチャンクが存在するかだけ渡し、
+    // 見えている範囲のぶんを都度読む（site/bus.js）。
+    if (window.JPAC_BUS) JPAC_BUS.meshes(jd.busMeshes);
   }
 }
 
@@ -570,6 +574,47 @@ function refreshStations() {
 }
 map.on("moveend", refreshStations);
 
+// ----------------------------------------------------------- バス停のピン
+// 駅より1段深いズームから。27万件あるので、見えている2次メッシュのチャンクだけ読む。
+const BUS_MIN_ZOOM = 14;
+const busLayer = L.layerGroup();
+let busToken = 0;
+async function refreshBusStops() {
+  if (!S.jpac || !window.JPAC_BUS) return;
+  if (map.getZoom() < BUS_MIN_ZOOM) {
+    if (map.hasLayer(busLayer)) map.removeLayer(busLayer);
+    return;
+  }
+  const token = ++busToken;
+  const b = map.getBounds();
+  const chunks = await Promise.all(
+    JPAC_BUS.meshesIn(b.getSouth(), b.getWest(), b.getNorth(), b.getEast())
+      .map((k) => JPAC_BUS.load(k))
+  );
+  // 読んでいる間に地図が動いていたら捨てる。古い範囲を描き足さないため。
+  if (token !== busToken) return;
+  busLayer.clearLayers();
+  if (!map.hasLayer(busLayer)) busLayer.addTo(map);
+  let drawn = 0;
+  for (const stops of chunks) {
+    if (!stops || drawn > 800) break;
+    for (const [name, operators, x, y] of stops) {
+      if (!b.contains([y, x])) continue;
+      if (++drawn > 800) break;        // 密集地でも操作が重くならない上限
+      L.circleMarker([y, x], {
+        radius: 3, color: "#188038", weight: 1.5, fillColor: "#fff", fillOpacity: 1,
+      })
+        // 同じ地点に複数の事業者が立っていることがある。ピンは1つにまとめ、
+        // 事業者は全部出す。
+        .bindTooltip(
+          `${esc(name)}<span style="color:#70757a">（${operators.map(esc).join("・")}）</span>`,
+          { direction: "top", opacity: 1 })
+        .addTo(busLayer);
+    }
+  }
+}
+map.on("moveend", refreshBusStops);
+
 // --------------------------------------------------------------- markers
 const pinSvg = (w, h, fill, stroke, dot) =>
   `<svg viewBox="0 0 27 43" width="${w}" height="${h}"><path d="M13.5 1C6.6 1 1 6.6 1 13.5 1 23.2 13.5 42 13.5 42S26 23.2 26 13.5C26 6.6 20.4 1 13.5 1z" fill="${fill}" stroke="${stroke}" stroke-width="1.2"/><circle cx="13.5" cy="13.5" r="4.6" fill="${dot}"/></svg>`;
@@ -739,6 +784,27 @@ function jpacSections(lg, meshCode) {
     }
   }
 
+  // 路線。座標を持たないので市区町村単位の対応そのもの（POLICY.md §3.2）。
+  const lineIds = (S.jpac.linesByLg || {})[lg] || [];
+  if (lineIds.length) {
+    const names = lineIds.map((i) => S.jpac.lineNames[i]);
+    const shown = names.slice(0, SHOW_MAX)
+      .map(([n, o]) => `${esc(n)}<span style="color:#70757a">（${esc(o)}）</span>`)
+      .join("、");
+    rows.push(row({
+      ic: "train", text: `この市区町村を通る路線 ${names.length} 件`,
+      sub: shown + (names.length > SHOW_MAX ? ` ほか ${names.length - SHOW_MAX} 件` : ""),
+    }));
+  }
+
+  const buses = (S.jpac.busCounts || {})[lg] || 0;
+  if (buses) {
+    rows.push(row({
+      ic: "bus", text: `この市区町村のバス停 ${buses.toLocaleString()} 件`,
+      sub: `ズーム${BUS_MIN_ZOOM}以上で地図に出ます`,
+    }));
+  }
+
   const postal = (S.jpac.postal || {})[lg] || [];
   if (postal.length) {
     const shown = postal.slice(0, SHOW_MAX)
@@ -777,6 +843,10 @@ function openStation(st) {
   const [r6, c6] = rowCol6Of(st.y, st.x);
   const rows = [
     row({ ic: "train", text: esc(st.o), sub: "事業者（N02 の表記のまま）" }),
+    ...(((S.jpac && S.jpac.linesByStation) || {})[st.id] || []).map((i) => {
+      const [name, operator] = S.jpac.lineNames[i];
+      return row({ ic: "train", text: esc(name), sub: `${esc(operator)}・路線` });
+    }),
     ...lgs.map((i) => row({ ic: "place", text: esc(S.munis[i].name), sub: "市区町村", act: "muni", i })),
     row({ ic: "my_location", text: `${fix(st.y)}, ${fix(st.x)}`, sub: "駅の代表点（N02 のポリラインから算出）", copy: `${fix(st.y)}, ${fix(st.x)}` }),
     row({ ic: "grid_on", text: code6Of(r6, c6), sub: "6次メッシュコード（約125m四方）", copy: code6Of(r6, c6) }),

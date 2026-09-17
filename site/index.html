@@ -103,6 +103,9 @@
         をもとに jp-address-crosswalk 作成</li>
       <li>郵便番号データ：日本郵便株式会社
         <a href="https://www.post.japanpost.jp/zipcode/dl/utf-zip.html" target="_blank" rel="noopener">https://www.post.japanpost.jp/zipcode/dl/utf-zip.html</a></li>
+      <li>「国土数値情報（バス停留所データ）」（国土交通省）
+        <a href="https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P11-v3_0.html" target="_blank" rel="noopener">https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P11-v3_0.html</a>
+        をもとに jp-address-crosswalk 作成（令和4年度版）</li>
       <li>出典：「市外局番の一覧」（総務省）
         <a href="https://www.soumu.go.jp/main_sosiki/joho_tsusin/top/tel_number/shigai_list.html" target="_blank" rel="noopener">https://www.soumu.go.jp/main_sosiki/joho_tsusin/top/tel_number/shigai_list.html</a>
         を加工して作成</li>
@@ -126,6 +129,8 @@
 <script defer src="data/geo/units.js"></script>
 <!-- Optional: 駅・郵便番号・市外局番。無ければその節を出さないだけ。 -->
 <script defer src="data/jpac_data.js"></script>
+<!-- バス停の点。チャンクは見えている範囲のぶんだけ後から読む。 -->
+<script defer src="bus.js"></script>
 <script defer src="app.js"></script>
 </body>
 </html>

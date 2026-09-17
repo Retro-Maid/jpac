@@ -1,26 +1,43 @@
-"""静的マップ用の jpac データ（駅・郵便番号・市外局番）を書き出す.
+"""静的マップ用の jpac データ（駅・路線・バス停・郵便番号・市外局番）を書き出す.
 
 docs/POLICY.md §3.2 の範囲。地図でクリックした市区町村について、jpac が既に持っている
-対応をその場で出せるようにするためのもので、出るのは `site/data/jpac_data.js` ひとつ。
-`jpac build` の成果物は変わらない。
+対応をその場で出せるようにするためのもの。`jpac build` の成果物は変わらない。
 
 鍵は全部 `lg_code`（6桁の全国地方公共団体コード）で、jpac の他のテーブルと同じ。
 町字（`address_id`）には降りない —— 郵便番号も市外局番も、公表されている粒度は
 市区町村までだからである（docs/POLICY.md §4）。
 
-出力の中身:
+出るファイルは2種類ある。
+
+**`site/data/jpac_data.js`** —— ページが最初に読む1ファイル。
 
     stations      駅グループごとに 名前・事業者・代表点・lg_code。
                   代表点は N02 のポリラインから build/spatial.py の規則で求める
                   （長さ加重の重心。線から外れる場合は線上の中点）。§3.2 の例外として
                   site/ にのみ配る
+    lineNames     路線 (路線名, 運営会社) の配列。596 種類しかないので、各行に
+                  名前を持たせず添字で指す —— 素直に持つと 606 KB、集約すると 1/4 以下
+    linesByLg     lg_code → lineNames の添字
+    linesByStation 駅グループコード → lineNames の添字（乗換駅は複数）
     postal        lg_code → 郵便番号。bridge_municipality_postal の P2（7桁そのもの）と
                   P3（「以下に掲載がない場合」等のレコード）を、どちらも実際の7桁に
                   解決したうえで種別を付ける
     telephone     lg_code → 市外局番。番号区画を経由し、区画の一部だけを含む場合は
                   発行元の但し書きをそのまま持たせる
+    busCounts     lg_code → バス停の数。点そのものは下のチャンクにある
+    busMeshes     存在するチャンクの鍵。無い鍵を要求して 404 を出さないため
 
-Run:  py -3.12 tools/build_site_data.py [--out DIR]
+**`site/data/bus/<2次メッシュ>.js`** —— バス停の点。ページが見えている範囲だけ読む。
+
+    27万件は即時読み込みに載らない（全部で 16.4 MB）。geo.js と同じ 2次メッシュ単位の
+    チャンクにすると中央値 2.1 KB・p90 11 KB に収まる。「多すぎるから間引く」はしない ——
+    欠けた集合は「ここにあるバス停」という問いに、完全に見えるまま誤答する。
+
+バス停の座標は parquet に無い（§3.1 によりリリース成果物には出さない）ので、生の P11 から
+読む。その際 `pipeline._read_p11_geometry` をそのまま使う —— `p11_stop_id` の作り方が
+ビルダー側とずれると、全停留所が別の点に付いたまま誰も気づかない。
+
+Run:  py -3.12 tools/build_site_data.py [--out DIR] [--parquet DIR]
 """
 
 from __future__ import annotations
@@ -51,6 +68,11 @@ from jp_address_crosswalk.payload import (  # noqa: E402
     read_prj_member,
     read_shp_member,
 )
+
+# 位置による突き合わせは1か所にしか置かない。バス停の点は p11_stop_id で引くので、
+# id の作り方がビルダーとパイプラインでずれると全停留所が別の点に付く。
+from jp_address_crosswalk.pipeline import Paths as _Paths  # noqa: E402
+from jp_address_crosswalk.pipeline import _read_p11_geometry  # noqa: E402
 
 ap = argparse.ArgumentParser()
 ap.add_argument("--out", default=str(ROOT / "site" / "data"))
@@ -173,6 +195,113 @@ for lg in telephone:
 say(f"市外局番 {tel.height:,} 行 / {len(telephone):,} 市区町村"
     f"（区画の一部のみ {tel.filter(pl.col('coverage_type') == 'partial').height:,}）")
 
+# --------------------------------------------------------------- 鉄道路線
+# 路線は596種類しかないのに、(路線名, 運営会社) をそのまま各行に持つと 606 KB になる。
+# 名前の配列を1つ持って添字で指すと 1/4 以下になり、即時読み込みのファイルに収まる。
+say("路線を解決中…")
+line_index: dict[tuple[str, str], int] = {}
+line_names: list[list[str]] = []
+
+
+def _line_id(name: str, operator: str) -> int:
+    key = (name, operator)
+    if key not in line_index:
+        line_index[key] = len(line_names)
+        line_names.append([name, operator])
+    return line_index[key]
+
+
+lines_by_lg: dict[str, list[int]] = {}
+for lg, ln, op in (
+    rd("bridge_line_municipality")
+    .filter(pl.col("lg_code").is_not_null())
+    .select("lg_code", "line_name_raw", "operator_name_raw")
+    .iter_rows()
+):
+    lines_by_lg.setdefault(lg, []).append(_line_id(ln, op))
+lines_by_station: dict[str, list[int]] = {}
+for gid, ln, op in (
+    rd("bridge_station_line")
+    .select("n02_group_code", "line_name_raw", "operator_name_raw")
+    .iter_rows()
+):
+    lines_by_station.setdefault(gid, []).append(_line_id(ln, op))
+for d in (lines_by_lg, lines_by_station):
+    for k in d:
+        d[k] = sorted(set(d[k]))
+say(f"路線 {len(line_names):,}  市区町村 {len(lines_by_lg):,}  駅 {len(lines_by_station):,}")
+
+# --------------------------------------------------------------- バス停留所
+# 27万件は即時読み込みに載らない（全部で 16.4 MB）。geo.js と同じく2次メッシュごとの
+# チャンクにして、見えている範囲だけ読む —— 中央値 2.1 KB、p90 11 KB。
+# 「多すぎるから間引く」はしない。欠けた集合は「ここにあるバス停」という問いに、
+# 完全に見えるまま誤答する（POLICY.md §3.2）。
+say("バス停の点を読み込み中…")
+stop_points = _read_p11_geometry(_Paths(root=ROOT))
+# 候補が2つある停留所（府県境の10件）は両方に数える。dict にすると後勝ちで片方が
+# 黙って消え、POLICY.md §4 が禁じる「候補を1つに決める」ことになる。駅が lg を
+# 配列で持っているのと同じ理由。
+bus_lg: dict[str, list[str]] = {}
+for _sid, _lg in (
+    rd("bridge_bus_stop_municipality")
+    .filter(pl.col("lg_code").is_not_null())
+    .select("p11_stop_id", "lg_code")
+    .iter_rows()
+):
+    bus_lg.setdefault(_sid, []).append(_lg)
+# 同じ地点・同じ名称のレコードは、表示のためにまとめる。実測で 278,515 行のうち
+# 60,472 行が「名称も座標も同じで事業者だけ違う」—— コミュニティバスと民間路線が同じ
+# 停留所に立っている類で、最大12件が1点に重なる。そのまま描くと4分の1近くが同じ
+# ピクセルに埋もれ、描画上限も重なりで食い潰される。
+#
+# まとめるのは*表示*のためであって、捨てるのではない: 事業者は全部ツールチップに残る。
+# 行を落とすのは「ここにあるバス停」への誤答になる（POLICY.md §3.2）。
+bus_counts: dict[str, int] = {}
+merged: dict[str, dict[tuple[str, float, float], list[str]]] = {}
+placed = 0
+unplaced = 0
+for sid, name, operator in (
+    rd("p11_bus_stop").select("p11_stop_id", "stop_name_raw", "operator_name_raw").iter_rows()
+):
+    point = stop_points.get(sid)
+    if point is None:
+        unplaced += 1
+        continue
+    placed += 1
+    x, y = point
+    for lg in bus_lg.get(sid, ()):
+        bus_counts[lg] = bus_counts.get(lg, 0) + 1
+    p, u = int(y * 1.5), int(x) - 100
+    q, v = int((y * 1.5 - p) * 8), int((x - int(x)) * 8)
+    key = f"{p:02d}{u:02d}{q}{v}"
+    merged.setdefault(key, {}).setdefault(
+        (name, round(x, 6), round(y, 6)), []
+    ).append(operator)
+chunks: dict[str, list] = {
+    key: [
+        [name, sorted(set(operators)), x, y]
+        for (name, x, y), operators in sorted(group.items())
+    ]
+    for key, group in merged.items()
+}
+pins = sum(len(v) for v in chunks.values())
+say(f"バス停 {placed:,}（点が無いもの {unplaced}）  ピン {pins:,}"
+    f"（同一地点をまとめて {placed - pins:,} 行ぶん圧縮）  "
+    f"チャンク {len(chunks):,}  市区町村に付くもの {sum(bus_counts.values()):,}")
+
+BUS_DIR = OUT / "bus"
+if BUS_DIR.exists():
+    for stale in BUS_DIR.glob("*.js"):
+        stale.unlink()
+BUS_DIR.mkdir(parents=True, exist_ok=True)
+largest = 0
+for key in sorted(chunks):
+    body = json.dumps(sorted(chunks[key]), ensure_ascii=False, separators=(",", ":"))
+    text = f'window.JPAC_BUS&&window.JPAC_BUS.put("{key}",{body});\n'
+    (BUS_DIR / f"{key}.js").write_text(text, encoding="utf-8")
+    largest = max(largest, len(text.encode()))
+say(f"チャンク書き出し完了  最大 {largest / 1024:,.0f} KB")
+
 # ------------------------------------------------------------------- write
 OUT.mkdir(parents=True, exist_ok=True)
 payload = {
@@ -180,10 +309,18 @@ payload = {
     "stations": stations,
     "postal": postal,
     "telephone": telephone,
+    "lineNames": line_names,
+    "linesByLg": lines_by_lg,
+    "linesByStation": lines_by_station,
+    "busCounts": bus_counts,
+    # どのチャンクが存在するかを持たせる。無い鍵を要求して 404 を出さないため。
+    "busMeshes": sorted(chunks),
     "counts": {
         "stations": len(stations),
         "postal_rows": resolved.height,
         "telephone_rows": tel.height,
+        "lines": len(line_names),
+        "bus_stops": placed,
     },
 }
 text = ("// generated by tools/build_site_data.py — do not edit\n"

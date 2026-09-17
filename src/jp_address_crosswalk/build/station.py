@@ -117,7 +117,10 @@ def build_station_bridge(
                 pl.col("boundary_jis_city_code").is_not_null() & pl.col("lg_code").is_null()
             )["n02_group_code"].n_unique(),
             by_point=counts,
-            municipalities_with_a_station=resolved["lg_code"].n_unique(),
+            # drop_nulls() が要る: n_unique() は null を1種類として数えるので、
+            # 断面のズレ（旧浜松市の区、54行）で lg_code が NULL になる行があるだけで
+            # +1 される。1,403 と報告していたのは実際には 1,402 だった。
+            municipalities_with_a_station=resolved["lg_code"].drop_nulls().n_unique(),
         )
         return bridge
 
