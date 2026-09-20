@@ -208,7 +208,12 @@ def export(
     root: str = ROOT_OPT,
     verbose: bool = VERBOSE_OPT,
 ) -> None:
-    """Re-export the three artifacts from the Parquet tables already on disk."""
+    """Re-export the three artifacts from the Parquet tables already on disk.
+
+    Three artifacts, four files: the SQLite database is written once and then
+    gzipped, because the release ships the compressed copy (`export/writers.py`
+    の write_sqlite_gz).
+    """
     _setup(verbose)
     import polars as pl
 
@@ -223,7 +228,9 @@ def export(
     flat = writers.build_flat_view(tables, accepted_only=True)
     flat_all = writers.build_flat_view(tables, accepted_only=False)
     flat.write_parquet(p.dist / "jp_address_crosswalk.parquet", compression="zstd")
-    writers.write_sqlite(tables, flat, flat_all, p.dist / "jp_address_crosswalk.sqlite")
+    sqlite_path = p.dist / "jp_address_crosswalk.sqlite"
+    writers.write_sqlite(tables, flat, flat_all, sqlite_path)
+    writers.write_sqlite_gz(sqlite_path, p.dist / "jp_address_crosswalk.sqlite.gz")
     writers.write_csv_gz(flat, p.dist / "jp_address_crosswalk.csv.gz")
     # Rewriting the artifacts without rewriting their digests would leave a
     # SHA256SUMS that describes the previous export, which is exactly the file
