@@ -29,6 +29,7 @@ from __future__ import annotations
 import polars as pl
 
 from ..logging_setup import get_logger, stage_context
+from .lineage import lineage_note, resolve_candidates, via_lineage_method
 from .spatial import GridIndex, line_centroid, point_in_rings, point_on_line
 
 log = get_logger(__name__)
@@ -69,6 +70,7 @@ def build_station_bridge(
     geometry: dict[str, list],
     boundaries: list[tuple[str, tuple[float, float, float, float], list]],
     lg_by_jis: dict[str, str],
+    successors: dict[str, list[str]] | None = None,
 ) -> pl.DataFrame:
     """One row per (station, candidate municipality); unresolved stations kept.
 
@@ -95,11 +97,19 @@ def build_station_bridge(
             if not candidates:
                 rows.append(_row(record, None, RELATION_UNRESOLVED, MATCH_UNRESOLVED, 0, how))
                 continue
-            relation = RELATION_CONTAINS if len(candidates) == 1 else RELATION_AMBIGUOUS
-            for code in candidates:
+            # 候補数は「含有したポリゴンの数」ではなく「解決後の候補の数」で数える。
+            # 旧浜松市北区のように承継先が2つある旧コードは、ポリゴン1つでも候補2つに
+            # なるからである（build/lineage.py）。
+            resolved = [
+                (code, lg, via)
+                for code in candidates
+                for lg, via in resolve_candidates(code, lg_by_jis, successors)
+            ]
+            relation = RELATION_CONTAINS if len(resolved) == 1 else RELATION_AMBIGUOUS
+            for code, lg, via in resolved:
                 rows.append(
-                    _row(record, code, relation, MATCH_SPATIAL, len(candidates), how,
-                         lg_code=lg_by_jis.get(code))
+                    _row(record, code, relation, MATCH_SPATIAL, len(resolved), how,
+                         lg_code=lg, via_lineage=via)
                 )
 
         bridge = pl.DataFrame(rows, schema=_SCHEMA).sort(
@@ -153,7 +163,8 @@ _SCHEMA = {
 }
 
 
-def _row(record, code, relation, method, candidate_count, how, lg_code=None) -> dict:
+def _row(record, code, relation, method, candidate_count, how, lg_code=None,
+         via_lineage=False) -> dict:
     """One bridge row.
 
     ``verification_status`` is ``auto`` only for a station contained by exactly
@@ -175,7 +186,8 @@ def _row(record, code, relation, method, candidate_count, how, lg_code=None) -> 
         "lg_code": lg_code,
         "boundary_jis_city_code": code,
         "relation_type": relation,
-        "match_method": method,
+        # 承継記録を経たことは列に残す。注記にすると auto の CHECK に抵触する。
+        "match_method": via_lineage_method(method) if via_lineage else method,
         # Not a probability (docs/POLICY.md §6). Containment either held or it
         # did not, so the only two values are 1.0 and 0.0 — an ambiguous station
         # is two rows each of which is a true containment, distinguished by
@@ -187,13 +199,17 @@ def _row(record, code, relation, method, candidate_count, how, lg_code=None) -> 
         "is_unique_match": 1 if unique else 0,
         "verification_status": "auto" if settled else "review_required",
         "placement_point": how,
-        "mismatch_note": _note(relation, unique, resolved, code),
+        "mismatch_note": _note(relation, unique, resolved, code, lg_code, via_lineage),
     }
 
 
-def _note(relation: str, unique: bool, resolved: bool, code: str | None) -> str | None:
+def _note(relation: str, unique: bool, resolved: bool, code: str | None,
+          lg_code: str | None = None, via_lineage: bool = False) -> str | None:
     if relation == RELATION_UNRESOLVED:
         return "どのポリゴンにも含まれない。最寄りへの割り当てはしない（POLICY.md §4）"
+    # 分割を経た行だけ注記を付ける。1:1 の経路は match_method が持つ。
+    if via_lineage and lg_code and not unique:
+        return lineage_note(code, lg_code)
     if not resolved:
         return (
             f"境界データ側のコード {code} が jpac の現行市区町村に無いため lg_code は NULL。"

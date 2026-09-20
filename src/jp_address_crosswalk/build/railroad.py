@@ -52,6 +52,7 @@ import math
 import polars as pl
 
 from ..logging_setup import get_logger, stage_context
+from .lineage import resolve_candidates, via_lineage_method
 from .spatial import GridIndex, point_in_rings
 
 log = get_logger(__name__)
@@ -213,6 +214,7 @@ def build_line_municipality_bridge(
     boundaries: list[tuple[str, tuple[float, float, float, float], list]],
     lg_by_jis: dict[str, str],
     step_m: float = SAMPLE_STEP_M,
+    successors: dict[str, list[str]] | None = None,
 ) -> pl.DataFrame:
     """One row per (路線, 市区町村 it passes through); a line placed nowhere keeps a row.
 
@@ -240,9 +242,16 @@ def build_line_municipality_bridge(
             if not inside:
                 rows.append(_row(record, None, None, len(inside)))
                 continue
-            for code in sorted(inside):
-                rows.append(_row(record, code, inside[code], len(inside),
-                                 lg_code=lg_by_jis.get(code)))
+            # 承継先が2つある旧コードは候補2つになる。市区町村の数は解決後で数える
+            # —— 路線は一意性を要求しないが、数が合わないと利用者が数えられない。
+            resolved = [
+                (code, inside[code], lg, via)
+                for code in sorted(inside)
+                for lg, via in resolve_candidates(code, lg_by_jis, successors)
+            ]
+            for code, hits, lg, via in resolved:
+                rows.append(_row(record, code, hits, len(resolved),
+                                 lg_code=lg, via_lineage=via))
 
         bridge = pl.DataFrame(rows, schema=_SCHEMA).sort(
             [*LINE_KEY, "boundary_jis_city_code"]
@@ -291,7 +300,7 @@ _SCHEMA = {
 }
 
 
-def _row(record, code, hits, count, lg_code=None) -> dict:
+def _row(record, code, hits, count, lg_code=None, via_lineage=False) -> dict:
     """One bridge row.
 
     ``auto`` needs a resolved ``lg_code`` and nothing else to note. Unlike the
@@ -305,20 +314,29 @@ def _row(record, code, hits, count, lg_code=None) -> dict:
         "lg_code": lg_code,
         "boundary_jis_city_code": code,
         "relation_type": RELATION_UNRESOLVED if unresolved else RELATION_OVERLAP,
-        "match_method": MATCH_UNRESOLVED if unresolved else MATCH_SAMPLED,
+        # 承継記録を経たことは列に残す（build/lineage.py）。
+        "match_method": (
+            MATCH_UNRESOLVED if unresolved
+            else via_lineage_method(MATCH_SAMPLED) if via_lineage
+            else MATCH_SAMPLED
+        ),
         # Containment of a sampled point either held or it did not
         # (docs/POLICY.md §6): the only values are 1.0 and 0.0.
         "confidence": 0.0 if unresolved else 1.0,
         "sample_hits": hits,
         "municipality_count": count,
         "verification_status": "auto" if (not unresolved and lg_code) else "review_required",
-        "mismatch_note": _note(unresolved, lg_code, code),
+        "mismatch_note": _note(unresolved, lg_code, code, via_lineage),
     }
 
 
-def _note(unresolved: bool, lg_code: str | None, code: str | None) -> str | None:
+def _note(unresolved: bool, lg_code: str | None, code: str | None,
+          via_lineage: bool = False) -> str | None:
     if unresolved:
         return "どの市区町村のポリゴンにも入らない。最寄りへの割り当てはしない（POLICY.md §4）"
+    # 路線は一意性を要求しないので、承継の経路は match_method だけが持つ。
+    # 駅・バス停と違い「候補の1つ」という但し書きは要らない（40市区町村を通る路線は
+    # 40行の正しい答えであって曖昧さではない）。
     if lg_code is None:
         return (
             f"境界データ側のコード {code} が jpac の現行市区町村に無いため lg_code は NULL。"

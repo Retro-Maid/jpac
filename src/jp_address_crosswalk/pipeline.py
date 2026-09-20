@@ -34,6 +34,9 @@ from .build import (
     estat as estat_build,
 )
 from .build import (
+    mesh as mesh_build,
+)
+from .build import (
     overrides as overrides_mod,
 )
 from .build import (
@@ -876,8 +879,28 @@ def _build_station_tables(
     out["n02_station"] = stations_raw.with_columns(
         pl.lit(snap_station).alias("source_snapshot_id")
     )
+    # 境界データ（2020年）にあって現行の市区町村に無いコードを、人が署名した承継記録で
+    # 読み替える。メッシュ表と地図は以前からこれを読んでいたが、3つのブリッジは読んで
+    # いなかった（docs/LIMITATIONS.md 項目15）。同じ区域がメッシュでは解決し、
+    # ブリッジでは NULL のまま残るという食い違いがあった。
+    successors = mesh_build.successors_from_lineage(
+        _load_lineage_document(paths), lg_by_jis
+    )
+    stale = sorted({lg for v in successors.values() for lg in v} - set(lg_by_jis.values()))
+    if stale:
+        # 現行に無い承継先を書き込むと、join できない値を配ることになる。
+        raise ValidationFailed(
+            "lineage の承継先が現行の市区町村に無い", successors=stale
+        )
+    if successors:
+        log.info(
+            "loaded municipality lineage for the spatial bridges",
+            codes=len(successors),
+            splits=sum(1 for v in successors.values() if len(v) > 1),
+        )
+
     out["bridge_station_municipality"] = station_build.build_station_bridge(
-        stations_raw, station_geometry, boundary_geometry, lg_by_jis
+        stations_raw, station_geometry, boundary_geometry, lg_by_jis, successors
     ).with_columns(pl.lit(snap_station).alias("source_snapshot_id"))
 
     # 路線. The adapter has always parsed these two frames; until now nothing
@@ -895,7 +918,7 @@ def _build_station_tables(
         with stage_context("railroad", "geometry"):
             line_geometry = _read_railroad_geometry(paths, swapped)
         out["bridge_line_municipality"] = railroad_build.build_line_municipality_bridge(
-            lines, line_geometry, boundary_geometry, lg_by_jis
+            lines, line_geometry, boundary_geometry, lg_by_jis, successors=successors
         ).with_columns(pl.lit(snap_station).alias("source_snapshot_id"))
 
     # バス停留所. A published point, so no representative point is derived.
@@ -903,7 +926,7 @@ def _build_station_tables(
         with stage_context("busstop", "geometry"):
             stop_points = _read_p11_geometry(paths)
         out["bridge_bus_stop_municipality"] = busstop_build.build_bus_stop_bridge(
-            stops_raw, stop_points, boundary_geometry, lg_by_jis
+            stops_raw, stop_points, boundary_geometry, lg_by_jis, successors
         ).with_columns(pl.lit(snapshot_for("mlit_ksj_p11")).alias("source_snapshot_id"))
     return out
 
@@ -1102,6 +1125,21 @@ def _load_municipality_lineage(paths: Paths) -> dict[str, str]:
         str(e["old_lg_code"]): str(e["new_lg_code"])
         for e in (data.get("transitions") or [])
     }
+
+
+def _load_lineage_document(paths: Paths) -> dict:
+    """``municipality_lineage.yml`` をそのまま読む.
+
+    ``_load_municipality_lineage`` は ``transitions`` を ``{old: new}`` に平坦化し、
+    ``_load_unlisted_municipalities`` は ``unlisted`` を ``{code: reason}`` にする。
+    どちらも ``successors``（分割の承継先）を落とすので、承継表を作るには生の構造が
+    要る —— 平坦化された辞書を渡すと旧浜松市北区の2つの承継先が消え、承継先を1つに
+    決めたのと同じことになる（``docs/POLICY.md`` §4）。
+    """
+    path = paths.overrides / "municipality_lineage.yml"
+    if not path.exists():
+        return {}
+    return yaml.safe_load(path.read_text(encoding="utf-8")) or {}
 
 
 def _load_unlisted_municipalities(paths: Paths) -> dict[str, str]:

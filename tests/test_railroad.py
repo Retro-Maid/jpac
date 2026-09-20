@@ -231,6 +231,36 @@ class TestLineMunicipalityBridge:
         assert row["verification_status"] == "review_required"
         assert "99999" in row["mismatch_note"]
 
+    def test_a_lineage_transition_resolves_the_cross_section(self) -> None:
+        """路線の断面ズレ16行にあたる場合。"""
+        bridge = build_line_municipality_bridge(
+            lines_frame(("本線", "会社")),
+            {("本線", "会社"): [[(3.2, 0.5), (3.8, 0.5)]]},
+            [WEST, GONE], LG_BY_JIS,
+            successors={"99999": ["999996"]},
+        )
+        assert bridge.height == 1
+        row = bridge.to_dicts()[0]
+        assert row["lg_code"] == "999996"
+        assert row["boundary_jis_city_code"] == "99999"
+        assert row["verification_status"] == "auto"
+        assert row["match_method"] == "spatial_sampling_via_lineage"
+        assert row["mismatch_note"] is None
+
+    def test_a_split_ward_becomes_two_municipalities(self) -> None:
+        """路線は一意性を要求しないので、分割は素直に2市区町村になる。"""
+        bridge = build_line_municipality_bridge(
+            lines_frame(("本線", "会社")),
+            {("本線", "会社"): [[(3.2, 0.5), (3.8, 0.5)]]},
+            [WEST, GONE], LG_BY_JIS,
+            successors={"99999": ["999996", "888886"]},
+        )
+        assert bridge.height == 2
+        assert set(bridge["lg_code"]) == {"999996", "888886"}
+        assert set(bridge["municipality_count"]) == {2}
+        # 同じポリゴンから出た2行なので、根拠の量は等しい。
+        assert len(set(bridge["sample_hits"])) == 1
+
     def test_sample_hits_count_the_evidence(self) -> None:
         """A long run through a municipality is distinguishable from a clip."""
         bridge = build_line_municipality_bridge(

@@ -58,6 +58,35 @@ so the `stations` entry there stays, and this section states what V2 adds on top
 | **Origins** | **None.** 総務省統計局 is already covered by MIC in §3, and 国土数値情報 by MLIT |
 | **Granularity** | 市区町村 only. See below |
 
+### 2026-09-17 addition: バス停留所 (国土数値情報 P11)
+
+The table above is the 2026-09-05 record and is **left exactly as written**, for
+the same reason §3 is. This states what the P11 addition puts on top of it.
+
+| | |
+|---|---|
+| **Subject** | バス停留所 (国土数値情報 P11、**令和4年度版のみ**) |
+| **Origins** | **None.** 国土数値情報 is MLIT, already covered in §3 |
+| **Granularity** | 市区町村 only — the same ceiling |
+
+- **This is a release subject, not a map-only one.** `p11_bus_stop` and
+  `bridge_bus_stop_municipality` are emitted by `jpac build`. §3.2's bus-stop
+  paragraph is a *separate* permission covering the points in `site/`; the
+  tables here carry `lg_code` and nothing spatial.
+- **The schema enforces the ceiling the same way**: no `address_id` column, for
+  the reason given below.
+- **`p11_stop_id` is a row identifier, not an entity identity.** P11 gives a stop
+  no code, and no combination of its attributes is unique — even
+  (名称, 事業者, 座標) collides 12 times nationwide. So it is a surrogate in the
+  sense `bridge_id` is, and `docs/IDENTITY_MODEL.md`, which governs `address_id`,
+  does not apply to it. Recorded here because a reader has every reason to expect
+  otherwise.
+- **Edition-scoped, and the editions are not interchangeable.** 令和4年度版 is
+  オープンデータ; 平成22年度版 is 非商用 and excludes 複製物の再配布, so the two
+  are never mixed. N07 バスルート is refused outright on the same ground. Human
+  licence review 2026-09-17 (`docs/LICENSE_REVIEW_P11_2026_09.md`); design and
+  measurements in `docs/BUS_STOP_PLAN.md`.
+
 ### Granularity: 市区町村 is a ceiling, not a starting point
 
 A station is attributed to a municipality and **never to a 町字**. This is not a
@@ -93,9 +122,10 @@ redistributing spatial data, where the licence questions are materially harder
 
 ### Release independence
 
-Both V2 sources are `required: false` in `config/sources.yml`. A V1 release must
-not depend on them and must not be blocked by their absence, their licence
-review, or a publisher outage.
+All three V2 sources — `mlit_ksj_n02`, `mlit_ksj_p11` and `estat_boundary` — are
+`required: false` in `config/sources.yml`. A V1 release must not depend on them
+and must not be blocked by their absence, their licence review, or a publisher
+outage.
 
 ## 3.2 Map extension: boundary geometry in `site/` only
 

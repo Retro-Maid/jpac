@@ -85,9 +85,9 @@ release.)
    (independent review 2, partially-resolved P1).
 11. **Municipality mergers do not carry `address_id` forward.** Identity rule I3 needs an
    attested `lg_code` transition in `overrides/municipality_lineage.yml`. V1 shipped
-   that file empty; V2 records one reorganisation (浜松市, 2024-01-01: five 1:1
-   transitions and one split with two successors), which the boundary and mesh stages
-   use. It fires no I3 today because ABR already carried the new codes when jpac first
+   that file empty; V2 records one reorganisation (浜松市, 2024-01-01: six 1:1
+   transitions and one split with two successors), which the boundary stage, the mesh
+   table and the three spatial bridges use. It fires no I3 today because ABR already carried the new codes when jpac first
    observed them. Any other 廃置分合 still retires the town and mints a new id
    (`IDENTITY_MODEL.md` §4).
 
@@ -103,9 +103,18 @@ release.)
 14. **旧浜松市北区 cannot be split.** It became part of 中央区 and part of 浜名区 in
    2024, and that new ward line is absent from 2020 data, so points there keep two
    candidates (`bridge_station_municipality`, the mesh table and the map alike).
-15. **Station rows for superseded codes keep `lg_code` NULL.** The 54 stations in the
-   former 浜松 wards carry `boundary_jis_city_code`; the station bridge does not yet read
-   the lineage file (the mesh table and the map do).
+15. **A superseded boundary code resolves only through the lineage file, and the path is
+   in a column rather than a note.** The 54 stations in the former 浜松 wards
+   (`STATION_JOIN_PREFLIGHT.md` §4.3) and the bus-stop rows carrying the same codes
+   (`BUS_STOP_PLAN.md`) are read through `overrides/municipality_lineage.yml` by all
+   three bridges, as the mesh table and the map already were. A 1:1 succession stays
+   `contains`+`auto` — the old ward's area lies inside the new one — and records the
+   path as `match_method = 'spatial_containment_via_lineage'`; 旧北区 keeps both
+   successors instead (item 14). `boundary_jis_city_code` is kept either way, so the
+   code the publisher stated is never overwritten. Two things remain: a code in neither
+   the current municipalities nor the lineage file still keeps `lg_code` NULL, and a
+   reader who filters on `match_method = 'spatial_containment'` alone will silently
+   exclude the lineage-resolved rows.
 16. **The map's mesh colouring is an approximation for display** (each 6次 cell sampled
    at its centre and corners) and its outlines are simplified; neither decides anything.
    The clicked point is decided against the unsimplified boundary.

@@ -681,7 +681,8 @@ CREATE TABLE "bridge_station_municipality" (
   CHECK (candidate_count >= 0),
   CHECK (NOT (is_unique_match = 1 AND candidate_count > 1)),
   CHECK (relation_type IN ('contains','ambiguous','unresolved')),
-  CHECK (match_method IN ('spatial_containment','unresolved')),
+  CHECK (match_method IN ('spatial_containment','spatial_containment_via_lineage',
+                         'unresolved')),
   CHECK (verification_status IN ('auto', 'review_required', 'manually_verified',
                                  'manually_rejected')),
   CHECK (verification_status <> 'auto' OR (
@@ -760,7 +761,8 @@ CREATE TABLE "bridge_line_municipality" (
   CHECK (municipality_count >= 0),
   CHECK (sample_hits IS NULL OR sample_hits >= 1),
   CHECK (relation_type IN ('overlap','unresolved')),
-  CHECK (match_method IN ('spatial_sampling','unresolved')),
+  CHECK (match_method IN ('spatial_sampling','spatial_sampling_via_lineage',
+                         'unresolved')),
   CHECK (verification_status IN ('auto', 'review_required', 'manually_verified',
                                  'manually_rejected')),
   CHECK (verification_status <> 'auto' OR (
@@ -818,7 +820,8 @@ CREATE TABLE "bridge_bus_stop_municipality" (
   CHECK (candidate_count >= 0),
   CHECK (NOT (is_unique_match = 1 AND candidate_count > 1)),
   CHECK (relation_type IN ('contains','ambiguous','unresolved')),
-  CHECK (match_method IN ('spatial_containment','unresolved')),
+  CHECK (match_method IN ('spatial_containment','spatial_containment_via_lineage',
+                         'unresolved')),
   CHECK (verification_status IN ('auto', 'review_required', 'manually_verified',
                                  'manually_rejected')),
   CHECK (verification_status <> 'auto' OR (
