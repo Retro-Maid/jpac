@@ -71,13 +71,13 @@ approved_row_count_changes:
       collapse, and the parser's output is compared with the stored table on
       every build (test_every_parsed_coverage_clause_survives_into_the_table).
 
-  # --- V2 (駅 → 市区町村). Three provenance tables, one cause.
+  # --- V2 (駅・路線・バス停 → 市区町村). Three provenance tables, one cause.
   #
-  # These count payloads and terms documents, not addresses. Accepting the two
-  # optional V2 sources adds 47 prefecture boundary archives and one railway
-  # archive, so each table necessarily grows by the same 48-49 rows — nothing
-  # about the address data moved. Every other row-count gate passed on this
-  # build, which is what distinguishes this from a regression.
+  # These count payloads and terms documents, not addresses. Accepting the three
+  # optional V2 sources adds 47 prefecture boundary archives, one railway archive
+  # and one bus-stop archive, so each table necessarily grows by the same 49-50
+  # rows — nothing about the address data moved. Every other row-count gate
+  # passed on this build, which is what distinguishes this from a regression.
   #
   # Recorded as three exact transitions rather than by raising
   # source_row_count_change_pct: the percentage limit is what protects the
@@ -86,40 +86,52 @@ approved_row_count_changes:
   #
   # attested_by / attested_on below are a human's signature on "this growth is
   # expected"; without one the gate stays red (build/quality.py marks the entry
-  # unattested_approval rather than silently honouring it). Signed 2026-09-14,
-  # the same day the licence gate was cleared by hand. See
+  # unattested_approval rather than silently honouring it). First signed
+  # 2026-09-14, the same day the licence gate was cleared by hand. See
   # docs/LICENSE_REVIEW_2026_09.md §9 for the same distinction applied there.
+  # Re-signed 2026-09-20, when mlit_ksj_p11 was accepted as a third V2 source.
+  # The counts below each moved by the P11 payload's own rows, so the
+  # 2026-09-14 figures (115 / 112 / 16) no longer matched and the gate went red
+  # — correctly: an exact-match approval is supposed to stop matching the moment
+  # the transition it describes changes. `from_rows` is untouched because the
+  # baseline is still the released v1.0.0 断面; this is one hop from there to the
+  # release that carries all three V2 sources, not a second hop after the first.
   - table: source_snapshot
     from_rows: 66
-    to_rows: 115
+    to_rows: 116
     tolerance_rows: 0
-    attested_by: "jp-address-crosswalk"
-    attested_on: "2026-09-14"
+    attested_by: retro.maid.itworker@gmail.com
+    attested_on: "2026-09-20"
     rationale: >-
-      +49 provenance rows from accepting estat_boundary (47 prefecture archives
-      plus one aggregate snapshot) and mlit_ksj_n02 (one archive). One row per
-      accepted payload is the table's definition, so this is the count of files,
-      not a change in the data.
+      +50 provenance rows from accepting estat_boundary (47 prefecture archives
+      plus one aggregate snapshot), mlit_ksj_n02 (one archive) and mlit_ksj_p11
+      (one archive, P11-22_SHP). One row per accepted payload is the table's
+      definition, so this is the count of files, not a change in the data. Every
+      address-table row_count_change gate on the same build reported 0.0%, which
+      is what distinguishes this from a regression.
   - table: match_run_input
     from_rows: 64
-    to_rows: 112
+    to_rows: 113
     tolerance_rows: 0
-    attested_by: "jp-address-crosswalk"
-    attested_on: "2026-09-14"
+    attested_by: retro.maid.itworker@gmail.com
+    attested_on: "2026-09-20"
     rationale: >-
-      +48 rows, one per newly accepted payload, recording which snapshots fed
-      this match run. Follows source_snapshot by construction.
+      +49 rows, one per newly accepted payload, recording which snapshots fed
+      this match run. Follows source_snapshot by construction — one fewer,
+      because the estat_boundary aggregate snapshot is a provenance row and not
+      an input to the match run.
   - table: snapshot_license_artifact
     from_rows: 9
-    to_rows: 16
+    to_rows: 18
     tolerance_rows: 0
-    attested_by: "jp-address-crosswalk"
-    attested_on: "2026-09-14"
+    attested_by: retro.maid.itworker@gmail.com
+    attested_on: "2026-09-20"
     rationale: >-
-      +7 terms documents: mlit_ksj_n02 contributes primary_terms and detail_page,
-      estat_boundary contributes primary_terms, gis_terms, caveats_pdf,
-      definition_pdf and catalog_discrepancy. These are the artifacts whose
-      baselines docs/LICENSE_REVIEW_2026_09.md asks a human to review.
+      +9 terms documents: mlit_ksj_n02 contributes primary_terms and detail_page,
+      mlit_ksj_p11 the same two, and estat_boundary contributes primary_terms,
+      gis_terms, caveats_pdf, definition_pdf and catalog_discrepancy. These are
+      the artifacts whose baselines docs/LICENSE_REVIEW_2026_09.md and
+      docs/LICENSE_REVIEW_P11_2026_09.md ask a human to review.
 
 rationale: >-
   exact_rate_rise_points_without_rule_bump exists because a sudden jump in exact matches

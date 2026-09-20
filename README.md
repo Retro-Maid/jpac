@@ -359,12 +359,23 @@ v1.1.0 で加わった対応です。どれも市区町村までで、町字（`
 | テーブル | 行数 | 中身 |
 |---|---:|---|
 | `n02_station` | 9,046 | 駅（駅グループ単位） |
-| `bridge_station_municipality` | 9,047 | 駅 ↔ 市区町村。自動確定 8,987行 ／ 要確認 60行（旧浜松市の区コード 54・大阪空港 2〔府県境をまたぐため2候補〕・どの境界にも入らない 4） |
+| `bridge_station_municipality` | 9,061 | 駅 ↔ 市区町村。自動確定 9,027行 ／ 要確認 34行（旧北区の14駅〔候補2つなので28行〕・大阪空港 2〔府県境をまたぐため2候補〕・どの境界にも入らない 4） |
 | `estat_small_area` | 232,019 | e-Stat 小地域の属性。**形状は含みません** |
 
 どの境界にも入らない駅（埋立地や水域）は最寄りの市区町村に寄せず、`unresolved` のまま
 残します。境界の形状はビルド時に読むだけで、リリースデータには入りません
 （[`docs/POLICY.md`](docs/POLICY.md) §3.1）。
+
+**版のズレは承継記録で読み替えています。** 境界データは2020年の断面なので、2024-01-01 の
+区再編より前の旧浜松市7区のコードを持っています。該当する54駅は
+`overrides/municipality_lineage.yml`（一次資料を人が読んで署名した承継記録）を経て現行の
+市区町村に解決し、そのことを `match_method = 'spatial_containment_via_lineage'` で示します
+（68行。旧区の区域は新区の内側なので、承継を経ても「含まれる」は含まれるままです）。
+承継先が一意でない旧北区（中央区と浜名区に分割）だけは、どちらかに決めず候補を2つ残します。
+
+> ⚠️ `match_method = 'spatial_containment'` で絞ると、この承継経由の68行が静かに落ちます。
+> 空間で解決した行を全部ほしいときは `match_method LIKE 'spatial_containment%'` か、
+> `verification_status` で絞ってください。
 
 ### 路線 → 市区町村 ／ 駅 → 路線（未リリース・次のリリースに入ります）
 
@@ -375,7 +386,7 @@ v1.1.0 で加わった対応です。どれも市区町村までで、町字（`
 |---|---:|---|
 | `n02_railroad_line` | 596 | 路線。鍵は発行元自身の `(路線名, 運営会社)` |
 | `bridge_station_line` | 10,153 | 駅 ↔ 路線。乗換駅は複数行になります（826駅） |
-| `bridge_line_municipality` | 3,380 | 路線 ↔ 市区町村。1,443市区町村、最多は東海道新幹線の97 |
+| `bridge_line_municipality` | 3,381 | 路線 ↔ 市区町村。1,446市区町村、最多は東海道新幹線の97 |
 
 駅は点ですが路線は線なので、判定は線上の点のサンプリングで行います。刻みは仮定せず
 全国データで測って決めました（100m では京阪本線が久御山町を取りこぼし、25m 以下は
@@ -391,10 +402,14 @@ v1.1.0 で加わった対応です。どれも市区町村までで、町字（`
 | テーブル | 行数 | 中身 |
 |---|---:|---|
 | `p11_bus_stop` | 278,515 | バス停留所。名称・事業者・都道府県 |
-| `bridge_bus_stop_municipality` | 278,525 | バス停 ↔ 市区町村。自動確定 277,172行 ／ 要確認 1,353行 |
+| `bridge_bus_stop_municipality` | 278,801 | バス停 ↔ 市区町村。自動確定 278,114行 ／ 要確認 687行 |
 
-バス停のある市区町村は1,796。どの境界にも入らない115件は最寄りに寄せず `unresolved` のまま
+バス停のある市区町村は1,799。どの境界にも入らない115件は最寄りに寄せず `unresolved` のまま
 残し、境界が重なる場所で2つに入る10件は候補を両方残します。駅と同じ規則です。
+
+旧浜松市の区コードを持つ1,218停留所も駅と同じく承継記録で読み替えます（1,494行が
+`spatial_containment_via_lineage`）。うち旧北区の276停留所は候補2つで552行になり、
+要確認 687行の内訳は「旧北区 552・境界の重なり 20・境界外 115」です。
 
 **バス停には発行元の ID が無く、属性のどの組み合わせも一意になりません。** 278,515停留所に
 対して (名称, 事業者) は276,169通りしかなく、衝突する2,035組は上り/下りのペアではありません
@@ -859,8 +874,10 @@ ORDER  BY t.area_code;
 <sub>図の出典: [`docs/diagrams/04-er.mmd`](docs/diagrams/04-er.mmd)</sub>
 
 この図は v1.0.0 の28テーブルのものです。v1.1.0 で加わった3テーブル（`n02_station` /
-`bridge_station_municipality` / `estat_small_area`）はまだ描かれていません。関係は
-[駅と地図](#駅と地図v110-で追加)のとおりで、`bridge_station_municipality` が `lg_code` で
+`bridge_station_municipality` / `estat_small_area`）と、次のリリースに入る5テーブル
+（`n02_railroad_line` / `bridge_station_line` / `bridge_line_municipality` /
+`p11_bus_stop` / `bridge_bus_stop_municipality`）はまだ描かれていません。関係は
+[駅と地図](#駅と地図v110-で追加)のとおりで、ブリッジはいずれも `lg_code` で
 `municipality` に繋がります。
 
 多くの実体は実体の表と版の表（`*_version`）に分かれています。名前や区域の記述が変わった
@@ -882,7 +899,7 @@ ORDER  BY t.area_code;
 ### テーブル定義（DDL）
 
 出荷されている SQLite の定義そのものを [`docs/schema.sql`](docs/schema.sql) に置いてあります。
-手書きではなく、リリースデータから抽出して改行だけを入れたものです（テーブル31・ビュー3・索引26）。
+手書きではなく、リリースデータから抽出して改行だけを入れたものです（テーブル36・ビュー3・索引32）。
 読む前に押さえておく点が4つあります。
 
 **1. 型はほぼ全部 `TEXT` です。**
@@ -1016,7 +1033,7 @@ jpac --version       # コード版を表示
 
 | コマンド | 前提 | 出力 |
 |---|---|---|
-| `build` | `data/raw/` に受け入れ済み payload | `dist/parquet/` のテーブル（V2 の元データがあれば31本、無ければ28本）、データ3ファイル、`QUALITY_REPORT.md`、`DIFF_REPORT.md`、`NOTICE.md`、`SOURCES.yml`、`SHA256SUMS` |
+| `build` | `data/raw/` に受け入れ済み payload | `dist/parquet/` のテーブル（V2 の元データがあれば36本、無ければ28本）、データ3ファイル、`QUALITY_REPORT.md`、`DIFF_REPORT.md`、`NOTICE.md`、`SOURCES.yml`、`SHA256SUMS` |
 | `validate` | `build` 済み | なし（検査のみ） |
 | `verify` | `build` 済み + `data/raw/` | なし（検査のみ） |
 | `diff` | `build` 済み | なし（表示のみ） |
@@ -1170,7 +1187,7 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が回している
 | | |
 |---|---|
 | [`docs/queries/`](docs/queries/) | そのまま実行できる SQL 12本と、結果の読み方 |
-| [`docs/schema.sql`](docs/schema.sql) | 出荷されている SQLite の定義そのもの（テーブル31・ビュー3・索引26） |
+| [`docs/schema.sql`](docs/schema.sql) | 出荷されている SQLite の定義そのもの（テーブル36・ビュー3・索引32） |
 | [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) | 対象外にしているものと、V1 で分かっている制約 |
 | [`DATA_LICENSE.md`](DATA_LICENSE.md) | データの利用条件（コードの MIT とは別です） |
 
