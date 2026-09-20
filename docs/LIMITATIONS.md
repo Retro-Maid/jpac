@@ -87,8 +87,9 @@ release.)
    attested `lg_code` transition in `overrides/municipality_lineage.yml`. V1 shipped
    that file empty; V2 records one reorganisation (浜松市, 2024-01-01: six 1:1
    transitions and one split with two successors), which the boundary stage, the mesh
-   table and the three spatial bridges use. It fires no I3 today because ABR already carried the new codes when jpac first
-   observed them. Any other 廃置分合 still retires the town and mints a new id
+   table and the three spatial bridges use. It fires no I3 today because ABR already
+   carried the new codes when jpac first observed them. Any other 廃置分合 still
+   retires the town and mints a new id
    (`IDENTITY_MODEL.md` §4).
 
 ## V2 (unreleased): stations, mesh and the map
