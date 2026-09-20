@@ -129,6 +129,57 @@ class TestStationBridge:
         jis = [c for c in br["boundary_jis_city_code"].to_list() if c is not None]
         assert all(len(c) == 5 for c in jis)
 
+    def test_a_lineage_transition_resolves_the_cross_section(self) -> None:
+        """旧浜松市の6区（22131〜22134/22136/22137）にあたる場合。
+
+        承継先が1つなので解決する。旧区の区域は新区の内側にあるので、承継を経ても
+        含有は含有であり ``auto`` のままでよい（build/mesh.py と同じ判断）。
+        """
+        br = build_station_bridge(
+            stations("s1"), {"s1": [[(5.2, 5.5), (5.8, 5.5)]]}, [WEST, GONE], LG_BY_JIS,
+            successors={"99999": ["999996"]},
+        )
+        assert br.height == 1
+        row = br.to_dicts()[0]
+        assert row["lg_code"] == "999996"
+        assert row["boundary_jis_city_code"] == "99999"   # 経路は残る
+        assert row["relation_type"] == "contains"
+        assert row["is_unique_match"] == 1
+        assert row["verification_status"] == "auto"
+        # 経路は列に残る。注記ではない —— auto の CHECK が「注記は NULL」を要求する。
+        assert row["match_method"] == "spatial_containment_via_lineage"
+        assert row["mismatch_note"] is None
+
+    def test_a_split_ward_keeps_both_successors(self) -> None:
+        """旧北区（22135）。中央区と浜名区に分かれ、承継先が一意でない。
+
+        ポリゴンは1つしか含有していないが候補は2つになる。どちらかに決めるのは
+        POLICY.md §4 が欠陥と呼ぶ「誤った 1:1 の捏造」にあたる。
+        """
+        br = build_station_bridge(
+            stations("s1"), {"s1": [[(5.2, 5.5), (5.8, 5.5)]]}, [WEST, GONE], LG_BY_JIS,
+            successors={"99999": ["999996", "888886"]},
+        )
+        assert br.height == 2
+        assert set(br["lg_code"]) == {"999996", "888886"}
+        assert set(br["relation_type"]) == {"ambiguous"}
+        assert set(br["candidate_count"]) == {2}
+        assert set(br["is_unique_match"]) == {0}
+        assert set(br["verification_status"]) == {"review_required"}
+        assert set(br["match_method"]) == {"spatial_containment_via_lineage"}
+        # 分割は review_required なので注記を付けられる。しかも付けるべき内容がある。
+        assert all("候補の1つ" in n for n in br["mismatch_note"])
+
+    def test_a_code_in_neither_current_nor_lineage_still_stays_null(self) -> None:
+        """系譜を渡しても、載っていないコードの扱いは変わらない。"""
+        br = build_station_bridge(
+            stations("s1"), {"s1": [[(5.2, 5.5), (5.8, 5.5)]]}, [WEST, GONE], LG_BY_JIS,
+            successors={"11111": ["111116"]},
+        )
+        row = br.to_dicts()[0]
+        assert row["lg_code"] is None
+        assert "断面のズレ" in row["mismatch_note"]
+
     def test_manually_verified_is_never_written_by_code(self) -> None:
         br = build_station_bridge(
             stations("s1", "s2"),

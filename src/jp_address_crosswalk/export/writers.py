@@ -496,7 +496,11 @@ STATION_BRIDGE_CHECKS = [
     "CHECK (candidate_count >= 0)",
     "CHECK (NOT (is_unique_match = 1 AND candidate_count > 1))",
     "CHECK (relation_type IN ('contains','ambiguous','unresolved'))",
-    "CHECK (match_method IN ('spatial_containment','unresolved'))",
+    # *_via_lineage は「境界データの旧コードを、人が署名した承継記録で現行コードに
+    # 読み替えた」ことを示す。語彙を増やしているのであって、auto の条件を緩めては
+    # いない —— 承継を経ても含有は含有で、注記は空のままである。
+    "CHECK (match_method IN ('spatial_containment','spatial_containment_via_lineage',"
+    "'unresolved'))",
     f"CHECK (verification_status IN ('{_STATUSES}'))",
     "CHECK (verification_status <> 'auto' OR ("
     " relation_type = 'contains' AND candidate_count = 1 AND is_unique_match = 1"
@@ -542,7 +546,8 @@ LINE_BRIDGE_CHECKS = [
     "CHECK (municipality_count >= 0)",
     "CHECK (sample_hits IS NULL OR sample_hits >= 1)",
     "CHECK (relation_type IN ('overlap','unresolved'))",
-    "CHECK (match_method IN ('spatial_sampling','unresolved'))",
+    "CHECK (match_method IN ('spatial_sampling','spatial_sampling_via_lineage',"
+    "'unresolved'))",
     f"CHECK (verification_status IN ('{_STATUSES}'))",
     "CHECK (verification_status <> 'auto' OR ("
     " relation_type = 'overlap' AND lg_code IS NOT NULL"

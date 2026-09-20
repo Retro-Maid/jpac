@@ -99,6 +99,34 @@ class TestBusStopBridge:
         assert br.height == 1
         assert br.to_dicts()[0]["relation_type"] == "unresolved"
 
+    def test_a_lineage_transition_resolves_the_cross_section(self) -> None:
+        """旧浜松市の区にあたる1,218行のうち、承継先が1つのもの。"""
+        br = build_bus_stop_bridge(
+            stops("s1"), {"s1": (5.5, 5.5)}, [WEST, GONE], LG_BY_JIS,
+            successors={"99999": ["999996"]},
+        )
+        assert br.height == 1
+        row = br.to_dicts()[0]
+        assert row["lg_code"] == "999996"
+        assert row["boundary_jis_city_code"] == "99999"
+        assert row["verification_status"] == "auto"
+        assert row["match_method"] == "spatial_containment_via_lineage"
+        assert row["mismatch_note"] is None
+
+    def test_a_split_ward_keeps_both_successors(self) -> None:
+        """旧北区。ポリゴン1つでも候補は2つになる（POLICY.md §4）。"""
+        br = build_bus_stop_bridge(
+            stops("s1"), {"s1": (5.5, 5.5)}, [WEST, GONE], LG_BY_JIS,
+            successors={"99999": ["999996", "888886"]},
+        )
+        assert br.height == 2
+        assert set(br["lg_code"]) == {"999996", "888886"}
+        assert set(br["relation_type"]) == {"ambiguous"}
+        assert set(br["candidate_count"]) == {2}
+        assert set(br["verification_status"]) == {"review_required"}
+        assert set(br["match_method"]) == {"spatial_containment_via_lineage"}
+        assert all("候補の1つ" in n for n in br["mismatch_note"])
+
     def test_rows_are_sorted_for_reproducibility(self) -> None:
         br = build_bus_stop_bridge(
             stops("s2", "s1"),
