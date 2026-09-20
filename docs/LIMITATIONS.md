@@ -21,12 +21,15 @@ licensing permits redistribution; 地番 additionally needs 登記所備付地�
 clearance (`LICENSE_POLICY.md` §3). Trial-status availability is explicitly not a reason
 to adopt early.
 
-V2 (unreleased) adds two recorded exceptions to this list, each scoped in `POLICY.md`
-rather than by editing the list above:
+V2 (駅 in v1.1.0, 路線 and バス停 in v1.2.0) adds three recorded exceptions to this list,
+each scoped in `POLICY.md` rather than by editing the list above:
 
 - **§3.1** — 鉄道駅 (国土数値情報 N02) and 統計境界 (e-Stat 国勢調査 小地域), at
   municipality granularity only. Boundary geometry is read at build time and never
   shipped in a release.
+- **§2's 2026-09-17 addition** — バス停留所 (国土数値情報 P11, 令和4年度版 only), also at
+  municipality granularity only. A release subject, not a map-only one: `p11_bus_stop`
+  and `bridge_bus_stop_municipality` are emitted by `jpac build`.
 - **§3.2** — the static map in `site/`, which answers 緯度経度 → 市区町村 through 3次/6次
   standard-area mesh codes and ships simplified and clipped e-Stat geometry. It is a
   separate product from the release.
@@ -92,7 +95,7 @@ release.)
    retires the town and mints a new id
    (`IDENTITY_MODEL.md` §4).
 
-## V2 (unreleased): stations, mesh and the map
+## V2: stations, lines, bus stops, mesh and the map
 
 12. **Stations and map answers stop at the municipality.** e-Stat's 小地域 are ~3.1×
    coarser than jpac's 町字, so neither a station nor a map point is ever tied to an
