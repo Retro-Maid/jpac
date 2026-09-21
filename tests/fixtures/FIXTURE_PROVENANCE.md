@@ -21,6 +21,13 @@ Extraction date: **2026-08-23**.
 | `13362` | 東京都利島村: 一円 + 5-digit old postal code |
 | `26104` | 京都市中京区: 京都通り名 (kyoto_st) + ward layer |
 
+Three more municipalities are in `abr_city.csv` only: `01226` 砂川市, `01601` 日高町 and
+`34207` 福山市. They are the municipalities of the three duplicate-key towns the town
+fixture carries to exercise `split_rsdt_variants`. Added 2026-09-21, when the declared
+foreign keys (`docs/LIMITATIONS.md` item 8) showed the fixture build shipping 6 rows
+whose `lg_code` named a municipality that build did not contain — a state the national
+data never has. Extracted from the same payload, at the same SHA-256, as the other nine.
+
 ## Files
 
 ```json
@@ -28,8 +35,8 @@ Extraction date: **2026-08-23**.
   "abr_city.csv": {
     "extracted_from": "data/raw/abr/city_master.zip",
     "extraction_date": "2026-08-23",
-    "rows": 9,
-    "selection": "lg_code[0:5] in ['01101', '01209', '01210', '01430', '13104', '20204', '08546', '13362', '26104']",
+    "rows": 12,
+    "selection": "lg_code[0:5] in ['01101', '01209', '01210', '01430', '13104', '20204', '08546', '13362', '26104'] + the 3 municipalities of the duplicate-key towns in abr_town.csv (012262 砂川市, 016012 日高町, 342076 福山市), extracted 2026-09-21 from the same payload (same SHA-256)",
     "source_sha256": "c719e7394489907c6192f58837d7f61274c05feb72ebec2543995d0d6cb08b5e"
   },
   "abr_postal_conversion.csv": {

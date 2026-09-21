@@ -82,13 +82,28 @@ release.)
      The ids are content-addressed over what the event says and not over when it was
      seen, so those events merge with the existing rows rather than doubling them —
      but the first-observation dates are then the genesis build's, not the original's.
-8. **SQLite enforces most, not all, of the documented schema.** Primary keys, the
-   full auto-accept conjunction, enumerated vocabularies and range checks are real
-   `CHECK` constraints and are proven by negative-insertion tests. Foreign keys are
-   **not** declared, and bridge endpoints are exported as a generic `target_id` rather
-   than the concrete per-bridge columns `DB_SCHEMA.md` describes. Referential
-   integrity is therefore asserted by the test suite rather than by the database
-   (independent review 3).
+8. **Bridge endpoints are still a polymorphic `target_id`.** Primary keys, the full
+   auto-accept conjunction, enumerated vocabularies and range checks are real `CHECK`
+   constraints and are proven by negative-insertion tests. Foreign keys **are** now
+   declared — every `address_id`, `lg_code`, `match_run_id`, `postal_record_id`,
+   `postal_code`, `mlit_record_id`, `numbering_area_code`, `n02_group_code` and
+   `p11_stop_id`, plus the composite `(路線名, 運営会社)` reference — and the build
+   runs `PRAGMA foreign_key_check` over the finished database, so a dangling
+   reference fails the release rather than waiting for a consumer to turn foreign
+   keys on. Two columns are deliberately left undeclared (independent review 3):
+   - **`target_id`**, because it is polymorphic: a postal record id in one bridge, an
+     area code in another. A polymorphic column cannot carry a foreign key at all.
+     The fix is the typed endpoint columns `DB_SCHEMA.md` §5.1 describes, which
+     renames a column in all six bridges and in the flat view — a breaking change
+     for consumers, so it waits for a major version.
+   - **the snapshot columns** (`source_snapshot_id`, `first_observed_snapshot_id`,
+     `last_observed_snapshot_id`). These satisfy the constraint today and declaring
+     it would ship green, but it would be false: `source_snapshot` carries *this
+     build's* payloads while those columns cite when a row was first observed and are
+     carried forward untouched. The first release whose payloads change would leave
+     carried-forward rows pointing at a snapshot the shipped table no longer
+     contains. Making them real means making `source_snapshot` append-only, which is
+     a change to what provenance means rather than a detail of the DDL.
 9. **Ingestion is eager, not streaming.** A national build peaks around 4–6 GB
    (`ARCHITECTURE.md` §8).
 10. **Rebuilds are logically reproducible, not byte-reproducible.** Ids are

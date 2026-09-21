@@ -17,6 +17,7 @@ from pathlib import Path
 
 import polars as pl
 
+from ..errors import ValidationFailed
 from ..logging_setup import get_logger, stage_context
 
 log = get_logger(__name__)
@@ -396,7 +397,9 @@ def write_sqlite(
             conn.execute("PRAGMA journal_mode=OFF")
             conn.execute("PRAGMA synchronous=OFF")
             for name in sorted(tables):
-                _write_table(conn, name, _sorted(name, tables[name]))
+                _write_table(
+                    conn, name, _sorted(name, tables[name]), present=set(tables)
+                )
             conn.executescript(FLAT_VIEWS)
             conn.executescript(DDL_VIEWS)
             planned = list(INDEXES)
@@ -409,11 +412,29 @@ def write_sqlite(
                 except sqlite3.OperationalError as exc:
                     log.warning("index skipped", stmt=stmt, error=str(exc))
             conn.commit()
+            # 宣言した外部キーを、書き終えた実物に対して検査する。SQLite の
+            # `PRAGMA foreign_keys` は接続ごとに既定で OFF なので、宣言しただけでは
+            # 何も確かめたことにならない —— 利用者が ON にした瞬間に初めて壊れて
+            # いたことが分かる、という配り方をしない。挿入中は OFF のままにして
+            # おき（そうしないとテーブルを書く順序に依存する）、最後にまとめて
+            # 検査する。
+            violations = conn.execute("PRAGMA foreign_key_check").fetchall()
+            if violations:
+                by_table: dict[str, int] = {}
+                for row in violations:
+                    by_table[row[0]] = by_table.get(row[0], 0) + 1
+                raise ValidationFailed(
+                    "declared foreign keys are not satisfied by the data",
+                    tables=by_table, sample=violations[:3],
+                )
             conn.execute("VACUUM")
             conn.commit()
         finally:
             conn.close()
-        log.info("wrote sqlite", path=str(path), size=path.stat().st_size)
+        log.info(
+            "wrote sqlite", path=str(path), size=path.stat().st_size,
+            foreign_keys_checked=True,
+        )
         return path
 
 
@@ -557,7 +578,116 @@ LINE_BRIDGE_CHECKS = [
 ]
 
 
-def _write_table(conn: sqlite3.Connection, name: str, df: pl.DataFrame) -> None:
+# Referential integrity, declared in the database rather than asserted only by the
+# test suite (docs/LIMITATIONS.md item 8, independent review 3).
+#
+# Column name -> the table that owns it. These names are the project's own
+# vocabulary: an `address_id` anywhere is an address_entity, a `source_snapshot_id`
+# is a source_snapshot. Expressed as a convention rather than 67 hand-written
+# entries because a per-table list is a list somebody forgets to extend — a new
+# table carrying `lg_code` gets its foreign key without anybody remembering.
+#
+# The convention is checked, not assumed: write_sqlite runs PRAGMA
+# foreign_key_check over the finished database, so a column that happens to share
+# one of these names while meaning something else fails the build rather than
+# shipping a false claim.
+_FK_BY_COLUMN = {
+    "address_id": ("address_entity", "address_id"),
+    "old_address_id": ("address_entity", "address_id"),
+    "new_address_id": ("address_entity", "address_id"),
+    "lg_code": ("municipality", "lg_code"),
+    "match_run_id": ("match_run", "match_run_id"),
+    "postal_record_id": ("postal_record", "postal_record_id"),
+    "postal_code": ("postal_code_entity", "postal_code"),
+    "mlit_record_id": ("mlit_town", "mlit_record_id"),
+    "numbering_area_code": ("telephone_area", "numbering_area_code"),
+    "n02_group_code": ("n02_station", "n02_group_code"),
+    "p11_stop_id": ("p11_bus_stop", "p11_stop_id"),
+}
+
+# The one composite reference. A 路線 is keyed by the publisher's own
+# (路線名, 運営会社) rather than by a surrogate (see PRIMARY_KEYS), so a bridge
+# pointing at a line needs a two-column foreign key.
+_COMPOSITE_FKS = {
+    "bridge_station_line": [(("line_name_raw", "operator_name_raw"),
+                             "n02_railroad_line",
+                             ("line_name_raw", "operator_name_raw"))],
+    "bridge_line_municipality": [(("line_name_raw", "operator_name_raw"),
+                                  "n02_railroad_line",
+                                  ("line_name_raw", "operator_name_raw"))],
+}
+
+# `target_id` is deliberately absent. It is polymorphic — a postal record id in one
+# bridge, an area code in another — and a polymorphic column cannot carry a foreign
+# key at all. That is the open half of item 8: the fix is the typed endpoint columns
+# `docs/DB_SCHEMA.md` §5.1 describes, which is a breaking change for consumers and
+# not something to slip into an export.
+#
+# The snapshot columns (`source_snapshot_id`, `first_observed_snapshot_id`,
+# `last_observed_snapshot_id`) are deliberately absent too, and this one is easy to
+# get wrong: nationally they satisfy the constraint today, so declaring the key
+# would pass and ship. It would still be false. `source_snapshot` carries **this
+# build's** payloads, while those columns cite *when something was first observed*
+# and are carried forward untouched — by `carry_forward` for the version tables, by
+# `carry_forward_observations` for address_code, by the identity ledger for
+# address_entity. The first release whose payloads change would leave every
+# carried-forward row pointing at a snapshot the shipped table no longer contains.
+# Making these real means making `source_snapshot` append-only, which is a change to
+# what provenance means and not a detail of the DDL.
+
+
+def foreign_keys_for(
+    name: str, cols: list[str], present: set[str] | None = None
+) -> list[str]:
+    """The FOREIGN KEY clauses for one table, in a deterministic order.
+
+    ``present`` names the tables this database will actually contain. A key
+    pointing at a table that is not there is not a constraint — it is a claim
+    every row violates, and SQLite's ``foreign_key_check`` reports exactly that.
+    Two real cases, not hypotheticals:
+
+    * a build without the optional V2 payloads ships 28 tables, so nothing may
+      reference ``n02_station`` (README: V2 の元データがあるときだけ出力します)
+    * a test or a tool that writes a couple of tables to look at them
+
+    ``None`` means "assume the full release" and is what ``docs/schema.sql``
+    documents.
+    """
+    own_pk = PRIMARY_KEYS.get(name)
+    own = {own_pk} if isinstance(own_pk, str) else set(own_pk or ())
+    out = []
+    for col in cols:
+        ref = _FK_BY_COLUMN.get(col)
+        if not ref:
+            continue
+        parent, parent_col = ref
+        # A table never references itself through its own key, and a parent table
+        # does not reference itself (municipality.lg_code IS the parent).
+        if parent == name or col in own:
+            continue
+        if present is not None and parent not in present:
+            continue
+        out.append(
+            f'FOREIGN KEY ("{col}") REFERENCES "{parent}"("{parent_col}")'
+        )
+    for child_cols, parent, parent_cols in _COMPOSITE_FKS.get(name, []):
+        if present is not None and parent not in present:
+            continue
+        if all(c in cols for c in child_cols):
+            out.append(
+                "FOREIGN KEY ("
+                + ", ".join(f'"{c}"' for c in child_cols)
+                + f') REFERENCES "{parent}"('
+                + ", ".join(f'"{c}"' for c in parent_cols)
+                + ")"
+            )
+    return out
+
+
+def _write_table(
+    conn: sqlite3.Connection, name: str, df: pl.DataFrame,
+    present: set[str] | None = None,
+) -> None:
     if df.is_empty() and not df.columns:
         return
     cols = df.columns
@@ -613,6 +743,8 @@ def _write_table(conn: sqlite3.Connection, name: str, df: pl.DataFrame) -> None:
     if name == "mlit_town_version":
         types.append("CHECK (latitude IS NULL OR (latitude BETWEEN 20 AND 46))")
         types.append("CHECK (longitude IS NULL OR (longitude BETWEEN 122 AND 154))")
+
+    types.extend(foreign_keys_for(name, cols, present))
 
     conn.execute(f'CREATE TABLE "{name}" ({", ".join(types)})')
     if df.height:

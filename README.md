@@ -925,10 +925,22 @@ CREATE TABLE "municipality" (
 コードは一切数値にしません。数値なのは `confidence`（REAL）と、候補数・フラグ類（INTEGER）
 だけです。
 
-**2. 外部キー制約は宣言されていません。** `REFERENCES` も `FOREIGN KEY` も1つもありません。
-[関係の多重度](#関係の多重度)で示した参照関係は論理的なもので、整合性はビルド時の不変条件
-テストで担保しています（[`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md) §3）。外部キーが
-効いている前提で `PRAGMA foreign_keys` に頼らないでください。
+**2. 外部キーは宣言されています（v1.2.0 以降）。ただし2種類の列は例外です。**
+`address_id` / `lg_code` / `match_run_id` / `postal_record_id` / `postal_code` /
+`mlit_record_id` / `numbering_area_code` / `n02_group_code` / `p11_stop_id`、および路線の
+複合参照 `(路線名, 運営会社)` に `FOREIGN KEY` が付いています。ビルドは書き終えた
+データベースに対して `PRAGMA foreign_key_check` を走らせるので、参照が壊れていれば
+リリースが落ちます。`PRAGMA foreign_keys = ON` にすれば、あなたの接続でも効きます
+（SQLite の既定は接続ごとに OFF です）。
+
+例外は2つあります。**ブリッジの `target_id`** は多態な列（あるブリッジでは郵便番号
+レコードの id、別のブリッジでは市外局番）なので、外部キーを持てません。こちらの整合性は
+引き続き不変条件テストで担保しています（[`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md)
+§3）。**スナップショット列**（`source_snapshot_id` / `first_observed_snapshot_id` /
+`last_observed_snapshot_id`）も宣言していません —— `source_snapshot` は**そのビルドの**
+payload を載せる表で、これらの列は「最初に観測したとき」を指して引き継がれるため、
+元データが変わったリリースで参照先が表に無くなります。理由は
+[`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) 項目8 にあります。
 
 **3. 4つのテーブルには `PRIMARY KEY` がありません。** `address_code` /
 `address_key_conflict` / `match_run_input` / `snapshot_license_artifact` の4本です。
