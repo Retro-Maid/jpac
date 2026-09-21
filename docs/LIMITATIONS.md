@@ -62,14 +62,26 @@ release.)
    (`IDENTITY_MODEL.md` §3).
 6. **MIC 固定電話 assignment data is annual**, so `telephone_number_block` can lag the
    area-code list.
-7. **`address_lineage` and `address_code` do not yet accumulate across releases.**
-   The `*_version` tables carry forward and `address_history` records attribute
-   changes, but lineage events and code observations are rebuilt from the current
-   run only, so an event detected in an earlier release is not retained in a later
-   one. Identified by independent review 2 as a partially-resolved P0; the
-   remaining work is to union the
-   previous release's rows before appending the current run's, which requires the
-   same immutable-id treatment the version tables already have.
+7. **History accumulates, and what remains is the cost of that.** Until v1.2.0,
+   `address_lineage`, `address_code` and `address_history` were rebuilt from the
+   current run alone, so an event detected in an earlier release was gone from the
+   next one — the P0 independent review 2 recorded as partially resolved. (The
+   entry used to name only the first two; `address_history` had the same defect and
+   was fixed with them.) All three now carry forward: lineage and history are
+   unioned on content-addressed ids, and `address_code` closes an observation with
+   `observed_to` instead of dropping it, which is what its documented key
+   `(address_id, code_type, code_value, observed_from)` always implied. Three
+   consequences remain, none of them a defect to fix:
+   - **These tables only grow**, so `row_count_change.<table>` now measures
+     accumulated history. A release that detects many identity events will trip the
+     5% gate and need a signed approval in `config/quality_thresholds.yml`. That is
+     the gate doing its job.
+   - **History still starts when this project first looked** (item 2). Accumulation
+     carries forward what was observed; it does not reconstruct what happened before.
+   - **A genesis build without the ledger** re-detects events at a new date (item 5).
+     The ids are content-addressed over what the event says and not over when it was
+     seen, so those events merge with the existing rows rather than doubling them —
+     but the first-observation dates are then the genesis build's, not the original's.
 8. **SQLite enforces most, not all, of the documented schema.** Primary keys, the
    full auto-accept conjunction, enumerated vocabularies and range checks are real
    `CHECK` constraints and are proven by negative-insertion tests. Foreign keys are

@@ -237,6 +237,37 @@ class TestTwoConsecutiveReleases:
         hist = pl.read_parquet(paths.parquet / "address_history.parquet")
         assert hist.height >= 1, "a rename between releases must produce history"
 
+        # 符号の観測は、住所が消えても消えない —— 退役は「もう見えない」であって
+        # 「見えたことが無い」ではない（docs/LIMITATIONS.md 項目7）。
+        codes2 = pl.read_parquet(paths.parquet / "address_code.parquet")
+        closed = codes2.filter(pl.col("observed_to").is_not_null())
+        assert closed.height >= 1, "退役した住所の符号は閉じて残ること"
+
+        # --- release 3: 何も変わらない。それでも release 2 の記録は残ること
+        lineage2 = set(
+            pl.read_parquet(paths.parquet / "address_lineage.parquet")["lineage_id"]
+        )
+        hist2 = set(hist["history_id"])
+        assert lineage2, "release 2 は改名と退役で来歴を残しているはず"
+
+        run_release(paths, town2, "sha3")
+
+        lineage3 = pl.read_parquet(paths.parquet / "address_lineage.parquet")
+        hist3 = pl.read_parquet(paths.parquet / "address_history.parquet")
+        codes3 = pl.read_parquet(paths.parquet / "address_code.parquet")
+
+        # 検出は1回きり（release 3 では何も起きていない）。積んでいなければ、
+        # ここで release 2 の来歴と履歴がまるごと消える。
+        assert lineage2 <= set(lineage3["lineage_id"]), \
+            "release 2 の来歴イベントが release 3 で消えている"
+        assert hist2 <= set(hist3["history_id"]), \
+            "release 2 の属性変更履歴が release 3 で消えている"
+        assert codes3.filter(pl.col("observed_to").is_not_null()).height >= closed.height, \
+            "閉じた符号観測が release 3 で消えている"
+
+        # id は不変であること。連番だった頃は、イベントが1つ増えるだけで全部ずれた。
+        assert lineage3.select("lineage_id").unique().height == lineage3.height
+
     def test_a_failing_build_does_not_become_the_baseline(self, tmp_path):
         """A bad build must not poison the comparison the next run depends on."""
         paths = repo(tmp_path)
