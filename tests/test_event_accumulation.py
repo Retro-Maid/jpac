@@ -208,3 +208,35 @@ class TestCarryForwardObservations:
             now, None, "address_code",
             ["address_id", "code_type", "code_value"], "2026-09-21",
         ).height == 1
+
+
+class TestAnIntervalCannotCloseBeforeItOpened:
+    """観測日を時計ではなく取得記録から取ると（docs/LIMITATIONS.md 項目10）、
+    ビルド日で開いた行を、それより前の取得日で閉じることになりうる。
+
+    実データで起きる形がある: v1.2.0 の `address_code` 2,178,510行は
+    `observed_from = 2026-09-20`（ビルド日）で、payload の取得日は最新でも
+    2026-09-17 である。素直に代入すると「2026-09-20 に開き 2026-09-17 に閉じた」
+    行が出る。どちらの値も嘘ではないので、直すのは区間の側である。
+    """
+
+    def test_a_closing_date_never_precedes_the_opening_date(self, tmp_path) -> None:
+        prev = _codes({"address_id": "gone", "observed_from": "2026-09-20"})
+        d = _promote(prev, tmp_path / "previous", "address_code")
+        out = carry_forward_observations(
+            _codes({"address_id": "still_here"}), d, "address_code",
+            ["address_id", "code_type", "code_value"], "2026-09-17",
+        )
+        closed = out.filter(pl.col("address_id") == "gone")
+        assert closed["observed_to"][0] == "2026-09-20"
+        assert closed["observed_to"][0] >= closed["observed_from"][0]
+
+    def test_a_later_stamp_still_closes_at_the_stamp(self, tmp_path) -> None:
+        """ふつうの場合は何も変わらないこと。"""
+        prev = _codes({"address_id": "gone", "observed_from": "2026-02-01"})
+        d = _promote(prev, tmp_path / "previous", "address_code")
+        out = carry_forward_observations(
+            _codes({"address_id": "still_here"}), d, "address_code",
+            ["address_id", "code_type", "code_value"], "2026-09-21",
+        )
+        assert out.filter(pl.col("address_id") == "gone")["observed_to"][0] == "2026-09-21"
