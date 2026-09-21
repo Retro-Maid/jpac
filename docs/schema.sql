@@ -72,7 +72,8 @@ CREATE TABLE "address" (
   "observed_from"         TEXT,
   "observed_to"           TEXT,
   "source_snapshot_id"    TEXT,
-  CHECK (length(address_id) = 20)
+  CHECK (length(address_id) = 20),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
 );
 
 CREATE TABLE "address_code" (
@@ -83,7 +84,8 @@ CREATE TABLE "address_code" (
   "valid_to"           TEXT,
   "observed_from"      TEXT,
   "observed_to"        TEXT,
-  "source_snapshot_id" TEXT
+  "source_snapshot_id" TEXT,
+  FOREIGN KEY ("address_id") REFERENCES "address_entity"("address_id")
 );
 
 CREATE TABLE "address_entity" (
@@ -107,7 +109,8 @@ CREATE TABLE "address_history" (
   "new_value"          TEXT,
   "valid_from"         TEXT,
   "observed_at"        TEXT,
-  "source_snapshot_id" TEXT
+  "source_snapshot_id" TEXT,
+  FOREIGN KEY ("address_id") REFERENCES "address_entity"("address_id")
 );
 
 CREATE TABLE "address_key_conflict" (
@@ -151,7 +154,8 @@ CREATE TABLE "address_key_conflict" (
   "remarks"              TEXT,
   "jis_city_code"        TEXT,
   "full_name_raw"        TEXT,
-  "full_name_normalized" TEXT
+  "full_name_normalized" TEXT,
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
 );
 
 CREATE TABLE "address_lineage" (
@@ -163,7 +167,9 @@ CREATE TABLE "address_lineage" (
   "observed_at"        TEXT,
   "evidence"           TEXT,
   "evidence_source"    TEXT,
-  "source_snapshot_id" TEXT
+  "source_snapshot_id" TEXT,
+  FOREIGN KEY ("old_address_id") REFERENCES "address_entity"("address_id"),
+  FOREIGN KEY ("new_address_id") REFERENCES "address_entity"("address_id")
 );
 
 CREATE TABLE "address_rsdt_variant" (
@@ -173,7 +179,8 @@ CREATE TABLE "address_rsdt_variant" (
   "rsdt_addr_flg"      TEXT,
   "rsdt_addr_mtd_code" TEXT,
   "efct_date"          TEXT,
-  "ablt_date"          TEXT
+  "ablt_date"          TEXT,
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
 );
 
 CREATE TABLE "bridge_address_mlit" (
@@ -216,7 +223,10 @@ CREATE TABLE "bridge_address_mlit" (
   CHECK (verification_status <> 'auto' OR ( candidate_count = 1 AND is_unique_match = 1 AND candidate_count_is_complete = 1 AND confidence >= 0.98 AND override_stale = 0 AND relation_type IN ('exact','equivalent'))),
   CHECK (relation_type IN ('exact', 'equivalent', 'parent', 'child', 'contains', 'overlap', 'candidate', 'ambiguous', 'unresolved')),
   CHECK (match_method IN ('direct_code', 'exact_name', 'normalized_name', 'parent_child', 'composite', 'official_area_rule', 'manual_override', 'unresolved')),
-  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected'))
+  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected')),
+  FOREIGN KEY ("address_id") REFERENCES "address_entity"("address_id"),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code"),
+  FOREIGN KEY ("match_run_id") REFERENCES "match_run"("match_run_id")
 );
 
 CREATE TABLE "bridge_address_postal" (
@@ -259,7 +269,10 @@ CREATE TABLE "bridge_address_postal" (
   CHECK (verification_status <> 'auto' OR ( candidate_count = 1 AND is_unique_match = 1 AND candidate_count_is_complete = 1 AND confidence >= 0.98 AND override_stale = 0 AND relation_type IN ('exact','equivalent'))),
   CHECK (relation_type IN ('exact', 'equivalent', 'parent', 'child', 'contains', 'overlap', 'candidate', 'ambiguous', 'unresolved')),
   CHECK (match_method IN ('direct_code', 'exact_name', 'normalized_name', 'parent_child', 'composite', 'official_area_rule', 'manual_override', 'unresolved')),
-  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected'))
+  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected')),
+  FOREIGN KEY ("address_id") REFERENCES "address_entity"("address_id"),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code"),
+  FOREIGN KEY ("match_run_id") REFERENCES "match_run"("match_run_id")
 );
 
 CREATE TABLE "bridge_address_postal_code" (
@@ -302,7 +315,10 @@ CREATE TABLE "bridge_address_postal_code" (
   CHECK (verification_status <> 'auto' OR ( candidate_count = 1 AND is_unique_match = 1 AND candidate_count_is_complete = 1 AND confidence >= 0.98 AND override_stale = 0 AND relation_type IN ('exact','equivalent'))),
   CHECK (relation_type IN ('exact', 'equivalent', 'parent', 'child', 'contains', 'overlap', 'candidate', 'ambiguous', 'unresolved')),
   CHECK (match_method IN ('direct_code', 'exact_name', 'normalized_name', 'parent_child', 'composite', 'official_area_rule', 'manual_override', 'unresolved')),
-  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected'))
+  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected')),
+  FOREIGN KEY ("address_id") REFERENCES "address_entity"("address_id"),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code"),
+  FOREIGN KEY ("match_run_id") REFERENCES "match_run"("match_run_id")
 );
 
 CREATE TABLE "bridge_address_telephone" (
@@ -345,7 +361,10 @@ CREATE TABLE "bridge_address_telephone" (
   CHECK (verification_status <> 'auto' OR ( candidate_count = 1 AND is_unique_match = 1 AND candidate_count_is_complete = 1 AND confidence >= 0.98 AND override_stale = 0 AND relation_type IN ('exact','equivalent'))),
   CHECK (relation_type IN ('exact', 'equivalent', 'parent', 'child', 'contains', 'overlap', 'candidate', 'ambiguous', 'unresolved')),
   CHECK (match_method IN ('direct_code', 'exact_name', 'normalized_name', 'parent_child', 'composite', 'official_area_rule', 'manual_override', 'unresolved')),
-  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected'))
+  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected')),
+  FOREIGN KEY ("address_id") REFERENCES "address_entity"("address_id"),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code"),
+  FOREIGN KEY ("match_run_id") REFERENCES "match_run"("match_run_id")
 );
 
 CREATE TABLE "bridge_municipality_postal" (
@@ -388,7 +407,10 @@ CREATE TABLE "bridge_municipality_postal" (
   CHECK (verification_status <> 'auto' OR ( candidate_count = 1 AND is_unique_match = 1 AND candidate_count_is_complete = 1 AND confidence >= 0.98 AND override_stale = 0 AND relation_type IN ('exact','equivalent'))),
   CHECK (relation_type IN ('exact', 'equivalent', 'parent', 'child', 'contains', 'overlap', 'candidate', 'ambiguous', 'unresolved')),
   CHECK (match_method IN ('direct_code', 'exact_name', 'normalized_name', 'parent_child', 'composite', 'official_area_rule', 'manual_override', 'unresolved')),
-  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected'))
+  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected')),
+  FOREIGN KEY ("address_id") REFERENCES "address_entity"("address_id"),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code"),
+  FOREIGN KEY ("match_run_id") REFERENCES "match_run"("match_run_id")
 );
 
 CREATE TABLE "bridge_municipality_telephone" (
@@ -431,7 +453,10 @@ CREATE TABLE "bridge_municipality_telephone" (
   CHECK (verification_status <> 'auto' OR ( candidate_count = 1 AND is_unique_match = 1 AND candidate_count_is_complete = 1 AND confidence >= 0.98 AND override_stale = 0 AND relation_type IN ('exact','equivalent'))),
   CHECK (relation_type IN ('exact', 'equivalent', 'parent', 'child', 'contains', 'overlap', 'candidate', 'ambiguous', 'unresolved')),
   CHECK (match_method IN ('direct_code', 'exact_name', 'normalized_name', 'parent_child', 'composite', 'official_area_rule', 'manual_override', 'unresolved')),
-  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected'))
+  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected')),
+  FOREIGN KEY ("address_id") REFERENCES "address_entity"("address_id"),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code"),
+  FOREIGN KEY ("match_run_id") REFERENCES "match_run"("match_run_id")
 );
 
 CREATE TABLE "match_run" (
@@ -445,7 +470,8 @@ CREATE TABLE "match_run" (
 CREATE TABLE "match_run_input" (
   "match_run_id"       TEXT,
   "source_snapshot_id" TEXT,
-  "role"               TEXT
+  "role"               TEXT,
+  FOREIGN KEY ("match_run_id") REFERENCES "match_run"("match_run_id")
 );
 
 CREATE TABLE "mlit_town" (
@@ -476,7 +502,8 @@ CREATE TABLE "mlit_town_version" (
   "is_current"           INTEGER,
   "source_snapshot_id"   TEXT,
   CHECK (latitude IS NULL OR (latitude BETWEEN 20 AND 46)),
-  CHECK (longitude IS NULL OR (longitude BETWEEN 122 AND 154))
+  CHECK (longitude IS NULL OR (longitude BETWEEN 122 AND 154)),
+  FOREIGN KEY ("mlit_record_id") REFERENCES "mlit_town"("mlit_record_id")
 );
 
 CREATE TABLE "municipality" (
@@ -506,7 +533,8 @@ CREATE TABLE "municipality_version" (
   "observed_from"           TEXT,
   "observed_to"             TEXT,
   "is_current"              INTEGER,
-  "source_snapshot_id"      TEXT
+  "source_snapshot_id"      TEXT,
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
 );
 
 CREATE TABLE "postal_code_entity" (
@@ -522,7 +550,8 @@ CREATE TABLE "postal_record" (
   "postal_record_id"           TEXT PRIMARY KEY,
   "postal_code"                TEXT,
   "jis_city_code"              TEXT,
-  "first_observed_snapshot_id" TEXT
+  "first_observed_snapshot_id" TEXT,
+  FOREIGN KEY ("postal_code") REFERENCES "postal_code_entity"("postal_code")
 );
 
 CREATE TABLE "postal_record_version" (
@@ -554,7 +583,9 @@ CREATE TABLE "postal_record_version" (
   "observed_from"            TEXT,
   "observed_to"              TEXT,
   "is_current"               INTEGER,
-  "source_snapshot_id"       TEXT
+  "source_snapshot_id"       TEXT,
+  FOREIGN KEY ("postal_record_id") REFERENCES "postal_record"("postal_record_id"),
+  FOREIGN KEY ("postal_code") REFERENCES "postal_code_entity"("postal_code")
 );
 
 CREATE TABLE "snapshot_license_artifact" (
@@ -688,7 +719,9 @@ CREATE TABLE "bridge_station_municipality" (
   CHECK (verification_status <> 'auto' OR (
     relation_type = 'contains' AND candidate_count = 1 AND is_unique_match = 1
     AND confidence = 1.0 AND mismatch_note IS NULL)),
-  CHECK (relation_type <> 'unresolved' OR (lg_code IS NULL AND confidence = 0.0))
+  CHECK (relation_type <> 'unresolved' OR (lg_code IS NULL AND confidence = 0.0)),
+  FOREIGN KEY ("n02_group_code") REFERENCES "n02_station"("n02_group_code"),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
 );
 CREATE INDEX idx_bsm_station ON bridge_station_municipality(n02_group_code);
 CREATE INDEX idx_bsm_lg ON bridge_station_municipality(lg_code);
@@ -726,7 +759,9 @@ CREATE TABLE "bridge_station_line" (
   "match_method"       TEXT,
   "source_snapshot_id" TEXT,
   CHECK (feature_count >= 1),
-  CHECK (match_method = 'n02_attribute')
+  CHECK (match_method = 'n02_attribute'),
+  FOREIGN KEY ("n02_group_code") REFERENCES "n02_station"("n02_group_code"),
+  FOREIGN KEY ("line_name_raw", "operator_name_raw") REFERENCES "n02_railroad_line"("line_name_raw", "operator_name_raw")
 );
 CREATE INDEX idx_bsl_station ON bridge_station_line(n02_group_code);
 CREATE INDEX idx_bsl_line ON bridge_station_line(line_name_raw, operator_name_raw);
@@ -769,7 +804,9 @@ CREATE TABLE "bridge_line_municipality" (
     relation_type = 'overlap' AND lg_code IS NOT NULL
     AND confidence = 1.0 AND mismatch_note IS NULL)),
   CHECK (relation_type <> 'unresolved' OR (
-    lg_code IS NULL AND boundary_jis_city_code IS NULL AND confidence = 0.0))
+    lg_code IS NULL AND boundary_jis_city_code IS NULL AND confidence = 0.0)),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code"),
+  FOREIGN KEY ("line_name_raw", "operator_name_raw") REFERENCES "n02_railroad_line"("line_name_raw", "operator_name_raw")
 );
 CREATE INDEX idx_blm_line ON bridge_line_municipality(line_name_raw, operator_name_raw);
 CREATE INDEX idx_blm_lg ON bridge_line_municipality(lg_code);
@@ -827,7 +864,9 @@ CREATE TABLE "bridge_bus_stop_municipality" (
   CHECK (verification_status <> 'auto' OR (
     relation_type = 'contains' AND candidate_count = 1 AND is_unique_match = 1
     AND confidence = 1.0 AND mismatch_note IS NULL)),
-  CHECK (relation_type <> 'unresolved' OR (lg_code IS NULL AND confidence = 0.0))
+  CHECK (relation_type <> 'unresolved' OR (lg_code IS NULL AND confidence = 0.0)),
+  FOREIGN KEY ("p11_stop_id") REFERENCES "p11_bus_stop"("p11_stop_id"),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
 );
 CREATE INDEX idx_bbm_stop ON bridge_bus_stop_municipality(p11_stop_id);
 CREATE INDEX idx_bbm_lg ON bridge_bus_stop_municipality(lg_code);
@@ -849,7 +888,8 @@ CREATE TABLE "telephone_area_coverage" (
   "exception_text"      TEXT,
   "parse_rule"          TEXT,
   "coverage_id"         TEXT PRIMARY KEY,
-  "source_snapshot_id"  TEXT
+  "source_snapshot_id"  TEXT,
+  FOREIGN KEY ("numbering_area_code") REFERENCES "telephone_area"("numbering_area_code")
 );
 
 CREATE TABLE "telephone_area_version" (
@@ -863,7 +903,8 @@ CREATE TABLE "telephone_area_version" (
   "observed_from"             TEXT,
   "observed_to"               TEXT,
   "is_current"                INTEGER,
-  "source_snapshot_id"        TEXT
+  "source_snapshot_id"        TEXT,
+  FOREIGN KEY ("numbering_area_code") REFERENCES "telephone_area"("numbering_area_code")
 );
 
 CREATE TABLE "telephone_number_block" (
@@ -876,7 +917,8 @@ CREATE TABLE "telephone_number_block" (
   "remarks"             TEXT,
   "current_as_of"       TEXT,
   "block_id"            TEXT PRIMARY KEY,
-  "source_snapshot_id"  TEXT
+  "source_snapshot_id"  TEXT,
+  FOREIGN KEY ("numbering_area_code") REFERENCES "telephone_area"("numbering_area_code")
 );
 
 -- ======================================================================

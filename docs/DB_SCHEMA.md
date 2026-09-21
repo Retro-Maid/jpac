@@ -316,17 +316,25 @@ CREATE TABLE telephone_number_block (
 
 ### 5.1 Concrete endpoints, both nullable [R1-P0-1, R1-P1-2]
 
-> **What V1 actually ships.** The typed columns below (`postal_record_id`,
-> `mlit_record_id`, …) and their `REFERENCES` / `NOT NULL` clauses are the intended
-> design; they are **not** what the current artifacts contain. All six shipped bridges
-> carry the same 30 columns — `address_id`, `lg_code` and a polymorphic `target_id` —
-> and the SQLite export declares **no foreign keys at all**. The guarantee this section
+> **What is actually shipped.** The typed columns below (`postal_record_id`,
+> `mlit_record_id`, …) are the intended design; they are **not** what the current
+> artifacts contain. All six shipped bridges carry the same 30 columns —
+> `address_id`, `lg_code` and a polymorphic `target_id`. The guarantee this section
 > argues for is enforced by a constraint rather than by typed columns:
 > `CHECK (address_id IS NOT NULL OR lg_code IS NOT NULL OR target_id IS NOT NULL)`,
-> so an unmatched record from either side is still retained. Referential integrity is
-> checked by the invariant tests (`docs/TEST_STRATEGY.md` §3), not by the database.
-> The definitions as shipped are in [`schema.sql`](schema.sql). The reasoning below
-> stands and the migration remains open.
+> so an unmatched record from either side is still retained.
+>
+> Since v1.2.0 the export **does** declare foreign keys, and the build runs
+> `PRAGMA foreign_key_check` over the finished database (`docs/LIMITATIONS.md` item
+> 8). What that reaches is every non-polymorphic reference — `address_id`, `lg_code`,
+> `match_run_id` and the rest. `target_id` still carries none, because a polymorphic
+> column cannot: which table it points at depends on which bridge you are reading.
+> That endpoint's referential integrity is still checked by the invariant tests
+> (`docs/TEST_STRATEGY.md` §3) rather than by the database, and the migration below
+> remains open — it renames a column in all six bridges and in the flat view, so it
+> is a breaking change for consumers.
+>
+> The definitions as shipped are in [`schema.sql`](schema.sql).
 
 The first design had one polymorphic `target_entity_id` and an address-only
 source side. Two things broke:
