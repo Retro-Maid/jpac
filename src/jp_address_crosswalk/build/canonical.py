@@ -7,6 +7,7 @@ dates in the whole project, so they — and nothing else — populate
 
 from __future__ import annotations
 
+import hashlib
 import pathlib
 
 import polars as pl
@@ -357,20 +358,18 @@ def build_canonical(
         [
             {
                 **row,
-                "lineage_id": f"lin_{i:09d}",
+                "lineage_id": _lineage_id(row),
                 "effective_date": None,
                 "observed_at": observed_from,
                 "source_snapshot_id": snapshot_id,
             }
-            for i, row in enumerate(
-                sorted(
-                    result.lineage,
-                    key=lambda r: (
-                        r.get("old_address_id") or "",
-                        r.get("new_address_id") or "",
-                        r["relation_type"],
-                    ),
-                )
+            for row in sorted(
+                result.lineage,
+                key=lambda r: (
+                    r.get("old_address_id") or "",
+                    r.get("new_address_id") or "",
+                    r["relation_type"],
+                ),
             )
         ],
         schema={
@@ -401,6 +400,36 @@ def build_canonical(
         "address_code": address_code,
         "_identity_review": result.review_required,
     }
+
+
+def _lineage_id(row: dict) -> str:
+    """来歴イベントの id を、内容から作る.
+
+    以前は並び順の連番（``lin_000000001``）だった。連番は**イベントが1つ増える
+    だけで全部ずれる**ので、前リリースの行と突き合わせられず、来歴を積むことが
+    できなかった（``docs/LIMITATIONS.md`` 項目7）。
+
+    **``observed_at`` は入れない。** 入れると、台帳を持たない genesis ビルド
+    （項目5）が同じイベントを別の日付で再検出したときに、前リリースの行の隣に
+    もう1行増え、union するたびに表が膨らむ —— 積むことで防ぎたかったこと
+    そのものが起きる。「いつ見たか」は内容ではないので、衝突したら前の行の
+    ``observed_at`` を残す（``accumulate_events``）。
+
+    ``evidence`` は入れる。イベントの向きがそこにしか無いからである —— 改名は
+    どれも ``old_address_id == new_address_id`` の ``renamed`` で、A→B と B→A を
+    区別できるのは ``"A -> B"`` という文字列だけである。
+    """
+    material = "|".join(
+        [
+            row.get("old_address_id") or "\x00",
+            row.get("new_address_id") or "\x00",
+            row["relation_type"],
+            row.get("effective_date") or "\x00",
+            row.get("evidence") or "\x00",
+            row.get("evidence_source") or "\x00",
+        ]
+    )
+    return "lin_" + hashlib.blake2s(material.encode("utf-8"), digest_size=10).hexdigest()
 
 
 def _build_municipality(

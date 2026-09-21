@@ -597,6 +597,19 @@ def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str,
                 tables[table], prev, table, key, vid, observed_from
             )
 
+    # 来歴イベントと符号の観測も積む（docs/LIMITATIONS.md 項目7）。版テーブルだけが
+    # 積まれていて、この2つは毎回作り直されていたため、前のリリースで検出した
+    # イベントが次のリリースで消えていた。
+    if "address_lineage" in tables:
+        tables["address_lineage"] = versioning.accumulate_events(
+            tables["address_lineage"], prev, "address_lineage", "lineage_id"
+        )
+    if "address_code" in tables:
+        tables["address_code"] = versioning.carry_forward_observations(
+            tables["address_code"], prev, "address_code",
+            ["address_id", "code_type", "code_value"], observed_from,
+        )
+
     tables["address_history"] = versioning.build_address_history(
         tables["address"], prev, observed_from, snap_abr_town
     )
