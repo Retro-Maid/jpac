@@ -305,7 +305,12 @@ def rebuild_offline(
 # artifacts and must rewrite their digests from the same definition.
 RELEASE_ARTIFACT_NAMES = (
     "jp_address_crosswalk.parquet",
-    "jp_address_crosswalk.sqlite",
+    # 生の .sqlite ではなく .gz を挙げる。GitHub のリリースアセットは1ファイル
+    # 2 GiB 未満で、v1.2.0 の時点で非圧縮は 2,082,521,088 バイト（残り 62 MiB）
+    # だった。生のほうは dist/ に残るが、配るのはこちらである（export/writers.py
+    # の write_sqlite_gz）。ここに両方を挙げると、SHA256SUMS が「アップロード
+    # されていないファイル」を載せることになり、`sha256sum -c` が落ちる。
+    "jp_address_crosswalk.sqlite.gz",
     "jp_address_crosswalk.csv.gz",
     "quality_report.json",
     "diff_report.json",
@@ -1286,7 +1291,11 @@ def export(
     flat = writers.build_flat_view(public, accepted_only=True)
 
     flat.write_parquet(paths.dist / "jp_address_crosswalk.parquet", compression="zstd")
-    writers.write_sqlite(public, flat, flat_all, paths.dist / "jp_address_crosswalk.sqlite")
+    sqlite_path = paths.dist / "jp_address_crosswalk.sqlite"
+    writers.write_sqlite(public, flat, flat_all, sqlite_path)
+    # 出荷するのは .gz のほう。生の .sqlite は残す —— `jpac verify artifacts` が
+    # parquet と突き合わせるのはこれで、利用者が解凍して得るのもこれである。
+    writers.write_sqlite_gz(sqlite_path, paths.dist / "jp_address_crosswalk.sqlite.gz")
     writers.write_csv_gz(flat, paths.dist / "jp_address_crosswalk.csv.gz")
 
     cfg = Config.load(paths)

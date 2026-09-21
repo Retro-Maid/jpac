@@ -287,6 +287,28 @@ for line in manifest:
 ok("every listed file matches its digest", not bad_sum,
    ", ".join(bad_sum) or f"{len(manifest)} files")
 
+# 出荷するのは .sqlite.gz で、上の突き合わせ（2節）が読んだのは生の .sqlite である。
+# つまりここまでの検査は「利用者が実際に受け取るファイル」を一度も開いていない。
+# 解凍して1バイトずつ照合する。gzip が壊れた出力を黙って書く可能性は低いが、
+# 「低い」を根拠に配るのは、このリポジトリが他の場所でしていないことである。
+gz = DIST / "jp_address_crosswalk.sqlite.gz"
+raw = DIST / "jp_address_crosswalk.sqlite"
+if gz.exists() and raw.exists():
+    h_gz, h_raw, n = hashlib.sha256(), hashlib.sha256(), 0
+    with gzip.open(gz, "rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 22), b""):
+            h_gz.update(chunk)
+            n += len(chunk)
+    with raw.open("rb") as fh:
+        for chunk in iter(lambda: fh.read(1 << 22), b""):
+            h_raw.update(chunk)
+    ok("the shipped .sqlite.gz decompresses to the database that was verified",
+       h_gz.hexdigest() == h_raw.hexdigest() and n == raw.stat().st_size,
+       f"{n:,} bytes, {gz.stat().st_size / n:.1%} of it on the wire")
+else:
+    ok("the shipped .sqlite.gz exists next to the database", False,
+       f"missing: {', '.join(p.name for p in (gz, raw) if not p.exists())}")
+
 # --------------------------------------------------------------- 5. Mojibake
 print("\n5. Encoding integrity")
 scanned = 0

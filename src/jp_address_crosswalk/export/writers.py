@@ -637,6 +637,41 @@ def write_csv_gz(flat: pl.DataFrame, path: Path) -> Path:
         return path
 
 
+def write_sqlite_gz(src: Path, out: Path) -> Path:
+    """The SQLite database, gzipped, because that is the file a release ships.
+
+    GitHub's documented limit is "Each file included in a release must be under
+    2 GiB", and the uncompressed database reached 2,082,521,088 bytes in
+    v1.2.0 — 62 MiB of headroom on an artifact that grows every time a table is
+    added. Measured on that build, gzip -6 takes it to 418,894,570 bytes (5.0x),
+    so the limit next binds around 10 GB uncompressed rather than 2.
+
+    Compressing rather than dropping the indexes or splitting the file is the
+    choice that changes least for a consumer: `jp_address_crosswalk.csv.gz`
+    already ships this way, so this applies an existing convention to a second
+    file instead of introducing a second convention.
+
+    Streamed in chunks. Reading 2 GB into memory to hand it to
+    ``gzip.compress`` would double the build's peak, which ``ARCHITECTURE.md``
+    §8 already puts at 4–6 GB.
+    """
+    with stage_context("export", "sqlite_gz"):
+        # mtime=0 and an empty embedded filename, for the same reason as
+        # write_csv_gz: the container must not make identical data hash
+        # differently from one build to the next.
+        with src.open("rb") as raw_in, out.open("wb") as raw_out, gzip.GzipFile(
+            filename="", mode="wb", fileobj=raw_out, mtime=0
+        ) as fh:
+            for chunk in iter(lambda: raw_in.read(1 << 22), b""):
+                fh.write(chunk)
+        before, after = src.stat().st_size, out.stat().st_size
+        log.info(
+            "wrote sqlite.gz", path=str(out), size=after, uncompressed=before,
+            ratio=round(before / after, 2) if after else None,
+        )
+        return out
+
+
 def write_sha256sums(paths: list[Path], out: Path) -> Path:
     lines = []
     for p in sorted(paths, key=lambda x: x.name):

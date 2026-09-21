@@ -66,6 +66,8 @@ x = pd.read_csv("jp_address_crosswalk.csv.gz", dtype=str)
 ```
 
 ```bash
+# SQLite は gzip で配っています。解凍してから開いてください
+gunzip jp_address_crosswalk.sqlite.gz
 sqlite3 jp_address_crosswalk.sqlite
 ```
 
@@ -797,7 +799,7 @@ jpac は全角英数の半角化や、丁目の漢数字→算用数字といっ
 | ファイル | 中身 | 用途 |
 |---|---|---|
 | `jp_address_crosswalk.parquet` | 1枚にまとめた表（727,110行 × 43列） | polars / pandas / DuckDB |
-| `jp_address_crosswalk.sqlite` | テーブル31本 + ビュー3本 + 索引26本 | SQL で関係をたどる |
+| `jp_address_crosswalk.sqlite.gz` | テーブル36本 + ビュー3本 + 索引32本（**gzip。解凍して使います**） | SQL で関係をたどる |
 | `jp_address_crosswalk.csv.gz` | 1枚にまとめた表 | 汎用・アーカイブ |
 | `QUALITY_REPORT.md` | そのビルドの全統計とチェック結果 | 数値の裏取り |
 | `DIFF_REPORT.md` | 前回リリースからの変化 | 更新時の影響確認 |
@@ -805,6 +807,12 @@ jpac は全角英数の半角化や、丁目の漢数字→算用数字といっ
 | `SHA256SUMS` | リリースする全ファイルのハッシュ | 改ざん・破損の検証 |
 
 2つのレポートは機械可読な `quality_report.json` / `diff_report.json` も併せて添付されます。
+
+**SQLite を gzip で配る理由。** GitHub のリリースアセットは1ファイル 2 GiB 未満という制限が
+あり、非圧縮の SQLite は v1.2.0 の時点で 2,082,521,088 バイト（残り 62 MiB）でした。テーブル
+が増えるたびに近づくため、`csv.gz` と同じやり方で圧縮しています。実測で約5倍縮むので、
+上限に当たるのは非圧縮で約 10 GB になったときです。`SHA256SUMS` のハッシュは**圧縮後の
+ファイル**に対するもので、`csv.gz` と同じ扱いです。
 
 ```bash
 sha256sum -c SHA256SUMS
