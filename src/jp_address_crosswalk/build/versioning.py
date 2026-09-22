@@ -163,7 +163,10 @@ def carry_forward(
     kept = live_k.filter(pl.col("_k").is_in(list(unchanged_keys)))
     superseded = live_k.filter(~pl.col("_k").is_in(list(unchanged_keys))).with_columns(
         [
-            pl.lit(observed_from).alias("observed_to"),
+            # 版も同じ。区間は開いた日より前に閉じられない
+            # （carry_forward_observations に同じ判断がある）。
+            pl.max_horizontal(pl.lit(observed_from), pl.col("observed_from"))
+            .alias("observed_to"),
             pl.lit(False).alias("is_current"),
         ]
     )
@@ -332,8 +335,13 @@ def carry_forward_observations(
     open_keys = set(open_["_k"].to_list())
 
     kept = open_.filter(pl.col("_k").is_in(list(observed_now)))
+    # 区間は、開いた日より前に閉じられない。ふつうは `observed_from` が前の行より
+    # 後なので何も起きないが、観測日を時計ではなく取得記録から取る（項目10）と、
+    # ビルド日で開いた行を取得日で閉じることになりうる。そのとき素直に代入すると
+    # 「2026-09-20 に開き 2026-09-17 に閉じた」行が出る。
     ended = open_.filter(~pl.col("_k").is_in(list(observed_now))).with_columns(
-        pl.lit(observed_from).alias("observed_to")
+        pl.max_horizontal(pl.lit(observed_from), pl.col("observed_from"))
+        .alias("observed_to")
     )
     added = cur.filter(~pl.col("_k").is_in(list(open_keys)))
 
