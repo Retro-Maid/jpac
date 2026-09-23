@@ -821,6 +821,11 @@ sha256sum -c SHA256SUMS
 リリースのタグはコード版とデータ版を併記します（`v1.1.0+data-2026-09-16`）。同じコードでも
 元データの版が違えば中身は変わるため、利用時は**タグ全体**を記録してください。
 
+データ版は**元データを取得した日のうち最も新しいもの**です。v1.2.0 まではその記録が無く、
+ビルド日にフォールバックしていました（各リリースノートに明記しています）。取得日は人が
+署名して記録するもので、署名は [`docs/ACQUISITION_DATES.md`](docs/ACQUISITION_DATES.md)
+にあります。
+
 品質ゲートを通過したビルドだけがリリースされます。スキーマ変更・ライセンス変更・行数異常
 などが1つでもあればリリースは作られません（[停止条件](#停止条件)）。
 
@@ -1230,6 +1235,7 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が回している
 | [`docs/QUALITY_POLICY.md`](docs/QUALITY_POLICY.md) | 指標としきい値、リリースを止める条件 |
 | [`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md) | テスト層とフィクスチャ、検証ツールの役割分担 |
 | [`docs/LICENSE_POLICY.md`](docs/LICENSE_POLICY.md) | ライセンス判断とドリフト検出 |
+| [`docs/ACQUISITION_DATES.md`](docs/ACQUISITION_DATES.md) | 元データをいつ取得したかの署名。タグのデータ版とバイト再現性の根拠 |
 
 **V2（駅・メッシュ・地図）**
 

@@ -11,6 +11,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass, field, replace
+from datetime import UTC, datetime
 from pathlib import Path
 
 import polars as pl
@@ -330,8 +331,13 @@ def release_artifacts(paths: Paths) -> list[Path]:
 
 def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str, pl.DataFrame]:
     cfg = Config.load(paths)
-    observed_from = utcnow()[:10]
-    built_at = utcnow()
+    # 観測日時は取得記録から取る。時計から取ると、同じ入力の再ビルドが
+    # バイト一致しない（docs/LIMITATIONS.md 項目10）。記録が無ければ時計に落ちる ——
+    # v1.2.0 までの挙動で、そのときリリースノートが「タグの日付はビルド日である」と
+    # 書いていたのはこの分岐である（docs/ACQUISITION_DATES.md）。
+    acquired = acquisition_stamp(outcome)
+    observed_from = (acquired or utcnow())[:10]
+    built_at = acquired or utcnow()
 
     snapshots = outcome.snapshots
     snapshot_ids = sorted(s.source_snapshot_id for s in snapshots)
@@ -1314,7 +1320,11 @@ def export(
     cfg = Config.load(paths)
     data_version = _data_version(outcome)
     report = quality.QualityReport(
-        code_version=__version__, data_version=data_version, built_at=utcnow(),
+        # 成果物に入る日時はすべて取得記録から取る —— 出荷物が述べているのは
+        # データのことで、実行のことではない。実行時刻はログにある。ここで時計を
+        # 読むと、レポートだけが再ビルドごとに変わり、SHA256SUMS が動く。
+        code_version=__version__, data_version=data_version,
+        built_at=acquisition_stamp(outcome) or utcnow(),
         matching_rule_version=str(cfg.matching_rules["version"]),
     )
     report.sources = {
@@ -1455,9 +1465,47 @@ def export(
     return report.as_dict()
 
 
+def acquisition_stamp(outcome: FetchOutcome) -> str | None:
+    """The latest ``downloaded_at`` among the payloads, as the record states it.
+
+    This is the one timestamp in a release that describes the data rather than
+    the run, which makes it the only honest source for every date the artifacts
+    carry (``docs/LIMITATIONS.md`` item 10). Reading the clock instead is what
+    made two rebuilds of identical snapshots differ byte-for-byte.
+
+    Compared as parsed instants, not as strings: a manifest may state
+    ``2026-09-17T06:53:02+09:00`` while another payload carries a ``Z`` stamp,
+    and string order across mixed offsets is not time order. The string returned
+    is the winner's own, unreformatted — the attested value, not a rendering of
+    it (``docs/ACQUISITION_DATES.md``).
+
+    ``None`` when nothing states an acquisition time. That is the pre-manifest
+    case and the caller falls back to the clock, which is the behaviour every
+    release up to v1.2.0 had.
+    """
+    best: tuple[datetime, str] | None = None
+    for s in outcome.snapshots:
+        if not s.downloaded_at:
+            continue
+        try:
+            when = datetime.fromisoformat(s.downloaded_at)
+        except ValueError:
+            # A stamp nobody can parse cannot order the set. Recorded and
+            # skipped rather than guessed at: guessing here would pick a
+            # release's data version by accident.
+            log.warning("unparsable downloaded_at", value=s.downloaded_at,
+                        dataset=s.dataset_name)
+            continue
+        if when.tzinfo is None:
+            when = when.replace(tzinfo=UTC)
+        if best is None or when > best[0]:
+            best = (when, s.downloaded_at)
+    return best[1] if best else None
+
+
 def _data_version(outcome: FetchOutcome) -> str:
-    dates = [s.downloaded_at[:10] for s in outcome.snapshots if s.downloaded_at]
-    return f"data-{max(dates)}" if dates else "data-unknown"
+    stamp = acquisition_stamp(outcome)
+    return f"data-{stamp[:10]}" if stamp else "data-unknown"
 
 
 def _attribution_section(
@@ -1543,7 +1591,8 @@ def _write_sources_and_notice(paths: Paths, outcome: FetchOutcome) -> None:
     paths.dist.mkdir(parents=True, exist_ok=True)
     (paths.dist / "SOURCES.yml").write_text(
         yaml.safe_dump(
-            {"generated_at": utcnow(), "parser_version": PARSER_VERSION,
+            {"generated_at": acquisition_stamp(outcome) or utcnow(),
+             "parser_version": PARSER_VERSION,
              "sources": entries},
             allow_unicode=True, sort_keys=True,
         ),

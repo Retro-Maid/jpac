@@ -1,10 +1,10 @@
-"""Two builds from the same inputs must produce the same logical data.
+"""Two builds from the same inputs must produce the same data, byte for byte.
 
-`docs/ARCHITECTURE.md` §6 claims logical — not byte — reproducibility, and is
-explicit about why: `observed_from`, `created_at` and `updated_at` come from the
-clock. This checks the claim that is actually made, and reports separately on
-the fields that keep it from being a byte claim, so the gap stays visible
-instead of being quietly absorbed.
+`docs/ARCHITECTURE.md` §6 claims byte reproducibility since v1.2.0: every date an
+artifact carries comes from the acquisition record (`_payload.yml`, signed in
+`docs/ACQUISITION_DATES.md`) rather than from the clock. The clock-field report
+below is kept rather than deleted — if a field starts moving again, that is the
+claim breaking, and it should be named rather than absorbed into a row count.
 
 Usage:
     jpac build                          # build 1
@@ -36,7 +36,9 @@ import polars as pl
 ROOT = Path(__file__).resolve().parents[1]
 PQ = ROOT / "dist" / "parquet"
 
-# Populated from the clock at build time, so they differ between runs by design.
+# Derived from the acquisition record, not the clock (docs/LIMITATIONS.md item 10).
+# Still listed separately so the report can say "these moved", which since v1.2.0
+# means the acquisition record was missing or changed between the two runs.
 WALL_CLOCK = {"observed_from", "observed_to", "created_at", "updated_at",
               "started_at", "downloaded_at", "built_at", "observed_at"}
 
@@ -95,13 +97,15 @@ for name in sorted(a_files & b_files):
     if moving:
         clock_only.append(f"{name}({','.join(moving)})")
 
-print("\nFields that differ purely because they come from the clock:")
+print("\nDate fields that differ between the two runs:")
 if clock_only:
     for c in clock_only:
         print("  -", c)
-    print("\n  This is why ARCHITECTURE.md claims logical rather than byte")
-    print("  reproducibility. Deriving these from a persisted acquisition record")
-    print("  instead would close the gap; see docs/LIMITATIONS.md item 10.")
+    print("\n  Since v1.2.0 these are derived from the acquisition record, so a")
+    print("  difference means the two runs did not see the same record: a missing")
+    print("  data/raw/<source>/_payload.yml falls back to the clock.")
+    print("  See docs/ACQUISITION_DATES.md and LIMITATIONS.md item 10.")
+    failures.append("date fields differ: " + ", ".join(clock_only))
 else:
     print("  none — the two runs are byte-comparable")
 
