@@ -106,13 +106,23 @@ release.)
      a change to what provenance means rather than a detail of the DDL.
 9. **Ingestion is eager, not streaming.** A national build peaks around 4–6 GB
    (`ARCHITECTURE.md` §8).
-10. **Rebuilds are logically reproducible, not byte-reproducible.** Ids are
-   content-addressed and every table is sorted on a total key, so the same inputs
-   always produce the same *logical* data. But `observed_from`, `created_at` and
-   `updated_at` come from wall-clock time, so two rebuilds of identical snapshots
-   differ byte-for-byte. Making them byte-identical means deriving observation
-   metadata from a persisted acquisition record rather than from the clock
-   (independent review 2, partially-resolved P1).
+10. **Byte reproducibility depends on the acquisition record, which is not in the
+   repository.** Ids are content-addressed, every table is sorted on a total key, and
+   since v1.2.0 every date an artifact carries is derived from
+   `data/raw/<source>/_payload.yml` rather than from the clock, so two rebuilds of the
+   same payloads are byte-identical (independent review 2's P1, now resolved for the
+   normal case). What remains:
+   - **`data/raw/` is gitignored**, so the manifests live only on the machine that
+     acquired the payloads. The *signature* is committed
+     (`ACQUISITION_DATES.md`, `tools/write_payload_manifests.py`) and regenerates them,
+     but a clean checkout on another machine has neither payloads nor manifests, and a
+     build there would fall back to the clock — the pre-v1.2.0 behaviour.
+   - **The time of day is the payload file's mtime.** The signed fact is the calendar
+     date, corroborated by the documents named in `ACQUISITION_DATES.md`; mtime
+     supplies the rest and is a mutable value that copying can lose.
+   - **Ids still come from the committed ledger** (item 5). Byte identity is a property
+     of rebuilding the same payloads with the same ledger, not of minting an entity's
+     id from nothing.
 11. **Municipality mergers do not carry `address_id` forward.** Identity rule I3 needs an
    attested `lg_code` transition in `overrides/municipality_lineage.yml`. V1 shipped
    that file empty; V2 records one reorganisation (浜松市, 2024-01-01: six 1:1

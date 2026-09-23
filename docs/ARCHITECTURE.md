@@ -181,12 +181,21 @@ loops, no dict-ification of whole tables, no O(N²) fuzzy matching (blocking by
 - Config, matching rules and normalization profiles are versioned and recorded per row.
 - Dict/set iteration never determines output order.
 
-**What this does and does not guarantee.** The same inputs always produce the same
-*logical* data: identical rows, identical ids, identical order. They do **not** yet
-produce byte-identical files, because `observed_from`, `created_at` and `updated_at`
-are taken from wall-clock time at build. Byte-level reproducibility needs those
-derived from a persisted acquisition record instead; it is tracked as a known
-limitation (`LIMITATIONS.md`) rather than claimed here.
+**What this does and does not guarantee.** The same inputs produce **byte-identical**
+files, not merely the same logical data. Every date an artifact carries —
+`observed_from`, `created_at`, `updated_at`, the quality report's `built_at`,
+`SOURCES.yml`'s `generated_at` — is derived from the acquisition record
+(`data/raw/<source>/_payload.yml`, signed in `ACQUISITION_DATES.md`) rather than read
+from the clock. A shipped artifact describes the data, not the run; the run's own time
+is in the log.
+
+Two conditions, both worth stating plainly:
+
+- **Without an acquisition record the build falls back to the clock**, and byte
+  identity goes with it. That was the behaviour through v1.2.0.
+- **The identity ledger still decides ids.** Byte identity is a property of building
+  the same payloads with the same committed ledger, not of rebuilding an entity's id
+  from nothing (`LIMITATIONS.md` items 5 and 10).
 
 ## 7. Logging
 
