@@ -502,8 +502,7 @@ CREATE TABLE "mlit_town_version" (
   "is_current"           INTEGER,
   "source_snapshot_id"   TEXT,
   CHECK (latitude IS NULL OR (latitude BETWEEN 20 AND 46)),
-  CHECK (longitude IS NULL OR (longitude BETWEEN 122 AND 154)),
-  FOREIGN KEY ("mlit_record_id") REFERENCES "mlit_town"("mlit_record_id")
+  CHECK (longitude IS NULL OR (longitude BETWEEN 122 AND 154))
 );
 
 CREATE TABLE "municipality" (
@@ -533,8 +532,7 @@ CREATE TABLE "municipality_version" (
   "observed_from"           TEXT,
   "observed_to"             TEXT,
   "is_current"              INTEGER,
-  "source_snapshot_id"      TEXT,
-  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
+  "source_snapshot_id"      TEXT
 );
 
 CREATE TABLE "postal_code_entity" (
@@ -583,9 +581,7 @@ CREATE TABLE "postal_record_version" (
   "observed_from"            TEXT,
   "observed_to"              TEXT,
   "is_current"               INTEGER,
-  "source_snapshot_id"       TEXT,
-  FOREIGN KEY ("postal_record_id") REFERENCES "postal_record"("postal_record_id"),
-  FOREIGN KEY ("postal_code") REFERENCES "postal_code_entity"("postal_code")
+  "source_snapshot_id"       TEXT
 );
 
 CREATE TABLE "snapshot_license_artifact" (
@@ -903,8 +899,7 @@ CREATE TABLE "telephone_area_version" (
   "observed_from"             TEXT,
   "observed_to"               TEXT,
   "is_current"                INTEGER,
-  "source_snapshot_id"        TEXT,
-  FOREIGN KEY ("numbering_area_code") REFERENCES "telephone_area"("numbering_area_code")
+  "source_snapshot_id"        TEXT
 );
 
 CREATE TABLE "telephone_number_block" (

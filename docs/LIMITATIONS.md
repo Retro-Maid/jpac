@@ -82,6 +82,12 @@ release.)
      The ids are content-addressed over what the event says and not over when it was
      seen, so those events merge with the existing rows rather than doubling them —
      but the first-observation dates are then the genesis build's, not the original's.
+   - **A repeating `address_lineage` event is recorded once.** A town renamed A→B,
+     back to A, then to B again yields the same `lineage_id` the first rename did, so
+     the third is not recorded and the surviving row's `observed_at` still names the
+     first. Excluding `observed_at` from the id is what prevents the doubling above,
+     and the trade is deliberate. `address_history` does include the old and new
+     values, so it is the table that can answer "how many times did this flip".
 8. **Bridge endpoints are still a polymorphic `target_id`.** Primary keys, the full
    auto-accept conjunction, enumerated vocabularies and range checks are real `CHECK`
    constraints and are proven by negative-insertion tests. Foreign keys **are** now
@@ -92,10 +98,14 @@ release.)
    reference fails the release rather than waiting for a consumer to turn foreign
    keys on. Two columns are deliberately left undeclared (independent review 3):
    - **`target_id`**, because it is polymorphic: a postal record id in one bridge, an
-     area code in another. A polymorphic column cannot carry a foreign key at all.
-     The fix is the typed endpoint columns `DB_SCHEMA.md` §5.1 describes, which
-     renames a column in all six bridges and in the flat view — a breaking change
-     for consumers, so it waits for a major version.
+     area code in another — and in `bridge_municipality_postal` both, in the same
+     column, split by `matching_rule_id` (8,207 postal codes under P2, 1,910 record ids
+     under P3). A polymorphic column cannot carry a foreign key, and it also does not
+     say which table it points at. The fix is the typed endpoint columns `DB_SCHEMA.md`
+     §5.1 describes; it renames a column in all six bridges, so it waits for a major
+     version. The **flat view is not affected** — it already publishes typed names
+     (`postal_code`, `numbering_area_code`, …) and reads `target_id` only internally.
+     Planned in `BRIDGE_ENDPOINT_MIGRATION.md`.
    - **the snapshot columns** (`source_snapshot_id`, `first_observed_snapshot_id`,
      `last_observed_snapshot_id`). These satisfy the constraint today and declaring
      it would ship green, but it would be false: `source_snapshot` carries *this

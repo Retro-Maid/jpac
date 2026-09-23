@@ -172,11 +172,32 @@ def carry_forward(
     )
     added = cur.filter(~pl.col("_k").is_in(list(unchanged_keys)))
 
+    # 交代する版は、前の版が閉じた日から始まる。閉じる日を「開いた日より前には
+    # しない」と直しただけでは、**行と行のあいだ**に反転が残る（レビューで見つかった）:
+    # 前の版が 2026-09-20 に閉じ、後継が 2026-09-17 に開くと、2つの版が
+    # 09-17〜09-20 を同時に覆い、as-of の問い合わせが2行返す。
+    #
+    # 後継の観測日を前の版の閉じた日に合わせる。区間はちょうど接して重ならない
+    # （slowly-changing dimension の普通の不変条件）。今回の観測日のほうが後なら
+    # 何も起きない。
+    if superseded.height and added.height:
+        added = added.join(
+            superseded.select(["_k", pl.col("observed_to").alias("_closed_at")]),
+            on="_k", how="left",
+        ).with_columns(
+            pl.max_horizontal(
+                pl.col("observed_from"), pl.col("_closed_at").fill_null("")
+            ).alias("observed_from")
+        ).drop("_closed_at")
+
     # Recomputed in place after observed_to is set, so a row that was just
     # closed cannot collide with its live replacement. with_columns replaces the
     # existing column and preserves position, which concat requires.
     if superseded.height:
         superseded = _ids(superseded)
+    if added.height:
+        # observed_from が動いた行は id も作り直す（id は区間を含む）。
+        added = _ids(added)
 
     out = pl.concat(
         [
@@ -311,8 +332,10 @@ def carry_forward_observations(
     ``observed_from`` differs — which is the correct reading of "observed from
     here to there, then again from here".
     """
-    if current.is_empty():
-        return current
+    # 空の current で早期に返してはいけない。「今回どの符号も観測されなかった」は
+    # 「前の観測を捨てる」ではなく「前の観測を全部閉じる」である —— この関数の
+    # docstring が約束しているのは後者で、早期 return は逆のことをしていた
+    # （レビューで見つかった）。以降の処理は current が空でも正しく動く。
     prev_path = (previous_dir / f"{table}.parquet") if previous_dir else None
     if prev_path is None or not prev_path.exists():
         return current
@@ -399,9 +422,18 @@ def build_address_history(
         for r in changed.iter_rows(named=True):
             rows.append(
                 {
+                    # 値も材料に入れる。(address_id|field|observed_at) だけだと、
+                    # 同じ観測日で同じ列が2度違う値に変わったときに id が衝突し、
+                    # `accumulate_events` の重複排除が**後の変更を捨てる**
+                    # （レビューで見つかった）。観測日が時計由来だった頃は日付が
+                    # 毎回違うので起きなかったが、取得記録から取るようになった今は
+                    # 同じ日付の2リリースがありうる。
                     "history_id": "hst_"
                     + hashlib.blake2s(
-                        f"{r['address_id']}|{field}|{observed_at}".encode(),
+                        "|".join([
+                            r["address_id"], field, observed_at,
+                            r[field] or "\x00", r[f"{field}__new"] or "\x00",
+                        ]).encode(),
                         digest_size=10,
                     ).hexdigest(),
                     "address_id": r["address_id"],
@@ -419,7 +451,8 @@ def build_address_history(
     log.info("address history built", changes=out.height)
     # 検出は1回きり（この関数は「前リリースと今回の差」しか返さない）。積まないと、
     # 前のリリースで記録した変更が次のリリースで消える。history_id は
-    # (address_id|field|observed_at) の内容アドレスなので、union と重複排除で足りる。
+    # history_id は (address_id|field|observed_at|旧値|新値) の内容アドレスなので、
+    # union と重複排除で足りる。
     return accumulate_events(out, previous_dir, "address_history", "history_id")
 
 

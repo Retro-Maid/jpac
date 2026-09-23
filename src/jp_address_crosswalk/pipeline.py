@@ -154,6 +154,11 @@ class FetchOutcome:
     # Attested source-name aliases whose preconditions no longer hold. Kept so a
     # lapsed alias is reported rather than quietly forgotten.
     stale_name_aliases: list = field(default_factory=list)
+    # dataset_name -> the acquisition time a signed payload manifest stated.
+    # Kept apart from the snapshots because a snapshot's own ``downloaded_at``
+    # falls back to the build clock, and the two are not the same claim: one is
+    # attested (docs/ACQUISITION_DATES.md), the other is "we do not know".
+    attested_downloaded_at: dict = field(default_factory=dict)
 
 
 
@@ -290,6 +295,7 @@ def rebuild_offline(
             observed = manifest.resource(resource_key.get(snap.dataset_name, ""))
             if observed.get("downloaded_at"):
                 snap.downloaded_at = str(observed["downloaded_at"])
+                outcome.attested_downloaded_at[snap.dataset_name] = snap.downloaded_at
         outcome.snapshots.extend(built)
         outcome.license_artifacts.extend(
             _license_artifacts(name, spec, manifest, built)
@@ -1479,27 +1485,46 @@ def acquisition_stamp(outcome: FetchOutcome) -> str | None:
     is the winner's own, unreformatted — the attested value, not a rendering of
     it (``docs/ACQUISITION_DATES.md``).
 
+    **Only attested stamps are considered.** A snapshot with no manifest entry
+    keeps ``downloaded_at = utcnow()``, which is by construction the newest
+    instant in the set — so reading every snapshot meant that adding one
+    un-attested payload silently moved every artifact date back onto the clock,
+    without ever taking the documented ``None`` path. Found by review. Partial
+    coverage is now reported rather than absorbed: the stamp still comes from
+    what *is* signed, and the datasets that are not are named in the log.
+
     ``None`` when nothing states an acquisition time. That is the pre-manifest
     case and the caller falls back to the clock, which is the behaviour every
     release up to v1.2.0 had.
     """
+    attested = outcome.attested_downloaded_at or {}
+    if not attested:
+        return None
+    missing = sorted(
+        s.dataset_name for s in outcome.snapshots
+        if s.dataset_name not in attested
+    )
+    if missing:
+        log.warning(
+            "payloads without an attested acquisition date; every date in this "
+            "build comes from the signed ones only",
+            datasets=missing[:10], count=len(missing),
+            signed=len(attested),
+        )
     best: tuple[datetime, str] | None = None
-    for s in outcome.snapshots:
-        if not s.downloaded_at:
-            continue
+    for dataset, stamp in sorted(attested.items()):
         try:
-            when = datetime.fromisoformat(s.downloaded_at)
+            when = datetime.fromisoformat(stamp)
         except ValueError:
             # A stamp nobody can parse cannot order the set. Recorded and
             # skipped rather than guessed at: guessing here would pick a
             # release's data version by accident.
-            log.warning("unparsable downloaded_at", value=s.downloaded_at,
-                        dataset=s.dataset_name)
+            log.warning("unparsable downloaded_at", value=stamp, dataset=dataset)
             continue
         if when.tzinfo is None:
             when = when.replace(tzinfo=UTC)
         if best is None or when > best[0]:
-            best = (when, s.downloaded_at)
+            best = (when, stamp)
     return best[1] if best else None
 
 

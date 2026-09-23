@@ -294,17 +294,25 @@ ok("every listed file matches its digest", not bad_sum,
 gz = DIST / "jp_address_crosswalk.sqlite.gz"
 raw = DIST / "jp_address_crosswalk.sqlite"
 if gz.exists() and raw.exists():
-    h_gz, h_raw, n = hashlib.sha256(), hashlib.sha256(), 0
-    with gzip.open(gz, "rb") as fh:
-        for chunk in iter(lambda: fh.read(1 << 22), b""):
-            h_gz.update(chunk)
-            n += len(chunk)
+    # 解凍は失敗しうる —— 途中で切れた gz は EOFError を、空の gz は 0 バイトを返す。
+    # そのときこの検査が traceback で死ぬと、**捕まえるために置いた不具合の報告が
+    # 出ない**（レビューで見つかった）。落ちるのではなく BAD と言わせる。
+    h_gz, h_raw, n, broke = hashlib.sha256(), hashlib.sha256(), 0, None
+    try:
+        with gzip.open(gz, "rb") as fh:
+            for chunk in iter(lambda: fh.read(1 << 22), b""):
+                h_gz.update(chunk)
+                n += len(chunk)
+    except (OSError, EOFError, gzip.BadGzipFile) as exc:
+        broke = f"{type(exc).__name__}: {exc}"
     with raw.open("rb") as fh:
         for chunk in iter(lambda: fh.read(1 << 22), b""):
             h_raw.update(chunk)
+    share = f", {gz.stat().st_size / n:.1%} of it on the wire" if n else ""
     ok("the shipped .sqlite.gz decompresses to the database that was verified",
-       h_gz.hexdigest() == h_raw.hexdigest() and n == raw.stat().st_size,
-       f"{n:,} bytes, {gz.stat().st_size / n:.1%} of it on the wire")
+       broke is None and n > 0
+       and h_gz.hexdigest() == h_raw.hexdigest() and n == raw.stat().st_size,
+       broke or f"{n:,} bytes{share}")
 else:
     ok("the shipped .sqlite.gz exists next to the database", False,
        f"missing: {', '.join(p.name for p in (gz, raw) if not p.exists())}")

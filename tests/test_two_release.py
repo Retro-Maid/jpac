@@ -126,6 +126,10 @@ def make_outcome(town: pl.DataFrame, sha: str) -> pipeline.FetchOutcome:
         FakeSnapshot("mic_fixed_phone_1", "n1", 1),
     ]
     o.license_artifacts = []
+    # 署名された取得日があるときの挙動を再現する（docs/ACQUISITION_DATES.md）。
+    # これが無いと観測日時が時計に落ちるので、フィクスチャでも本番でも
+    # 「同じ入力なら同じ出力」を確かめられない（tests/test_byte_reproducible.py）。
+    o.attested_downloaded_at = {s.dataset_name: s.downloaded_at for s in o.snapshots}
     return o
 
 

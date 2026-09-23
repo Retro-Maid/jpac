@@ -1236,6 +1236,7 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が回している
 | [`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md) | テスト層とフィクスチャ、検証ツールの役割分担 |
 | [`docs/LICENSE_POLICY.md`](docs/LICENSE_POLICY.md) | ライセンス判断とドリフト検出 |
 | [`docs/ACQUISITION_DATES.md`](docs/ACQUISITION_DATES.md) | 元データをいつ取得したかの署名。タグのデータ版とバイト再現性の根拠 |
+| [`docs/BRIDGE_ENDPOINT_MIGRATION.md`](docs/BRIDGE_ENDPOINT_MIGRATION.md) | ブリッジの `target_id` を型付き列にする計画（v2.0.0 予定の破壊的変更） |
 
 **V2（駅・メッシュ・地図）**
 

@@ -240,3 +240,52 @@ class TestAnIntervalCannotCloseBeforeItOpened:
             ["address_id", "code_type", "code_value"], "2026-09-21",
         )
         assert out.filter(pl.col("address_id") == "gone")["observed_to"][0] == "2026-09-21"
+
+
+class TestFindingsFromReview:
+    """レビューで見つかった、いずれも「黙って失われる」種類の欠陥。"""
+
+    def test_an_empty_current_closes_the_past_instead_of_deleting_it(
+        self, tmp_path
+    ) -> None:
+        """今回どの符号も観測されなかったとき、前の観測は**閉じて残る**。
+
+        `if current.is_empty(): return current` という早期 return があり、
+        docstring が約束していることの逆をしていた —— 2.18M 行がまるごと消える。
+        """
+        prev = _codes({"address_id": "a1", "observed_from": "2026-02-01"})
+        d = _promote(prev, tmp_path / "previous", "address_code")
+        empty = pl.DataFrame([], schema=CODE_SCHEMA)
+        out = carry_forward_observations(
+            empty, d, "address_code",
+            ["address_id", "code_type", "code_value"], "2026-09-21",
+        )
+        assert out.height == 1
+        assert out["observed_to"][0] == "2026-09-21"
+
+    def test_two_different_changes_on_one_date_both_survive(self, tmp_path) -> None:
+        """`history_id` が (address_id|field|observed_at) だけだと、同じ観測日で同じ列が
+        2度違う値に変わったときに id が衝突し、重複排除が**後の変更を捨てる**。
+        観測日が時計由来だった頃は日付が毎回違うので起きなかったが、取得記録から取る
+        ようになった今は同じ日付の2リリースがありうる。
+        """
+        from jp_address_crosswalk.build.versioning import build_address_history
+
+        schema = {"address_id": pl.Utf8, "lg_code": pl.Utf8}
+        prev_dir = tmp_path / "previous"
+        prev_dir.mkdir()
+
+        def addr(lg: str) -> pl.DataFrame:
+            return pl.DataFrame([{"address_id": "a1", "lg_code": lg}], schema=schema)
+
+        # release 1: 011011 -> 011012 を検出
+        addr("011011").write_parquet(prev_dir / "address.parquet")
+        h1 = build_address_history(addr("011012"), prev_dir, "2026-09-17", "snap_1")
+        assert h1.height == 1
+        h1.write_parquet(prev_dir / "address_history.parquet")
+
+        # release 2: 同じ観測日のまま 011012 -> 011013
+        addr("011012").write_parquet(prev_dir / "address.parquet")
+        h2 = build_address_history(addr("011013"), prev_dir, "2026-09-17", "snap_2")
+        assert h2.height == 2, "2つ目の変更が捨てられている"
+        assert set(h2["new_value"]) == {"011012", "011013"}

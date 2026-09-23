@@ -88,11 +88,15 @@ def payloads(src_dir: Path) -> list[Path]:
     )
 
 
-def main(check_only: bool) -> int:
+def main(check_only: bool, raw: Path = RAW) -> int:
     problems: list[str] = []
-    written = 0
+    # 先に全部作り、問題が1つも無いときだけ書く。ソースごとに書きながら検査すると、
+    # 「mtime が署名と合わない」と報告した**そのソースの manifest を書いてしまう** ——
+    # 次の `jpac build` は署名されていない日付をそのまま使い、タグにまで載る。
+    pending: list[tuple[Path, str]] = []
+    checked = 0
     for source, (date, evidence) in sorted(ATTESTED.items()):
-        src_dir = RAW / source
+        src_dir = raw / source
         if not src_dir.is_dir():
             print(f"  [skip] {source}: no payload directory")
             continue
@@ -118,6 +122,7 @@ def main(check_only: bool) -> int:
             for stem, ts in sorted(stamps.items())
         )
         target = src_dir / MANIFEST_NAME
+        checked += 1
         if check_only:
             state = "up to date" if (
                 target.exists() and target.read_text(encoding="utf-8") == body
@@ -126,18 +131,22 @@ def main(check_only: bool) -> int:
             if state == "DIFFERS":
                 problems.append(f"{source}: {MANIFEST_NAME} differs from the signature")
             continue
-        target.write_text(body, encoding="utf-8", newline="\n")
-        written += 1
-        print(f"  [ok] {source}: {len(files)} payload(s), {date}")
+        pending.append((target, body))
+        print(f"  [ready] {source}: {len(files)} payload(s), {date}")
 
     print()
     if problems:
-        print(f"{len(problems)} problem(s) — nothing was trusted:")
+        print(f"{len(problems)} problem(s) — nothing was written:")
         for p in problems[:10]:
             print("  !", p)
         print("\n取得し直したなら、まず docs/ACQUISITION_DATES.md に署名を足す。")
         return 2
-    print("wrote" if not check_only else "checked", written or len(ATTESTED), "manifest(s)")
+    if check_only:
+        print(f"checked {checked} manifest(s)")
+        return 0
+    for target, body in pending:
+        target.write_text(body, encoding="utf-8", newline="\n")
+    print(f"wrote {len(pending)} manifest(s)")
     return 0
 
 
