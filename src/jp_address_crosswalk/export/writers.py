@@ -634,6 +634,28 @@ _COMPOSITE_FKS = {
 # carried-forward row pointing at a snapshot the shipped table no longer contains.
 # Making these real means making `source_snapshot` append-only, which is a change to
 # what provenance means and not a detail of the DDL.
+#
+# The same argument, found by review to apply to a second case: a table that is
+# **carried forward** must not reference a parent that is **rebuilt**. The
+# `*_version` tables keep a superseded row forever (`build/versioning.py`), while
+# `postal_record`, `postal_code_entity`, `mlit_town`, `telephone_area` and
+# `municipality` are derived from this build's payload alone. `postal_record_id` is a
+# hash over the whole ken_all row, so Japan Post changing one character retires that
+# id from `postal_record` while the closed version row still names it — and
+# `foreign_key_check` would fail the export. Nothing national exercises this today
+# because the payloads have not changed since v1.0.0, which is exactly why it has to
+# be reasoned about rather than measured: the first real update would be the test.
+#
+# Not excluded by the same rule: `address_code` and `address_lineage` are carried
+# forward but point at `address_entity`, which is append-only by construction (a
+# retired entity keeps its row — docs/IDENTITY_MODEL.md §5). A carried-forward row
+# may name a retired entity; it may not name a row that no longer exists.
+_CARRIED_FORWARD_TABLES = frozenset({
+    "municipality_version",
+    "postal_record_version",
+    "mlit_town_version",
+    "telephone_area_version",
+})
 
 
 def foreign_keys_for(
@@ -653,6 +675,10 @@ def foreign_keys_for(
     ``None`` means "assume the full release" and is what ``docs/schema.sql``
     documents.
     """
+    if name in _CARRIED_FORWARD_TABLES:
+        # 引き継がれる表は、作り直される親を指せない（上のコメント）。この表が持つ
+        # 参照はどれもそれなので、1本も宣言しない。
+        return []
     own_pk = PRIMARY_KEYS.get(name)
     own = {own_pk} if isinstance(own_pk, str) else set(own_pk or ())
     out = []

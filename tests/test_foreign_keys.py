@@ -175,3 +175,62 @@ class TestTheDatabaseChecksItself:
         empty = next(iter(tables.values())).head(0)
         with pytest.raises(ValidationFailed):
             writers.write_sqlite(tables, empty, empty, tmp_path / "bad.sqlite")
+
+
+class TestACarriedForwardTableReferencesNothing:
+    """引き継がれる表は、作り直される親を指せない（レビューで見つかった critical）。
+
+    `postal_record_id` は ken_all の行全体のハッシュで、`postal_record` はそのビルドの
+    ken_all だけから作られる。日本郵便が1文字直せばその id は `postal_record` から
+    消えるが、`carry_forward` が閉じた版の行は**永久に**その id を名乗り続ける ——
+    `PRAGMA foreign_key_check` が次のリリースを落とす。
+
+    全国データでは payload が v1.0.0 から変わっていないので、いま測っても緑になる。
+    だから測るのではなく、宣言しないことをここで固定する。
+    """
+
+    VERSION_TABLES = [
+        ("postal_record_version",
+         ["postal_record_version_id", "postal_record_id", "postal_code",
+          "source_snapshot_id"]),
+        ("municipality_version", ["municipality_version_id", "lg_code"]),
+        ("mlit_town_version", ["mlit_town_version_id", "mlit_record_id"]),
+        ("telephone_area_version",
+         ["telephone_area_version_id", "numbering_area_code"]),
+    ]
+
+    def test_no_version_table_declares_a_foreign_key(self) -> None:
+        for table, cols in self.VERSION_TABLES:
+            assert writers.foreign_keys_for(table, cols) == [], table
+
+    def test_the_shipped_ddl_agrees(self) -> None:
+        sql = SCHEMA_SQL.read_text(encoding="utf-8")
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(sql)
+        for table, _cols in self.VERSION_TABLES:
+            ddl = conn.execute(
+                "SELECT sql FROM sqlite_master WHERE name = ?", (table,)
+            ).fetchone()[0]
+            assert "FOREIGN KEY" not in ddl, table
+
+    def test_a_carried_forward_table_may_still_point_at_an_append_only_parent(
+        self,
+    ) -> None:
+        """除外の理由は「引き継がれるから」ではなく「親が作り直されるから」である。
+
+        `address_code` と `address_lineage` も引き継がれるが、指しているのは
+        `address_entity` —— 退役しても行が残る表（docs/IDENTITY_MODEL.md §5）なので、
+        参照は壊れない。ここを一緒に落とすと、守れる保証を捨てることになる。
+        """
+        assert any(
+            'REFERENCES "address_entity"' in f
+            for f in writers.foreign_keys_for(
+                "address_code", ["address_id", "code_type", "code_value"]
+            )
+        )
+        assert any(
+            'REFERENCES "address_entity"' in f
+            for f in writers.foreign_keys_for(
+                "address_lineage", ["lineage_id", "old_address_id", "new_address_id"]
+            )
+        )

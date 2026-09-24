@@ -34,9 +34,11 @@ class FakeSnap:
         self.downloaded_at = when
 
 
-def _outcome(*pairs: tuple[str, str]) -> FetchOutcome:
+def _outcome(*pairs: tuple[str, str], attested: bool = True) -> FetchOutcome:
     o = FetchOutcome()
     o.snapshots = [FakeSnap(n, w) for n, w in pairs]
+    if attested:
+        o.attested_downloaded_at = {n: w for n, w in pairs if w}
     return o
 
 
@@ -73,6 +75,20 @@ class TestAcquisitionStamp:
         """取得記録が無いときは None。呼び出し側が時計に落ちる（v1.2.0 までの挙動）。"""
         assert acquisition_stamp(_outcome()) is None
         assert acquisition_stamp(_outcome(("a", ""))) is None
+
+    def test_an_unattested_payload_cannot_drag_the_stamp_to_the_clock(self) -> None:
+        """署名されていない payload の `downloaded_at` はビルド時刻で、**定義上いつも
+        最新**である。全 snapshot を見ていると、1つ署名し忘れるだけで成果物の日時が
+        まるごと時計に戻る —— しかも `None` の分岐を通らないので警告も出ない。
+        レビューで見つかった。署名されたものだけを見る。
+        """
+        o = _outcome(("signed", "2026-09-17T06:53:02+09:00"))
+        o.snapshots.append(FakeSnap("forgotten", "2026-12-31T23:59:59Z"))
+        assert acquisition_stamp(o) == "2026-09-17T06:53:02+09:00"
+
+    def test_a_stamp_that_is_not_attested_is_ignored_entirely(self) -> None:
+        o = _outcome(("a", "2026-08-23T00:00:00Z"), attested=False)
+        assert acquisition_stamp(o) is None
 
 
 class TestTwoIndependentBuilds:

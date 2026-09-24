@@ -331,8 +331,10 @@ CREATE TABLE telephone_number_block (
 > column cannot: which table it points at depends on which bridge you are reading.
 > That endpoint's referential integrity is still checked by the invariant tests
 > (`docs/TEST_STRATEGY.md` §3) rather than by the database, and the migration below
-> remains open — it renames a column in all six bridges and in the flat view, so it
-> is a breaking change for consumers.
+> remains open — it renames a column in all six bridges, which is a breaking change
+> for anyone reading the normalized tables. The flat view already publishes typed
+> names and is not affected. Planned, with the measurements that argue for it, in
+> [`BRIDGE_ENDPOINT_MIGRATION.md`](BRIDGE_ENDPOINT_MIGRATION.md).
 >
 > The definitions as shipped are in [`schema.sql`](schema.sql).
 
