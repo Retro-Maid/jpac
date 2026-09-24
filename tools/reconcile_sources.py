@@ -110,6 +110,9 @@ print("2. ABR 町字・郵便番号変換表")
 print("=" * 74)
 conv = raw_csv(RAW / "abr" / "postal_conversion.zip", "abr_post_code.csv")
 bpc = pl.read_parquet(PQ / "bridge_address_postal_code.parquet")
+# v2.0.0 で P2（郵便番号）と P3（日本郵便の特殊レコード）は別の表になった
+# （docs/BRIDGE_ENDPOINT_MIGRATION.md A2）。
+bmpc = pl.read_parquet(PQ / "bridge_municipality_postal_code.parquet")
 bmp = pl.read_parquet(PQ / "bridge_municipality_postal.parquet")
 
 town_rows = conv.filter(pl.col("machiaza_id").is_not_null() &
@@ -122,10 +125,13 @@ muni_edges = conv.filter(pl.col("machiaza_id").is_null() |
 check("town-level rows collapse to their distinct edges",
       bpc.height == town_edges,
       f"{town_rows.height:,} rows -> {town_edges:,} distinct edges -> bridge {bpc.height:,}")
-check("municipality-level rows all reach the municipality bridge",
-      bmp.filter(pl.col("matching_rule_id") == "P2").height == muni_edges,
-      f"{muni_rows:,} rows -> {muni_edges:,} edges -> "
-      f"{bmp.filter(pl.col('matching_rule_id') == 'P2').height:,} P2 rows")
+check("municipality-level rows all reach the municipality postal-code bridge",
+      bmpc.height == muni_edges,
+      f"{muni_rows:,} rows -> {muni_edges:,} edges -> {bmpc.height:,} P2 rows")
+check("the split kept every municipality-postal row",
+      bmpc["matching_rule_id"].unique().to_list() == ["P2"]
+      and bmp["matching_rule_id"].unique().to_list() == ["P3"],
+      f"P2 {bmpc.height:,} + P3 {bmp.height:,} = {bmpc.height + bmp.height:,}")
 orphans = bpc.filter(pl.col("matching_rule_id") == "P7").height
 check("edges whose ABR key is absent are retained, not dropped",
       orphans > 0, f"{orphans} retained as unresolved")

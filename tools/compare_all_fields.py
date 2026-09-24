@@ -186,7 +186,7 @@ expected = (
     .select(["address_id", "post_code"]).unique()
 )
 actual = bpc.filter(pl.col("matching_rule_id") != "P7").select(
-    [pl.col("address_id"), pl.col("target_id").alias("post_code")]
+    [pl.col("address_id"), pl.col("postal_code").alias("post_code")]
 ).unique()
 lost = expected.join(actual, on=["address_id", "post_code"], how="anti")
 extra = actual.join(expected, on=["address_id", "post_code"], how="anti")
