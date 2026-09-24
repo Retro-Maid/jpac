@@ -23,6 +23,14 @@ import datetime
 import sys
 from pathlib import Path
 
+# 署名された取得日は **JST の暦日** である（docs/ACQUISITION_DATES.md）。mtime を
+# 「このマシンのローカル時刻」で読むと、UTC のマシンでは日付が1日ずれて署名と合わず、
+# ツールが正しい payload に対して書き込みを拒む。CI（UTC）で実際にそうなった。
+#
+# 固定のオフセットで読む。生成される downloaded_at が**マシンに依らず同じ**になる
+# という効果もあり、そちらは manifest の内容再現性として意味がある（項目10）。
+JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
+
 ROOT = Path(__file__).resolve().parents[1]
 RAW = ROOT / "data" / "raw"
 MANIFEST_NAME = "_payload.yml"
@@ -107,7 +115,7 @@ def main(check_only: bool, raw: Path = RAW) -> int:
 
         stamps = {}
         for f in files:
-            ts = datetime.datetime.fromtimestamp(f.stat().st_mtime).astimezone()
+            ts = datetime.datetime.fromtimestamp(f.stat().st_mtime, tz=JST)
             if ts.date().isoformat() != date:
                 problems.append(
                     f"{source}/{f.name}: mtime {ts.date().isoformat()} "
