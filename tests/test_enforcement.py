@@ -15,6 +15,7 @@ import pytest
 import yaml
 
 from jp_address_crosswalk.build.common import (
+    BRIDGE_ENDPOINTS,
     BuildContext,
     bridge_id,
     finalize_bridge,
@@ -41,10 +42,18 @@ RULES = yaml.safe_load(
 )
 
 
-def bridge_frame(**over) -> pl.DataFrame:
+def bridge_frame(bridge: str = "bridge_address_postal", **over) -> pl.DataFrame:
+    """1行のブリッジ。既定は `bridge_address_postal`。
+
+    端点列の名前はブリッジごとに違う（v2.0.0、docs/BRIDGE_ENDPOINT_MIGRATION.md A1）。
+    別のブリッジの行が要るときは名前を渡す —— 列名を合わせないと、検査が列を見つけ
+    られずに落ちる。
+    """
+    endpoint = BRIDGE_ENDPOINTS[bridge]
     row = {
         "bridge_id": bridge_id("t", "a"), "address_id": "jpa1aaaaaaaaaaaaaaaa",
-        "target_id": "t1", "direction": "x", "relation_type": "exact",
+        endpoint: "pr_t1", "direction": "address_to_postal",
+        "relation_type": "exact",
         "match_method": "normalized_name", "matching_rule_id": "P4",
         "confidence": 0.99, "candidate_group_id": None, "candidate_count": 1,
         "mismatch_note": None,
@@ -52,13 +61,13 @@ def bridge_frame(**over) -> pl.DataFrame:
     row.update(over)
     return finalize_bridge(
         pl.DataFrame([row], schema={
-            "bridge_id": pl.Utf8, "address_id": pl.Utf8, "target_id": pl.Utf8,
+            "bridge_id": pl.Utf8, "address_id": pl.Utf8, endpoint: pl.Utf8,
             "direction": pl.Utf8, "relation_type": pl.Utf8, "match_method": pl.Utf8,
             "matching_rule_id": pl.Utf8, "confidence": pl.Float64,
             "candidate_group_id": pl.Utf8, "candidate_count": pl.Int64,
             "mismatch_note": pl.Utf8,
         }),
-        CTX, ["bridge_id"],
+        CTX, ["bridge_id"], bridge,
     )
 
 
@@ -165,7 +174,7 @@ class TestSqliteRejectsInvalidRows:
                 [
                     pl.lit(None, dtype=pl.Utf8).alias("address_id"),
                     pl.lit(None, dtype=pl.Utf8).alias("lg_code"),
-                    pl.lit(None, dtype=pl.Utf8).alias("target_id"),
+                    pl.lit(None, dtype=pl.Utf8).alias("postal_record_id"),
                 ]
             )
             with pytest.raises(sqlite3.IntegrityError):
@@ -193,7 +202,7 @@ class TestPipelineSemanticValidation:
 
     def test_town_level_telephone_target_is_rejected(self):
         bad = bridge_frame(
-            matching_rule_id="T10", relation_type="child"
+            "bridge_address_telephone", matching_rule_id="T10", relation_type="child"
         ).with_columns(
             [
                 pl.lit("full").alias("coverage_type"),
@@ -285,7 +294,7 @@ class TestManualOverrides:
         e = {
             "id": "OVR-0001", "bridge": self.BRIDGE,
             "source": {"address_id": "jpa1aaaaaaaaaaaaaaaa"},
-            "target": {"target_id": "t1"},
+            "target": {"postal_record_id": "pr_t1"},
             "set": {"relation_type": "exact", "confidence": 1.0,
                     "verification_status": "manually_verified"},
             "reason": "checked against the municipal gazette",
@@ -360,7 +369,7 @@ class TestManualOverrides:
         assert check_staleness([o], {"mlit_isj": "abc123"})["OVR-0001"] is True
 
     def test_override_targeting_nothing_is_reported(self):
-        o = Override(**self.entry(target={"target_id": "does_not_exist"}))
+        o = Override(**self.entry(target={"postal_record_id": "does_not_exist"}))
         tables = {self.BRIDGE: bridge_frame()}
         outcome = apply_overrides(tables, [o], {"OVR-0001": False})
         assert outcome.applied == 0

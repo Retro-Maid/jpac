@@ -150,9 +150,11 @@ def build_all(shuffle_seed: int | None = None) -> dict[str, pl.DataFrame]:
     tables["bridge_address_postal_code"] = postal.build_postal_code_bridge(
         address, load_conversion(), ptab["postal_code_entity"], ctx
     )
-    tables["bridge_municipality_postal"] = postal.build_municipality_postal_bridge(
-        load_conversion(), ptab["postal_record_version"],
-        tables["municipality_version"], ctx,
+    tables.update(
+        postal.build_municipality_postal_bridges(
+            load_conversion(), ptab["postal_record_version"],
+            tables["municipality_version"], ctx,
+        )
     )
     covered = set(
         tables["bridge_address_postal_code"]
@@ -191,8 +193,8 @@ class TestPipelineRuns:
             "postal_code_entity", "postal_record_version", "mlit_town_version",
             "telephone_area_version", "bridge_address_postal_code",
             "bridge_address_postal", "bridge_address_mlit",
-            "bridge_address_telephone", "bridge_municipality_postal",
-            "bridge_municipality_telephone",
+            "bridge_address_telephone", "bridge_municipality_postal_code",
+            "bridge_municipality_postal", "bridge_municipality_telephone",
         ]:
             assert name in built, f"missing {name}"
             assert built[name].height > 0, f"{name} is empty"
@@ -230,7 +232,8 @@ class TestNamedSpecCases:
         specials = set(prv.filter(pl.col("record_kind") != "town")["postal_record_id"])
         used = set(
             built["bridge_address_postal"]
-            .filter(pl.col("target_id").is_not_null())["target_id"].to_list()
+            .filter(pl.col("postal_record_id").is_not_null())["postal_record_id"]
+            .to_list()
         )
         assert not (specials & used)
 
@@ -296,7 +299,7 @@ class TestNamedSpecCases:
         bat = built["bridge_address_telephone"]
         assert bat.height == built["address"].height
         assert bat["address_id"].n_unique() == bat.height
-        assert bat["target_id"].null_count() == bat.height
+        assert bat["numbering_area_code"].null_count() == bat.height
         assert bat["derivation"].null_count() == bat.height
         assert bat["relation_type"].unique().to_list() == ["unresolved"]
         assert bat["matching_rule_id"].unique().to_list() == ["T10"]
@@ -308,7 +311,7 @@ class TestNamedSpecCases:
         bridge = built["bridge_municipality_telephone"].filter(
             pl.col("lg_code").is_in(muni["lg_code"].to_list())
         )
-        assert bridge["target_id"].drop_nulls().n_unique() >= 2
+        assert bridge["numbering_area_code"].drop_nulls().n_unique() >= 2
 
     def test_ward_layer_present_for_designated_city(self, built):
         addr = built["address"]

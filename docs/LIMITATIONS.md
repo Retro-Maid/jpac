@@ -88,35 +88,30 @@ release.)
      first. Excluding `observed_at` from the id is what prevents the doubling above,
      and the trade is deliberate. `address_history` does include the old and new
      values, so it is the table that can answer "how many times did this flip".
-8. **Bridge endpoints are still a polymorphic `target_id`.** Primary keys, the full
-   auto-accept conjunction, enumerated vocabularies and range checks are real `CHECK`
-   constraints and are proven by negative-insertion tests. Foreign keys **are** now
-   declared — every `address_id`, `lg_code`, `match_run_id`, `postal_record_id`,
-   `postal_code`, `mlit_record_id`, `numbering_area_code`, `n02_group_code` and
-   `p11_stop_id`, plus the composite `(路線名, 運営会社)` reference — and the build
-   runs `PRAGMA foreign_key_check` over the finished database, so a dangling
-   reference fails the release rather than waiting for a consumer to turn foreign
-   keys on. Two columns are deliberately left undeclared (independent review 3):
-   - **`target_id`**, because it is polymorphic: a postal record id in one bridge, an
-     area code in another — and in `bridge_municipality_postal` both, in the same
-     column, split by `matching_rule_id` (8,207 postal codes under P2, 1,910 record ids
-     under P3). A polymorphic column cannot carry a foreign key, and it also does not
-     say which table it points at. The fix is the typed endpoint columns `DB_SCHEMA.md`
-     §5.1 describes; it renames a column in all six bridges, so it waits for a major
-     version. The **flat view is not affected** — it already publishes typed names
-     (`postal_code`, `numbering_area_code`, …) and reads `target_id` only internally.
-     Planned in `BRIDGE_ENDPOINT_MIGRATION.md`, whose design decisions were settled
-     2026-09-24: one typed endpoint per bridge, `bridge_municipality_postal` split in
-     two so each table has exactly one, and `_v1` compatibility views shipped with
-     v2.0.0 and dropped in v2.1.0.
-   - **the snapshot columns** (`source_snapshot_id`, `first_observed_snapshot_id`,
-     `last_observed_snapshot_id`). These satisfy the constraint today and declaring
-     it would ship green, but it would be false: `source_snapshot` carries *this
-     build's* payloads while those columns cite when a row was first observed and are
-     carried forward untouched. The first release whose payloads change would leave
-     carried-forward rows pointing at a snapshot the shipped table no longer
-     contains. Making them real means making `source_snapshot` append-only, which is
-     a change to what provenance means rather than a detail of the DDL.
+8. **The database now declares every reference it can, and the bridges' row counts are
+   the one thing no gate watches.** Primary keys, the full auto-accept conjunction,
+   enumerated vocabularies and range checks are real `CHECK` constraints, proven by
+   negative-insertion tests. Foreign keys are declared and the build runs
+   `PRAGMA foreign_key_check` over the finished database. Since v2.0.0 the bridge
+   endpoints are typed columns rather than a polymorphic `target_id`, so they carry
+   foreign keys too (`BRIDGE_ENDPOINT_MIGRATION.md`). What remains:
+   - **No row-count gate covers the bridges.** `row_count_change.*` reads the quality
+     report's `tables` section, and the bridges are not in it — they are summarised in
+     `bridges` by rate instead. Found while migrating: splitting
+     `bridge_municipality_postal` moved 8,207 of its 10,117 rows into a new table and
+     the national build passed without an approval. Nothing was lost, but a bridge that
+     *did* lose 81% of its rows would pass the same way. Whether to add the gate is open;
+     adding it makes this migration its own first approval.
+   - **The snapshot columns still carry no foreign key** (`source_snapshot_id`,
+     `first_observed_snapshot_id`, `last_observed_snapshot_id`), and neither do the
+     carried-forward `*_version` tables. Both would be false claims rather than
+     constraints: `source_snapshot` and the rebuilt parents hold *this build's* rows,
+     while those columns and tables outlive them. Making them real means making
+     provenance append-only.
+   - **Each bridge still has one always-NULL subject column** — `lg_code` in the four
+     address bridges, `address_id` in the municipality ones. Deliberately left
+     (`BRIDGE_ENDPOINT_MIGRATION.md` A9): dropping a shipped column is what a major
+     version is for, and v2.0.0 already spends itself on the endpoints.
 9. **Ingestion is eager, not streaming.** A national build peaks around 4–6 GB
    (`ARCHITECTURE.md` §8).
 10. **Byte reproducibility depends on the acquisition record, which is not in the

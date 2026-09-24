@@ -316,25 +316,29 @@ CREATE TABLE telephone_number_block (
 
 ### 5.1 Concrete endpoints, both nullable [R1-P0-1, R1-P1-2]
 
-> **What is actually shipped.** The typed columns below (`postal_record_id`,
-> `mlit_record_id`, …) are the intended design; they are **not** what the current
-> artifacts contain. All six shipped bridges carry the same 30 columns —
-> `address_id`, `lg_code` and a polymorphic `target_id`. The guarantee this section
-> argues for is enforced by a constraint rather than by typed columns:
-> `CHECK (address_id IS NOT NULL OR lg_code IS NOT NULL OR target_id IS NOT NULL)`,
-> so an unmatched record from either side is still retained.
+> **What is actually shipped (v2.0.0 onwards).** The typed columns below are what the
+> artifacts now contain. Each bridge names the table its endpoint points at —
+> `postal_code`, `postal_record_id`, `mlit_record_id`, `numbering_area_code` — and each
+> carries a real `FOREIGN KEY`, checked by `PRAGMA foreign_key_check` on every build.
 >
-> Since v1.3.0 the export **does** declare foreign keys, and the build runs
-> `PRAGMA foreign_key_check` over the finished database (`docs/LIMITATIONS.md` item
-> 8). What that reaches is every non-polymorphic reference — `address_id`, `lg_code`,
-> `match_run_id` and the rest. `target_id` still carries none, because a polymorphic
-> column cannot: which table it points at depends on which bridge you are reading.
-> That endpoint's referential integrity is still checked by the invariant tests
-> (`docs/TEST_STRATEGY.md` §3) rather than by the database, and the migration below
-> remains open — it renames a column in all six bridges, which is a breaking change
-> for anyone reading the normalized tables. The flat view already publishes typed
-> names and is not affected. Planned, with the measurements that argue for it, in
-> [`BRIDGE_ENDPOINT_MIGRATION.md`](BRIDGE_ENDPOINT_MIGRATION.md).
+> Two departures from the shape sketched below, both recorded in
+> [`BRIDGE_ENDPOINT_MIGRATION.md`](BRIDGE_ENDPOINT_MIGRATION.md):
+>
+> * **One typed endpoint per table, not two.** `bridge_municipality_postal` was carrying
+>   郵便番号 under rule P2 and `postal_record_id` under P3 *in the same column*, so it
+>   split into `bridge_municipality_postal_code` and `bridge_municipality_postal` — the
+>   shape the address side always had. 37 tables ship as a result.
+> * **The subject column that a bridge does not use is still there** (`lg_code` in the
+>   address bridges, `address_id` in the municipality ones), always NULL. Dropping a
+>   shipped column is what a major version is for, and v2.0.0 spends itself on the
+>   endpoints (A9).
+>
+> `CHECK` constraints are the strong form this section argues for: the side the direction
+> looked from is never NULL, the far side is NULL exactly when `relation_type` is
+> `unresolved`. Nothing is dropped — an unmatched record from either side keeps its row.
+>
+> Queries written against the old polymorphic column can read the `*_v1` views, which
+> present the previous column names. **They are removed in v2.1.0.**
 >
 > The definitions as shipped are in [`schema.sql`](schema.sql).
 

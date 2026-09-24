@@ -263,7 +263,9 @@ def test_special_postal_records_never_reach_the_town_bridge():
     if prv is None or bridge is None:
         pytest.skip("missing data")
     specials = set(prv.filter(pl.col("record_kind") != "town")["postal_record_id"])
-    used = set(bridge.filter(pl.col("target_id").is_not_null())["target_id"])
+    used = set(
+        bridge.filter(pl.col("postal_record_id").is_not_null())["postal_record_id"]
+    )
     assert not (specials & used)
 
 
@@ -272,7 +274,7 @@ def test_municipality_telephone_evidence_never_expands_to_towns():
     df = load("bridge_address_telephone")
     if df is None:
         pytest.skip("no telephone bridge")
-    assert df["target_id"].null_count() == df.height
+    assert df["numbering_area_code"].null_count() == df.height
     assert df["derivation"].null_count() == df.height
     assert df["relation_type"].unique().to_list() == ["unresolved"]
     assert df["matching_rule_id"].unique().to_list() == ["T10"]

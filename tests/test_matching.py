@@ -96,17 +96,23 @@ class TestApprovedRateMigration:
         assert row["status"] == "fail"
 
 
+# ゲートの検査に使うブリッジ。端点列名はレジストリが決めるので、実在する名前を使う
+# （docs/BRIDGE_ENDPOINT_MIGRATION.md A1）。
+BRIDGE = "bridge_address_postal"
+
+
 def make_bridge(**over) -> pl.DataFrame:
     row = {
         "bridge_id": bridge_id("t", "a", "b"), "address_id": "jpa1aaaaaaaaaaaaaaaa",
-        "target_id": "t1", "direction": "x", "relation_type": "exact",
+        "postal_record_id": "pr_t1", "direction": "address_to_postal",
+        "relation_type": "exact",
         "match_method": "normalized_name", "matching_rule_id": "P4",
         "confidence": 0.97, "candidate_group_id": None, "candidate_count": 1,
         "mismatch_note": None,
     }
     row.update(over)
     return pl.DataFrame([row], schema={
-        "bridge_id": pl.Utf8, "address_id": pl.Utf8, "target_id": pl.Utf8,
+        "bridge_id": pl.Utf8, "address_id": pl.Utf8, "postal_record_id": pl.Utf8,
         "direction": pl.Utf8, "relation_type": pl.Utf8, "match_method": pl.Utf8,
         "matching_rule_id": pl.Utf8, "confidence": pl.Float64,
         "candidate_group_id": pl.Utf8, "candidate_count": pl.Int64,
@@ -116,14 +122,16 @@ def make_bridge(**over) -> pl.DataFrame:
 
 class TestAutoAcceptGate:
     def test_clean_exact_match_is_auto(self):
-        out = finalize_bridge(make_bridge(confidence=0.99), CTX, ["bridge_id"])
+        out = finalize_bridge(
+            make_bridge(confidence=0.99), CTX, ["bridge_id"], BRIDGE
+        )
         assert out["verification_status"][0] == "auto"
 
     def test_high_confidence_never_beats_multiple_candidates(self):
         """The gate is a conjunction: a 1.0 score cannot carry an ambiguous row."""
         out = finalize_bridge(
             make_bridge(confidence=1.0, candidate_count=3, candidate_group_id="g1"),
-            CTX, ["bridge_id"],
+            CTX, ["bridge_id"], BRIDGE,
         )
         assert out["verification_status"][0] == "review_required"
         assert not out["is_unique_match"][0]
@@ -131,23 +139,26 @@ class TestAutoAcceptGate:
     @pytest.mark.parametrize("relation", ["parent", "child", "overlap", "candidate", "ambiguous"])
     def test_non_equivalent_relations_never_auto(self, relation):
         out = finalize_bridge(
-            make_bridge(confidence=1.0, relation_type=relation), CTX, ["bridge_id"]
+            make_bridge(confidence=1.0, relation_type=relation), CTX, ["bridge_id"],
+            BRIDGE,
         )
         assert out["verification_status"][0] == "review_required"
 
     def test_below_threshold_never_auto(self):
-        out = finalize_bridge(make_bridge(confidence=0.97), CTX, ["bridge_id"])
+        out = finalize_bridge(
+            make_bridge(confidence=0.97), CTX, ["bridge_id"], BRIDGE
+        )
         assert out["verification_status"][0] == "review_required"
 
     def test_stale_override_never_auto(self):
         df = make_bridge(confidence=1.0).with_columns(pl.lit(True).alias("override_stale"))
-        assert finalize_bridge(df, CTX, ["bridge_id"])["verification_status"][0] == "review_required"
+        assert finalize_bridge(df, CTX, ["bridge_id"], BRIDGE)["verification_status"][0] == "review_required"
 
     def test_incomplete_candidate_set_never_auto(self):
         df = make_bridge(confidence=1.0).with_columns(
             pl.lit(False).alias("candidate_count_is_complete")
         )
-        assert finalize_bridge(df, CTX, ["bridge_id"])["verification_status"][0] == "review_required"
+        assert finalize_bridge(df, CTX, ["bridge_id"], BRIDGE)["verification_status"][0] == "review_required"
 
 
 class TestDeterminism:
@@ -260,14 +271,15 @@ class TestPostalRecordBridge:
             (pl.col("relation_type") == "unresolved") & pl.col("address_id").is_null()
         )
         assert orphan.height == 1
-        assert orphan["target_id"][0] is not None
+        assert orphan["postal_record_id"][0] is not None
 
     def test_unmatched_address_is_retained(self):
         addr = self.addresses("本町")
         post = self.postal(("別の町", "none"))
         out = build_postal_record_bridge(addr, post, set(), CTX)
         orphan = out.filter(
-            (pl.col("relation_type") == "unresolved") & pl.col("target_id").is_null()
+            (pl.col("relation_type") == "unresolved")
+            & pl.col("postal_record_id").is_null()
         )
         assert orphan.height == 1
 

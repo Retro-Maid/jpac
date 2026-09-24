@@ -261,7 +261,7 @@ def build_postal_code_bridge(
                 )
                 .alias("bridge_id"),
                 pl.col("address_id"),
-                pl.col("post_code").alias("target_id"),
+                pl.col("post_code").alias("postal_code"),
                 pl.lit("address_to_postal_code").alias("direction"),
                 pl.when(pl.col("corroborated"))
                 .then(pl.lit("equivalent"))
@@ -305,7 +305,7 @@ def build_postal_code_bridge(
                     )
                     .alias("bridge_id"),
                     pl.lit(None, dtype=pl.Utf8).alias("address_id"),
-                    pl.col("post_code").alias("target_id"),
+                    pl.col("post_code").alias("postal_code"),
                     pl.lit("postal_code_to_address").alias("direction"),
                     pl.lit("unresolved").alias("relation_type"),
                     pl.lit("unresolved").alias("match_method"),
@@ -332,7 +332,7 @@ def build_postal_code_bridge(
                 how="vertical",
             )
 
-        out = finalize_bridge(df, ctx, ["address_id", "target_id"])
+        out = finalize_bridge(df, ctx, ["address_id", "postal_code"], "bridge_address_postal_code")
         log.info(
             "built address->postal_code bridge",
             rows=out.height, retained_orphans=orphans.height,
@@ -340,13 +340,29 @@ def build_postal_code_bridge(
         return out
 
 
-def build_municipality_postal_bridge(
+def build_municipality_postal_bridges(
     conversion: pl.DataFrame,
     postal_version: pl.DataFrame,
     municipality: pl.DataFrame,
     ctx: BuildContext,
-) -> pl.DataFrame:
-    """Rules P2 / P3 — statements about a municipality, never about a town."""
+) -> dict[str, pl.DataFrame]:
+    """規則 P2 / P3 —— 市区町村についての主張で、町字についての主張ではない.
+
+    **2つの表を返す。** 以前は1つの表に両方を入れ、`target_id` に P2 なら郵便番号、
+    P3 なら `postal_record_id` を詰めていた。同じ列に2種類の識別子が入っていたので、
+    利用者は join の前に `matching_rule_id` で分岐しなければならなかった —— 知らずに
+    `postal_code_entity` に join すれば、P3 の 1,910行が静かに落ちる
+    （docs/BRIDGE_ENDPOINT_MIGRATION.md §1.1、A2）。
+
+    住所側は最初からこの2つを別の表にしている（`bridge_address_postal_code` と
+    `bridge_address_postal`）。市区町村側だけが1つに詰めていたので、住所側に揃える。
+
+    **候補数の意味が変わる**（A8、署名済み）。以前は P2 と P3 をまとめて数えていた。
+    「この市区町村の郵便番号は何通りか」と「この市区町村に日本郵便の特殊レコードが
+    何件あるか」は別の問いで、混ぜた値はどちらにも答えていなかった。分割後は各表が
+    自分の中で数える。`relation_type` は両方 `parent` のままなので、auto の条件
+    （`exact`/`equivalent`）を満たさず、**要確認から自動確定に変わる行は無い**。
+    """
     with stage_context("postal", "bridge_municipality"):
         lg_by_jis = dict(
             zip(
@@ -362,7 +378,7 @@ def build_municipality_postal_bridge(
         ).select(
             [
                 pl.col("lg_code"),
-                pl.col("post_code").alias("target_id"),
+                pl.col("post_code").alias("postal_code"),
                 pl.lit("P2").alias("matching_rule_id"),
                 pl.lit("direct_code").alias("match_method"),
                 pl.col("add_date").alias("valid_from"),
@@ -376,7 +392,7 @@ def build_municipality_postal_bridge(
                 pl.col("jis_city_code")
                 .map_elements(lambda j: lg_by_jis.get(j), return_dtype=pl.Utf8)
                 .alias("lg_code"),
-                pl.col("postal_record_id").alias("target_id"),
+                pl.col("postal_record_id"),
                 pl.lit("P3").alias("matching_rule_id"),
                 pl.lit("official_area_rule").alias("match_method"),
                 pl.lit(None, dtype=pl.Utf8).alias("valid_from"),
@@ -384,40 +400,58 @@ def build_municipality_postal_bridge(
             ]
         ).filter(pl.col("lg_code").is_not_null())
 
-        both = pl.concat([p2, p3], how="vertical").unique(
-            subset=["lg_code", "target_id", "matching_rule_id"], keep="first"
+        out = {
+            "bridge_municipality_postal_code": _municipality_postal_side(
+                p2, ctx, "bridge_municipality_postal_code", "postal_code",
+            ),
+            "bridge_municipality_postal": _municipality_postal_side(
+                p3, ctx, "bridge_municipality_postal", "postal_record_id",
+            ),
+        }
+        log.info(
+            "built municipality->postal bridges",
+            postal_code=out["bridge_municipality_postal_code"].height,
+            postal_record=out["bridge_municipality_postal"].height,
         )
-        counts = both.group_by("lg_code").agg(pl.len().alias("candidate_count"))
-        both = both.join(counts, on="lg_code", how="left")
-
-        df = both.with_columns(
-            [
-                pl.struct(["lg_code", "target_id", "matching_rule_id"])
-                .map_elements(
-                    lambda s: bridge_id(
-                        "bridge_municipality_postal",
-                        s["lg_code"], s["target_id"], s["matching_rule_id"],
-                    ),
-                    return_dtype=pl.Utf8,
-                )
-                .alias("bridge_id"),
-                pl.lit("municipality_to_postal").alias("direction"),
-                pl.lit("parent").alias("relation_type"),
-                pl.lit(0.99).alias("confidence"),
-                pl.when(pl.col("candidate_count") > 1)
-                .then(
-                    pl.col("lg_code").map_elements(
-                        lambda a: candidate_group_id("bridge_municipality_postal", a),
-                        return_dtype=pl.Utf8,
-                    )
-                )
-                .otherwise(None)
-                .alias("candidate_group_id"),
-            ]
-        )
-        out = finalize_bridge(df, ctx, ["lg_code", "target_id"])
-        log.info("built municipality->postal bridge", rows=out.height)
         return out
+
+
+def _municipality_postal_side(
+    df: pl.DataFrame, ctx: BuildContext, bridge: str, endpoint: str
+) -> pl.DataFrame:
+    """片側（P2 か P3）を1つのブリッジ表にする。
+
+    候補数はこの表の中で数える（A8）。`bridge_id` の材料は以前と同じ
+    (lg_code, 端点, matching_rule_id) だが、ブリッジ名が材料に入るので値は変わる ——
+    それは v2.0.0 の破壊的変更に含まれる（計画 §4）。
+    """
+    df = df.unique(subset=["lg_code", endpoint, "matching_rule_id"], keep="first")
+    counts = df.group_by("lg_code").agg(pl.len().alias("candidate_count"))
+    df = df.join(counts, on="lg_code", how="left")
+    df = df.with_columns(
+        [
+            pl.struct(["lg_code", endpoint, "matching_rule_id"])
+            .map_elements(
+                lambda s: bridge_id(
+                    bridge, s["lg_code"], s[endpoint], s["matching_rule_id"],
+                ),
+                return_dtype=pl.Utf8,
+            )
+            .alias("bridge_id"),
+            pl.lit("municipality_to_postal").alias("direction"),
+            pl.lit("parent").alias("relation_type"),
+            pl.lit(0.99).alias("confidence"),
+            pl.when(pl.col("candidate_count") > 1)
+            .then(
+                pl.col("lg_code").map_elements(
+                    lambda a: candidate_group_id(bridge, a), return_dtype=pl.Utf8
+                )
+            )
+            .otherwise(None)
+            .alias("candidate_group_id"),
+        ]
+    )
+    return finalize_bridge(df, ctx, ["lg_code", endpoint], bridge)
 
 
 def build_postal_record_bridge(
@@ -489,7 +523,7 @@ def build_postal_record_bridge(
             rows.append(
                 {
                     "bridge_id": bridge_id("bridge_address_postal", aid, rid, rule),
-                    "address_id": aid, "target_id": rid,
+                    "address_id": aid, "postal_record_id": rid,
                     "direction": "postal_to_address",
                     "relation_type": rel, "match_method": "normalized_name",
                     "matching_rule_id": rule, "confidence": conf,
@@ -518,7 +552,7 @@ def build_postal_record_bridge(
             rows.append(
                 {
                     "bridge_id": bridge_id("bridge_address_postal", aid, rid, "P5"),
-                    "address_id": aid, "target_id": rid,
+                    "address_id": aid, "postal_record_id": rid,
                     "direction": "postal_to_address",
                     "relation_type": "parent", "match_method": "parent_child",
                     "matching_rule_id": "P5", "confidence": 0.90,
@@ -547,7 +581,7 @@ def build_postal_record_bridge(
             rows.append(
                 {
                     "bridge_id": bridge_id("bridge_address_postal", None, rid, "P7"),
-                    "address_id": None, "target_id": rid,
+                    "address_id": None, "postal_record_id": rid,
                     "direction": "postal_to_address",
                     "relation_type": "unresolved", "match_method": "unresolved",
                     "matching_rule_id": "P7", "confidence": 0.0,
@@ -564,7 +598,7 @@ def build_postal_record_bridge(
             rows.append(
                 {
                     "bridge_id": bridge_id("bridge_address_postal", aid, None, "P7"),
-                    "address_id": aid, "target_id": None,
+                    "address_id": aid, "postal_record_id": None,
                     "direction": "address_to_postal",
                     "relation_type": "unresolved", "match_method": "unresolved",
                     "matching_rule_id": "P7", "confidence": 0.0,
@@ -576,14 +610,14 @@ def build_postal_record_bridge(
         df = pl.DataFrame(
             rows,
             schema={
-                "bridge_id": pl.Utf8, "address_id": pl.Utf8, "target_id": pl.Utf8,
+                "bridge_id": pl.Utf8, "address_id": pl.Utf8, "postal_record_id": pl.Utf8,
                 "direction": pl.Utf8, "relation_type": pl.Utf8,
                 "match_method": pl.Utf8, "matching_rule_id": pl.Utf8,
                 "confidence": pl.Float64, "candidate_group_id": pl.Utf8,
                 "candidate_count": pl.Int64, "mismatch_note": pl.Utf8,
             },
         )
-        out = finalize_bridge(df, ctx, ["target_id", "address_id"])
+        out = finalize_bridge(df, ctx, ["postal_record_id", "address_id"], "bridge_address_postal")
         log.info(
             "built address<->postal record bridge",
             rows=out.height,
