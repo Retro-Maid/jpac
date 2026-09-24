@@ -105,7 +105,10 @@ release.)
      §5.1 describes; it renames a column in all six bridges, so it waits for a major
      version. The **flat view is not affected** — it already publishes typed names
      (`postal_code`, `numbering_area_code`, …) and reads `target_id` only internally.
-     Planned in `BRIDGE_ENDPOINT_MIGRATION.md`.
+     Planned in `BRIDGE_ENDPOINT_MIGRATION.md`, whose design decisions were settled
+     2026-09-24: one typed endpoint per bridge, `bridge_municipality_postal` split in
+     two so each table has exactly one, and `_v1` compatibility views shipped with
+     v2.0.0 and dropped in v2.1.0.
    - **the snapshot columns** (`source_snapshot_id`, `first_observed_snapshot_id`,
      `last_observed_snapshot_id`). These satisfy the constraint today and declaring
      it would ship green, but it would be false: `source_snapshot` carries *this
