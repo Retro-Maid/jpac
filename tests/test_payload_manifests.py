@@ -1,11 +1,17 @@
 """取得日の manifest を書く道具 (tools/write_payload_manifests.py).
 
-固定したいのは1つだけで、それがレビューで見つかった欠陥である:
-**mtime が署名された日付と合わないとき、何も書かない。**
+固定したいのは2つ:
+
+**1. mtime が署名された日付と合わないとき、何も書かない**（レビューで見つかった欠陥）。
 
 書いてしまうと、`jpac build` が署名されていない日付をそのまま使い、`observed_from` にも
 リリースタグの `+data-` にも載る。道具は exit 2 を返して「nothing was written」と印字
 するので、**報告を読んでも書かれていないと思い込む**という最悪の形になっていた。
+
+**2. 判定が実行するマシンのタイムゾーンに依らない。** 署名は JST の暦日なので、ローカル
+時刻で mtime を読むと UTC のマシンでは1日ずれ、**正しい payload を拒む**。このテスト自身が
+最初はローカル時刻前提で書かれていて、CI（UTC）で落ちた —— テストが環境に依っていたのと、
+道具が環境に依っていたのの両方である。
 """
 
 from __future__ import annotations
@@ -25,6 +31,9 @@ sys.modules[spec.name] = tool
 spec.loader.exec_module(tool)
 
 
+JST = datetime.timezone(datetime.timedelta(hours=9), "JST")
+
+
 def _payload(raw: Path, source: str, name: str, when: str) -> Path:
     d = raw / source
     d.mkdir(parents=True, exist_ok=True)
@@ -37,6 +46,11 @@ def _payload(raw: Path, source: str, name: str, when: str) -> Path:
 
 def _signed_date(source: str) -> str:
     return tool.ATTESTED[source][0]
+
+
+def _jst_noon(date: str) -> str:
+    """その暦日の JST 正午。UTC のマシンでも同じ暦日に落ちる時刻を選ぶ。"""
+    return f"{date}T12:00:00+09:00"
 
 
 class TestNothingIsWrittenWhenTheMtimeDisagrees:
@@ -53,7 +67,7 @@ class TestNothingIsWrittenWhenTheMtimeDisagrees:
         """1つでも合わなければ、全部書かない。片方だけ書くと、成果物の日時が
         「署名されたもの」と「そうでないもの」の混ざったものになる。"""
         raw = tmp_path / "raw"
-        _payload(raw, "abr", "town_master.zip", _signed_date("abr") + "T03:22:24+09:00")
+        _payload(raw, "abr", "town_master.zip", _jst_noon(_signed_date("abr")))
         _payload(raw, "mlit_ksj_p11", "P11-22_SHP.zip", "2026-09-30T10:00:00+09:00")
         assert tool.main(check_only=False, raw=raw) == 2
         assert not (raw / "abr" / tool.MANIFEST_NAME).exists()
@@ -61,7 +75,7 @@ class TestNothingIsWrittenWhenTheMtimeDisagrees:
 
     def test_a_matching_mtime_writes_the_signed_stamp(self, tmp_path) -> None:
         raw = tmp_path / "raw"
-        when = _signed_date("mlit_ksj_p11") + "T06:53:02+09:00"
+        when = _jst_noon(_signed_date("mlit_ksj_p11"))
         _payload(raw, "mlit_ksj_p11", "P11-22_SHP.zip", when)
         assert tool.main(check_only=False, raw=raw) == 0
         text = (raw / "mlit_ksj_p11" / tool.MANIFEST_NAME).read_text(encoding="utf-8")
@@ -71,7 +85,7 @@ class TestNothingIsWrittenWhenTheMtimeDisagrees:
 
     def test_check_mode_writes_nothing_at_all(self, tmp_path) -> None:
         raw = tmp_path / "raw"
-        when = _signed_date("mlit_ksj_p11") + "T06:53:02+09:00"
+        when = _jst_noon(_signed_date("mlit_ksj_p11"))
         _payload(raw, "mlit_ksj_p11", "P11-22_SHP.zip", when)
         assert tool.main(check_only=True, raw=raw) == 2   # manifest が無いので DIFFERS
         assert not (raw / "mlit_ksj_p11" / tool.MANIFEST_NAME).exists()
