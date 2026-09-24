@@ -15,6 +15,7 @@ import polars as pl
 
 from ..errors import RowCountAnomaly, ValidationFailed
 from ..logging_setup import get_logger, stage_context
+from .common import BRIDGE_ENDPOINTS
 
 log = get_logger(__name__)
 
@@ -23,6 +24,7 @@ BRIDGES = [
     "bridge_address_postal",
     "bridge_address_mlit",
     "bridge_address_telephone",
+    "bridge_municipality_postal_code",
     "bridge_municipality_postal",
     "bridge_municipality_telephone",
 ]
@@ -496,7 +498,10 @@ def write_review_queue(bridges: dict[str, pl.DataFrame], path: Path) -> int:
                     pl.col("bridge_id"),
                     pl.col("address_id"),
                     pl.col("lg_code"),
-                    pl.col("target_id"),
+                    # 端点の列名はブリッジごとに違う（v2.0.0）。要確認レポートは
+                    # 7本を1つの CSV にまとめるので、ここで共通の名前に寄せる ——
+                    # どのブリッジの行かは `bridge` 列が言っている。
+                    pl.col(BRIDGE_ENDPOINTS[name]).alias("endpoint"),
                     pl.col("relation_type"),
                     pl.col("match_method"),
                     pl.col("matching_rule_id"),

@@ -17,6 +17,12 @@ from pathlib import Path
 
 import polars as pl
 
+from ..build.common import (
+    BRIDGE_COLUMNS,
+    BRIDGE_ENDPOINTS,
+    BRIDGE_SUBJECTS,
+    ENDPOINT_PLACEHOLDER,
+)
 from ..errors import ValidationFailed
 from ..logging_setup import get_logger, stage_context
 
@@ -50,6 +56,7 @@ SORT_KEYS: dict[str, list[str]] = {
     "bridge_address_postal": ["bridge_id"],
     "bridge_address_mlit": ["bridge_id"],
     "bridge_address_telephone": ["bridge_id"],
+    "bridge_municipality_postal_code": ["bridge_id"],
     "bridge_municipality_postal": ["bridge_id"],
     "bridge_municipality_telephone": ["bridge_id"],
     # V2. These were missing, which made _sorted() a no-op for them: their byte
@@ -133,7 +140,10 @@ def build_flat_view(tables: dict[str, pl.DataFrame], accepted_only: bool) -> pl.
             )
         cols = [
             pl.col("address_id"),
-            pl.col("target_id").alias(value_col),
+            # 端点はレジストリから引く（docs/BRIDGE_ENDPOINT_MIGRATION.md A1）。
+            # フラット表の列名は移行前と同じままで、読み出し元だけが変わる ——
+            # 43列のうち1列も名前が変わらないことがフェーズ3のゲートである。
+            pl.col(BRIDGE_ENDPOINTS[bridge]).alias(value_col),
             pl.col("relation_type").alias(f"{prefix}_relation_type"),
             pl.col("match_method").alias(f"{prefix}_match_method"),
             pl.col("matching_rule_id").alias(f"{prefix}_rule"),
@@ -219,7 +229,7 @@ SELECT
   a.pref AS pref_name, a.city AS city_name, a.ward AS ward_name,
   a.full_name_raw AS town_name, a.full_name_normalized AS town_name_normalized,
   a.machiaza_id,
-  bp.target_id AS postal_code,
+  bp.postal_code,
   bp.relation_type AS postal_relation_type, bp.match_method AS postal_match_method,
   bp.matching_rule_id AS postal_rule, bp.confidence AS postal_confidence,
   bp.candidate_count AS postal_candidate_count,
@@ -230,7 +240,7 @@ SELECT
   bm.candidate_count AS mlit_candidate_count,
   bm.candidate_group_id AS mlit_candidate_group,
   bm.is_unique_match AS mlit_is_unique, bm.verification_status AS mlit_status,
-  bt.target_id AS numbering_area_code,
+  bt.numbering_area_code,
   bt.relation_type AS telephone_relation_type,
   bt.match_method AS telephone_match_method,
   bt.matching_rule_id AS telephone_rule, bt.confidence AS telephone_confidence,
@@ -246,10 +256,10 @@ SELECT
 FROM address a
 LEFT JOIN {bp} bp                ON bp.address_id = a.address_id
 LEFT JOIN {bm} bm                ON bm.address_id = a.address_id
-LEFT JOIN mlit_town_version mv   ON mv.mlit_record_id = bm.target_id
+LEFT JOIN mlit_town_version mv   ON mv.mlit_record_id = bm.mlit_record_id
                                 AND mv.is_current = 1
 LEFT JOIN {bt} bt                ON bt.address_id = a.address_id
-LEFT JOIN telephone_area_version tv ON tv.numbering_area_code = bt.target_id
+LEFT JOIN telephone_area_version tv ON tv.numbering_area_code = bt.numbering_area_code
                                 AND tv.is_current = 1
 LEFT JOIN (
   -- group_concat has no defined order, so the rows are ordered in a subquery
@@ -266,7 +276,7 @@ LEFT JOIN (
            WHERE is_current = 1 AND old_postal_code IS NOT NULL
            ORDER BY postal_code, old_postal_code)
    GROUP BY postal_code
-) op ON op.postal_code = bp.target_id
+) op ON op.postal_code = bp.postal_code
 """
 
 
@@ -307,18 +317,68 @@ FLAT_VIEWS = (
 
 DDL_VIEWS = """
 CREATE VIEW IF NOT EXISTS unmatched_records AS
-  SELECT 'postal_record' AS kind, target_id AS record_id, matching_rule_id
+  SELECT 'postal_record' AS kind, postal_record_id AS record_id, matching_rule_id
     FROM bridge_address_postal
    WHERE relation_type = 'unresolved' AND address_id IS NULL
   UNION ALL
-  SELECT 'mlit_town', target_id, matching_rule_id
+  SELECT 'mlit_town', mlit_record_id, matching_rule_id
     FROM bridge_address_mlit
    WHERE relation_type = 'unresolved' AND address_id IS NULL
   UNION ALL
   SELECT 'address', address_id, matching_rule_id
     FROM bridge_address_mlit
-   WHERE relation_type = 'unresolved' AND target_id IS NULL;
+   WHERE relation_type = 'unresolved' AND mlit_record_id IS NULL;
 """
+
+
+# v1 互換ビュー（docs/BRIDGE_ENDPOINT_MIGRATION.md A7）。
+#
+# v2.0.0 で端点列の名前が変わり、`bridge_municipality_postal` は2つに分かれた。旧い
+# 名前で読めるビューを置くので、既存のクエリは表名に `_v1` を足すだけで動く。
+#
+# **ビューは列名の互換であって、値の互換ではない。** 2つ、意図して違う:
+#
+# * `bridge_id` は内容アドレスで、材料にブリッジ名が入る（分割した表は名前が違う）ので
+#   値が変わる。v2.0.0 の破壊的変更に含まれる（計画 §4）
+# * `bridge_municipality_postal_v1` の `candidate_count` は、分割後の各表が自分の中で
+#   数えた値である。旧い表は P2 と P3 をまとめて数えていた（A8、署名済み）
+#
+# そしてビューは外部キーを持てない。`_v1` を読み続ける利用者は参照整合性の恩恵を
+# 受けない —— それが移行の圧力として正しく働く。
+#
+# **v2.1.0 で落とす。** 期限はリリースノートに書く。期限の無い互換層は落ちない。
+_V1_VIEW_SOURCES: dict[str, list[str]] = {
+    "bridge_address_postal_code": ["bridge_address_postal_code"],
+    "bridge_address_postal": ["bridge_address_postal"],
+    "bridge_address_mlit": ["bridge_address_mlit"],
+    "bridge_address_telephone": ["bridge_address_telephone"],
+    # 旧い1表 = 新しい2表。UNION ALL で元の形に戻す。
+    "bridge_municipality_postal": [
+        "bridge_municipality_postal_code", "bridge_municipality_postal",
+    ],
+    "bridge_municipality_telephone": ["bridge_municipality_telephone"],
+}
+
+
+def v1_compatibility_views(present: set[str]) -> str:
+    """旧い列名で読めるビューの DDL。存在する表からだけ作る。"""
+    out = []
+    for old_name, sources in _V1_VIEW_SOURCES.items():
+        usable = [t for t in sources if t in present]
+        if not usable:
+            continue
+        selects = []
+        for table in usable:
+            endpoint = BRIDGE_ENDPOINTS[table]
+            cols = ", ".join(
+                f'"{endpoint}" AS "target_id"' if name == ENDPOINT_PLACEHOLDER
+                else f'"{name}"'
+                for name in BRIDGE_COLUMNS
+            )
+            selects.append(f'  SELECT {cols} FROM "{table}"')
+        body = "\n  UNION ALL\n".join(selects)
+        out.append(f'CREATE VIEW IF NOT EXISTS "{old_name}_v1" AS\n{body};')
+    return "\n".join(out) + ("\n" if out else "")
 
 INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_addr_lg ON address(lg_code)",
@@ -331,16 +391,17 @@ INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_tav_area ON telephone_area_version(area_code)",
     "CREATE INDEX IF NOT EXISTS idx_tnb_area ON telephone_number_block(area_code, local_code)",
     "CREATE INDEX IF NOT EXISTS idx_bapc_addr ON bridge_address_postal_code(address_id)",
-    "CREATE INDEX IF NOT EXISTS idx_bapc_code ON bridge_address_postal_code(target_id)",
+    "CREATE INDEX IF NOT EXISTS idx_bapc_code ON bridge_address_postal_code(postal_code)",
     "CREATE INDEX IF NOT EXISTS idx_bap_addr ON bridge_address_postal(address_id)",
-    "CREATE INDEX IF NOT EXISTS idx_bap_rec ON bridge_address_postal(target_id)",
+    "CREATE INDEX IF NOT EXISTS idx_bap_rec ON bridge_address_postal(postal_record_id)",
     "CREATE INDEX IF NOT EXISTS idx_bap_rel ON bridge_address_postal(relation_type)",
     "CREATE INDEX IF NOT EXISTS idx_bam_addr ON bridge_address_mlit(address_id)",
-    "CREATE INDEX IF NOT EXISTS idx_bam_rec ON bridge_address_mlit(target_id)",
+    "CREATE INDEX IF NOT EXISTS idx_bam_rec ON bridge_address_mlit(mlit_record_id)",
     "CREATE INDEX IF NOT EXISTS idx_bat_addr ON bridge_address_telephone(address_id)",
-    "CREATE INDEX IF NOT EXISTS idx_bat_area ON bridge_address_telephone(target_id)",
-    "CREATE INDEX IF NOT EXISTS idx_bmt_area ON bridge_municipality_telephone(target_id)",
+    "CREATE INDEX IF NOT EXISTS idx_bat_area ON bridge_address_telephone(numbering_area_code)",
+    "CREATE INDEX IF NOT EXISTS idx_bmt_area ON bridge_municipality_telephone(numbering_area_code)",
     "CREATE INDEX IF NOT EXISTS idx_bmp_lg ON bridge_municipality_postal(lg_code)",
+    "CREATE INDEX IF NOT EXISTS idx_bmpc_lg ON bridge_municipality_postal_code(lg_code)",
     "CREATE INDEX IF NOT EXISTS idx_lineage_old ON address_lineage(old_address_id)",
     "CREATE INDEX IF NOT EXISTS idx_lineage_new ON address_lineage(new_address_id)",
 ]
@@ -402,6 +463,7 @@ def write_sqlite(
                 )
             conn.executescript(FLAT_VIEWS)
             conn.executescript(DDL_VIEWS)
+            conn.executescript(v1_compatibility_views(set(tables)))
             planned = list(INDEXES)
             for table, statements in V2_INDEXES.items():
                 if table in tables and not tables[table].is_empty():
@@ -468,8 +530,8 @@ PRIMARY_KEYS = {
     "address_rsdt_variant": "rsdt_variant_id",
     **{b: "bridge_id" for b in [
         "bridge_address_postal_code", "bridge_address_postal", "bridge_address_mlit",
-        "bridge_address_telephone", "bridge_municipality_postal",
-        "bridge_municipality_telephone",
+        "bridge_address_telephone", "bridge_municipality_postal_code",
+        "bridge_municipality_postal", "bridge_municipality_telephone",
     ]},
 }
 
@@ -479,29 +541,60 @@ _MATCH_METHODS = ("direct_code', 'exact_name', 'normalized_name', 'parent_child'
                   "'composite', 'official_area_rule', 'manual_override', 'unresolved")
 _STATUSES = "auto', 'review_required', 'manually_verified', 'manually_rejected"
 
-BRIDGE_CHECKS = [
-    "CHECK (confidence >= 0.0 AND confidence <= 1.0)",
-    "CHECK (candidate_count >= 0)",
-    # At least one endpoint always exists, so nothing is ever dropped.
-    "CHECK (address_id IS NOT NULL OR lg_code IS NOT NULL OR target_id IS NOT NULL)",
-    "CHECK (NOT (is_unique_match = 1 AND candidate_count > 1))",
-    "CHECK (candidate_count <= 1 OR candidate_group_id IS NOT NULL)",
-    "CHECK (candidate_count > 1 OR candidate_group_id IS NULL)",
-    # The full documented auto-accept conjunction (docs/MATCHING_RULES.md §4).
-    "CHECK (verification_status <> 'auto' OR ("
-    " candidate_count = 1 AND is_unique_match = 1"
-    " AND candidate_count_is_complete = 1 AND confidence >= 0.98"
-    " AND override_stale = 0"
-    " AND relation_type IN ('exact','equivalent')))",
-    f"CHECK (relation_type IN ('{_RELATION_TYPES}'))",
-    f"CHECK (match_method IN ('{_MATCH_METHODS}'))",
-    f"CHECK (verification_status IN ('{_STATUSES}'))",
-]
+def bridge_checks(name: str) -> list[str]:
+    """1本のブリッジの CHECK 句。端点と主語はレジストリから引く。
+
+    7本ぶんを手で書くと、誰かが拡張を忘れる一覧が増える（`_FK_BY_COLUMN` と同じ理由）。
+
+    **端点の3本は `docs/BRIDGE_ENDPOINT_MIGRATION.md` A5 の「強い形」である。**
+    以前は「少なくとも片方の端点がある」だけを言っていた。方向ごとに正しいほうが
+    埋まっていることを DB に言わせる根拠は実測にある（2026-09-24、6本の全行）:
+
+    * `address_to_*` / `municipality_to_*` の行は、主語が NULL の行が **0件**
+    * `*_to_address` / `*_to_municipality` の行は、端点が NULL の行が **0件**
+    * そして「遠い側が NULL」と `relation_type = 'unresolved'` は**完全に一致**する ——
+      たとえば `address_to_mlit` の端点 NULL 542,792行は unresolved 542,792行と同数、
+      `postal_to_address` の address_id NULL 25,647行も unresolved 25,647行と同数
+
+    3本目を同値（`=`）で書いているのはそのためである。「unresolved なのに相手がいる」も
+    「解決済みなのに相手がいない」も、どちらも止まる。
+    """
+    endpoint = BRIDGE_ENDPOINTS[name]
+    subject = BRIDGE_SUBJECTS[name]
+    noun = "municipality" if subject == "lg_code" else "address"
+    outward = f"direction LIKE '{noun}_to_%'"
+    return [
+        "CHECK (confidence >= 0.0 AND confidence <= 1.0)",
+        "CHECK (candidate_count >= 0)",
+        # 主語の側は常にある。方向の前半が主語である。
+        f"CHECK (NOT ({outward}) OR {subject} IS NOT NULL)",
+        # 逆方向なら、探した相手の側が常にある。
+        f"CHECK ({outward} OR {endpoint} IS NOT NULL)",
+        # 「遠い側が NULL」であることと unresolved であることは同値。
+        f"CHECK (CASE WHEN {outward}"
+        f" THEN ({endpoint} IS NULL) = (relation_type = 'unresolved')"
+        f" ELSE ({subject} IS NULL) = (relation_type = 'unresolved') END)",
+        "CHECK (NOT (is_unique_match = 1 AND candidate_count > 1))",
+        "CHECK (candidate_count <= 1 OR candidate_group_id IS NOT NULL)",
+        "CHECK (candidate_count > 1 OR candidate_group_id IS NULL)",
+        # The full documented auto-accept conjunction (docs/MATCHING_RULES.md §4).
+        "CHECK (verification_status <> 'auto' OR ("
+        " candidate_count = 1 AND is_unique_match = 1"
+        " AND candidate_count_is_complete = 1 AND confidence >= 0.98"
+        " AND override_stale = 0"
+        " AND relation_type IN ('exact','equivalent')))",
+        f"CHECK (relation_type IN ('{_RELATION_TYPES}'))",
+        f"CHECK (match_method IN ('{_MATCH_METHODS}'))",
+        f"CHECK (verification_status IN ('{_STATUSES}'))",
+    ]
+
 
 # The station bridge is a different shape and needs its own constraints rather
-# than the address-bridge set: it has no address_id / target_id /
-# candidate_group_id / override_stale, so BRIDGE_CHECKS would reference columns
-# that do not exist. The differences are deliberate, not omissions:
+# than the address-bridge set: it has no address_id / typed endpoint /
+# candidate_group_id / override_stale, so bridge_checks() would reference columns
+# that do not exist. It is not in BRIDGE_ENDPOINTS for the same reason — the
+# spatial bridges name their endpoint themselves (n02_group_code, p11_stop_id) and
+# never carried a polymorphic column to begin with. The differences are deliberate, not omissions:
 #
 # * `contains` is the only positive relation. A station is inside a municipality,
 #   never identical to one, so the exact/equivalent vocabulary does not apply.
@@ -752,8 +845,8 @@ def _write_table(
         types.extend(LINE_BRIDGE_CHECKS)
     elif name == "bridge_station_line":
         types.extend(STATION_LINE_CHECKS)
-    elif name.startswith("bridge_") and "relation_type" in cols:
-        types.extend(BRIDGE_CHECKS)
+    elif name in BRIDGE_ENDPOINTS:
+        types.extend(bridge_checks(name))
     if name == "n02_railroad_line":
         types.extend(RAILROAD_LINE_CHECKS)
     if name == "p11_bus_stop":

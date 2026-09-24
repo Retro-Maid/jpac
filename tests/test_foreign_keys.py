@@ -140,12 +140,39 @@ class TestTheShippedDdl:
 
             assert canon(found) == canon(expected), table
 
-    def test_the_polymorphic_endpoint_is_still_undeclared(self) -> None:
-        """項目8 の未解決側がまだ未解決であることを、記述と一致させておく。
-        型付き端点に移行したらこのテストが落ちる —— そのとき項目8 を閉じる。"""
-        sql = SCHEMA_SQL.read_text(encoding="utf-8")
-        assert '"target_id"' in sql
-        assert "FOREIGN KEY (\"target_id\")" not in sql
+    def test_no_table_carries_the_polymorphic_column_any_more(self) -> None:
+        """v2.0.0 の到達点。**表**に `target_id` は無い。
+
+        この検査は「`target_id` という文字列が schema.sql に無い」ではない ——
+        `_v1` 互換ビューは旧い名前を出すために `AS "target_id"` を持っているので、
+        文字列だけを見ていると移行前と移行後を区別できない（実際、移行直後にこの
+        tripwire が鳴らなかった）。表の列を1つずつ見る。
+        """
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
+        offenders = []
+        for (table,) in conn.execute(
+            "SELECT name FROM sqlite_master WHERE type='table'"
+        ):
+            cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{table}")')]
+            if "target_id" in cols:
+                offenders.append(table)
+        assert offenders == [], offenders
+
+    def test_the_v1_views_are_the_only_place_the_old_name_survives(self) -> None:
+        """互換ビューは旧い名前を出す。それが A7 の目的である。"""
+        conn = sqlite3.connect(":memory:")
+        conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
+        views = {
+            n for (n,) in conn.execute(
+                "SELECT name FROM sqlite_master WHERE type='view'"
+            )
+        }
+        v1 = {v for v in views if v.endswith("_v1")}
+        assert len(v1) == 6, sorted(v1)
+        for view in sorted(v1):
+            cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{view}")')]
+            assert "target_id" in cols, view
 
 
 class TestTheDatabaseChecksItself:

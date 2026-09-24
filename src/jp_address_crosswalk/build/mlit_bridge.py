@@ -143,7 +143,7 @@ def build_mlit_bridge(
                         "bridge_address_mlit", r["address_id"], r["mlit_record_id"], rule
                     ),
                     "address_id": r["address_id"],
-                    "target_id": r["mlit_record_id"],
+                    "mlit_record_id": r["mlit_record_id"],
                     "direction": "address_to_mlit",
                     "relation_type": "exact" if same_name else "equivalent",
                     "match_method": "composite" if same_name else "direct_code",
@@ -189,7 +189,7 @@ def build_mlit_bridge(
             rows.append(
                 {
                     "bridge_id": bridge_id("bridge_address_mlit", aid, mid, rule),
-                    "address_id": aid, "target_id": mid,
+                    "address_id": aid, "mlit_record_id": mid,
                     "direction": "address_to_mlit",
                     "relation_type": rel, "match_method": "normalized_name",
                     "matching_rule_id": rule, "confidence": conf,
@@ -213,7 +213,7 @@ def build_mlit_bridge(
         df = pl.DataFrame(
             rows,
             schema={
-                "bridge_id": pl.Utf8, "address_id": pl.Utf8, "target_id": pl.Utf8,
+                "bridge_id": pl.Utf8, "address_id": pl.Utf8, "mlit_record_id": pl.Utf8,
                 "direction": pl.Utf8, "relation_type": pl.Utf8,
                 "match_method": pl.Utf8, "matching_rule_id": pl.Utf8,
                 "confidence": pl.Float64, "candidate_group_id": pl.Utf8,
@@ -221,7 +221,10 @@ def build_mlit_bridge(
                 "force_review": pl.Boolean,
             },
         )
-        out = finalize_bridge(df.drop("force_review"), ctx, ["address_id", "target_id"])
+        out = finalize_bridge(
+            df.drop("force_review"), ctx, ["address_id", "mlit_record_id"],
+            "bridge_address_mlit",
+        )
 
         # M2 is never `auto` even though it would otherwise clear the gate: a name
         # disagreement between two publishers is information, not noise.
@@ -239,10 +242,10 @@ def build_mlit_bridge(
         return out
 
 
-def _unresolved(bridge, address_id, target_id, direction, rule, note) -> dict:
+def _unresolved(bridge, address_id, mlit_record_id, direction, rule, note) -> dict:
     return {
-        "bridge_id": bridge_id(bridge, address_id, target_id, rule),
-        "address_id": address_id, "target_id": target_id,
+        "bridge_id": bridge_id(bridge, address_id, mlit_record_id, rule),
+        "address_id": address_id, "mlit_record_id": mlit_record_id,
         "direction": direction, "relation_type": "unresolved",
         "match_method": "unresolved", "matching_rule_id": rule,
         "confidence": 0.0, "candidate_group_id": None, "candidate_count": 0,

@@ -469,9 +469,13 @@ def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str,
         address, abr["postal_conversion"], postal_tables["postal_code_entity"],
         replace(ctx, snapshot_id=snap_abr_conv),
     )
-    tables["bridge_municipality_postal"] = postal.build_municipality_postal_bridge(
-        abr["postal_conversion"], postal_tables["postal_record_version"],
-        municipality, replace(ctx, snapshot_id=snap_abr_conv),
+    # P2（郵便番号）と P3（日本郵便の特殊レコード）は別の表になる
+    # （docs/BRIDGE_ENDPOINT_MIGRATION.md A2）。
+    tables.update(
+        postal.build_municipality_postal_bridges(
+            abr["postal_conversion"], postal_tables["postal_record_version"],
+            municipality, replace(ctx, snapshot_id=snap_abr_conv),
+        )
     )
     covered = set(
         tables["bridge_address_postal_code"]
@@ -1199,6 +1203,7 @@ def _validate(
         bridge_families = {
             "bridge_address_postal_code": "postal",
             "bridge_address_postal": "postal",
+            "bridge_municipality_postal_code": "postal",
             "bridge_municipality_postal": "postal",
             "bridge_address_mlit": "mlit",
             "bridge_address_telephone": "telephone",
@@ -1233,7 +1238,7 @@ def _validate(
         town_tel = tables.get("bridge_address_telephone")
         if town_tel is not None and town_tel.height:
             bad = town_tel.filter(
-                pl.col("target_id").is_not_null()
+                pl.col("numbering_area_code").is_not_null()
                 | (pl.col("relation_type") != "unresolved")
                 | (pl.col("matching_rule_id") != "T10")
                 | (pl.col("candidate_count") != 0)

@@ -799,7 +799,7 @@ jpac は全角英数の半角化や、丁目の漢数字→算用数字といっ
 | ファイル | 中身 | 用途 |
 |---|---|---|
 | `jp_address_crosswalk.parquet` | 1枚にまとめた表（727,110行 × 43列） | polars / pandas / DuckDB |
-| `jp_address_crosswalk.sqlite.gz` | テーブル36本 + ビュー3本 + 索引32本（**gzip。解凍して使います**） | SQL で関係をたどる |
+| `jp_address_crosswalk.sqlite.gz` | テーブル37本 + ビュー9本（うち6本は `_v1` 互換）+ 索引33本（**gzip。解凍して使います**） | SQL で関係をたどる |
 | `jp_address_crosswalk.csv.gz` | 1枚にまとめた表 | 汎用・アーカイブ |
 | `QUALITY_REPORT.md` | そのビルドの全統計とチェック結果 | 数値の裏取り |
 | `DIFF_REPORT.md` | 前回リリースからの変化 | 更新時の影響確認 |
@@ -865,12 +865,12 @@ ORDER  BY town_name;
 -- 総務省は町ごとの対応を公表していないため、これは意図的に市区町村の対応です
 .parameter set :postal_code '0640941'
 SELECT DISTINCT x.postal_code, t.area_code,
-       b.target_id AS numbering_area_code,
+       b.numbering_area_code,
        b.relation_type, b.coverage_type, b.confidence
 FROM   address_crosswalk x
 JOIN   bridge_municipality_telephone b ON b.lg_code = x.lg_code
 JOIN   telephone_area_version t
-       ON t.numbering_area_code = b.target_id AND t.is_current = 1
+       ON t.numbering_area_code = b.numbering_area_code AND t.is_current = 1
 WHERE  x.postal_code = :postal_code
 ORDER  BY t.area_code;
 ```
@@ -899,21 +899,31 @@ ORDER  BY t.area_code;
 ます。実体の表は ID だけを持つ薄い表で、属性は版の表にあります（例：`municipality` は3列、
 `municipality_version` は21列）。
 
-ブリッジ6本はすべて同じ30列で、違うのは `target_id` が何を指すかだけです。
+ブリッジ7本はすべて同じ30列で、違うのは**端点の列名**です。**v2.0.0 で、汎用の
+`target_id` から「指す先の名前を持つ列」に変わりました**（`docs/BRIDGE_ENDPOINT_MIGRATION.md`）。
+どの表に join すればよいかが列名で分かり、外部キーも付いています。
 
-| ブリッジ | 起点 | `target_id` の中身 | 規則 |
-|---|---|---|---|
-| `bridge_address_postal_code` | `address_id` | 郵便番号7桁 | P1–P7 |
-| `bridge_address_postal` | `address_id` | `postal_record_id`（日本郵便のファイルの1行） | P4–P7 |
-| `bridge_address_mlit` | `address_id` | `mlit_record_id` | M1–M5 |
-| `bridge_address_telephone` | `address_id` | 番号区画（現在は全件 NULL） | T10 |
-| `bridge_municipality_postal` | `lg_code` | 郵便番号 | P5–P6 |
-| `bridge_municipality_telephone` | `lg_code` | 番号区画 | T1–T10 |
+| ブリッジ | 起点 | 端点列 | 指す先 | 規則 |
+|---|---|---|---|---|
+| `bridge_address_postal_code` | `address_id` | `postal_code` | 郵便番号7桁 | P1–P7 |
+| `bridge_address_postal` | `address_id` | `postal_record_id` | 日本郵便のファイルの1行 | P4–P7 |
+| `bridge_address_mlit` | `address_id` | `mlit_record_id` | 国交省の1行 | M1–M5 |
+| `bridge_address_telephone` | `address_id` | `numbering_area_code` | 番号区画（現在は全件 NULL） | T10 |
+| `bridge_municipality_postal_code` | `lg_code` | `postal_code` | 郵便番号7桁 | P2 |
+| `bridge_municipality_postal` | `lg_code` | `postal_record_id` | 日本郵便の特殊レコード | P3 |
+| `bridge_municipality_telephone` | `lg_code` | `numbering_area_code` | 番号区画 | T1–T10 |
+
+`bridge_municipality_postal` は v1.3.0 までこの2種類を**同じ `target_id` 列に混ぜて**
+いました（P2 が郵便番号 8,207行、P3 が `postal_record_id` 1,910行）。知らずに join すると
+片方が静かに落ちるので、住所側と同じく2つの表に分けました。
+
+**旧い列名で読みたいクエリは `*_v1` ビューを使えます**（`bridge_address_postal_v1` など
+6本）。`target_id` という名前で読めますが、**v2.1.0 で落とします**。
 
 ### テーブル定義（DDL）
 
 出荷されている SQLite の定義そのものを [`docs/schema.sql`](docs/schema.sql) に置いてあります。
-手書きではなく、リリースデータから抽出して改行だけを入れたものです（テーブル36・ビュー3・索引32）。
+手書きではなく、リリースデータから抽出して改行だけを入れたものです（テーブル37・ビュー9・索引33）。
 読む前に押さえておく点が4つあります。
 
 **1. 型はほぼ全部 `TEXT` です。**
@@ -930,7 +940,7 @@ CREATE TABLE "municipality" (
 コードは一切数値にしません。数値なのは `confidence`（REAL）と、候補数・フラグ類（INTEGER）
 だけです。
 
-**2. 外部キーは宣言されています（v1.3.0 以降）。ただし2種類の列は例外です。**
+**2. 外部キーは宣言されています（v1.3.0 以降、ブリッジの端点は v2.0.0 以降）。**
 `address_id` / `lg_code` / `match_run_id` / `postal_record_id` / `postal_code` /
 `mlit_record_id` / `numbering_area_code` / `n02_group_code` / `p11_stop_id`、および路線の
 複合参照 `(路線名, 運営会社)` に `FOREIGN KEY` が付いています。ビルドは書き終えた
@@ -938,13 +948,16 @@ CREATE TABLE "municipality" (
 リリースが落ちます。`PRAGMA foreign_keys = ON` にすれば、あなたの接続でも効きます
 （SQLite の既定は接続ごとに OFF です）。
 
-例外は2つあります。**ブリッジの `target_id`** は多態な列（あるブリッジでは郵便番号
-レコードの id、別のブリッジでは市外局番）なので、外部キーを持てません。こちらの整合性は
-引き続き不変条件テストで担保しています（[`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md)
-§3）。**スナップショット列**（`source_snapshot_id` / `first_observed_snapshot_id` /
-`last_observed_snapshot_id`）も宣言していません —— `source_snapshot` は**そのビルドの**
-payload を載せる表で、これらの列は「最初に観測したとき」を指して引き継がれるため、
-元データが変わったリリースで参照先が表に無くなります。理由は
+**v2.0.0 でブリッジの端点にも付きました。** v1.3.0 までは多態な `target_id`（あるブリッジ
+では郵便番号レコードの id、別のブリッジでは市外局番）で、行によって指す表が変わる列には
+`REFERENCES` を書けませんでした。いまは端点が指す先の名前を持つので、外部キーが付いて
+います。
+
+例外は2つあります。**スナップショット列**（`source_snapshot_id` /
+`first_observed_snapshot_id` / `last_observed_snapshot_id`）と、**引き継がれる `*_version`
+テーブル**です。どちらも「そのビルドの行」を載せる表を指すのに、参照する側は前のビルドの
+行を引き継ぐので、元データが変わったリリースで参照先が表から無くなります。宣言すれば今日
+は緑になりますが、それは制約ではなく偽の主張です。理由は
 [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) 項目8 にあります。
 
 **3. 4つのテーブルには `PRIMARY KEY` がありません。** `address_code` /
@@ -973,7 +986,11 @@ CHECK (verification_status <> 'auto' OR (
 ```sql
 CHECK (confidence >= 0.0 AND confidence <= 1.0),
 CHECK (candidate_count >= 0),
-CHECK (address_id IS NOT NULL OR lg_code IS NOT NULL OR target_id IS NOT NULL),
+CHECK (NOT (direction LIKE 'address_to_%') OR address_id IS NOT NULL),
+CHECK (direction LIKE 'address_to_%' OR postal_record_id IS NOT NULL),
+CHECK (CASE WHEN direction LIKE 'address_to_%'
+            THEN (postal_record_id IS NULL) = (relation_type = 'unresolved')
+            ELSE (address_id IS NULL) = (relation_type = 'unresolved') END),
 CHECK (NOT (is_unique_match = 1 AND candidate_count > 1)),
 CHECK (candidate_count <= 1 OR candidate_group_id IS NOT NULL),
 CHECK (candidate_count > 1 OR candidate_group_id IS NULL),
@@ -981,8 +998,11 @@ CHECK (relation_type IN ('exact','equivalent','parent','child','contains',
                          'overlap','candidate','ambiguous','unresolved'))
 ```
 
-3つ目が「対応しなかったレコードも捨てない」を支えています。3つの端点のうち少なくとも1つが
-埋まっていればよいので、相手が見つからなかった行も、相手側を NULL にしたまま保存できます。
+3〜5つ目が「対応しなかったレコードも捨てない」を支えています。**探した側は常に埋まり、
+相手側が NULL であることと `unresolved` であることが同値**です（v2.0.0 以降。例は
+`bridge_address_postal` のもので、端点列名はブリッジごとに違います）。だから相手が
+見つからなかった行も、相手側を NULL にしたまま保存できます —— しかも「相手がいない」と
+「解決した」を取り違えた行は DB が受け付けません。
 
 `address` テーブルには `CHECK (length(address_id) = 20)`、`postal_code_entity` には
 `CHECK (length(postal_code) = 7)` が入っています。
@@ -1059,7 +1079,7 @@ jpac --version       # コード版を表示
 
 | コマンド | 前提 | 出力 |
 |---|---|---|
-| `build` | `data/raw/` に受け入れ済み payload | `dist/parquet/` のテーブル（V2 の元データがあれば36本、無ければ28本）、データ3ファイル、`QUALITY_REPORT.md`、`DIFF_REPORT.md`、`NOTICE.md`、`SOURCES.yml`、`SHA256SUMS` |
+| `build` | `data/raw/` に受け入れ済み payload | `dist/parquet/` のテーブル（V2 の元データがあれば37本、無ければ29本）、データ3ファイル、`QUALITY_REPORT.md`、`DIFF_REPORT.md`、`NOTICE.md`、`SOURCES.yml`、`SHA256SUMS` |
 | `validate` | `build` 済み | なし（検査のみ） |
 | `verify` | `build` 済み + `data/raw/` | なし（検査のみ） |
 | `diff` | `build` 済み | なし（表示のみ） |
@@ -1213,7 +1233,7 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が回している
 | | |
 |---|---|
 | [`docs/queries/`](docs/queries/) | そのまま実行できる SQL 12本と、結果の読み方 |
-| [`docs/schema.sql`](docs/schema.sql) | 出荷されている SQLite の定義そのもの（テーブル36・ビュー3・索引32） |
+| [`docs/schema.sql`](docs/schema.sql) | 出荷されている SQLite の定義そのもの（テーブル37・ビュー9・索引33） |
 | [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) | 対象外にしているものと、V1 で分かっている制約 |
 | [`DATA_LICENSE.md`](DATA_LICENSE.md) | データの利用条件（コードの MIT とは別です） |
 
@@ -1236,7 +1256,7 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が回している
 | [`docs/TEST_STRATEGY.md`](docs/TEST_STRATEGY.md) | テスト層とフィクスチャ、検証ツールの役割分担 |
 | [`docs/LICENSE_POLICY.md`](docs/LICENSE_POLICY.md) | ライセンス判断とドリフト検出 |
 | [`docs/ACQUISITION_DATES.md`](docs/ACQUISITION_DATES.md) | 元データをいつ取得したかの署名。タグのデータ版とバイト再現性の根拠 |
-| [`docs/BRIDGE_ENDPOINT_MIGRATION.md`](docs/BRIDGE_ENDPOINT_MIGRATION.md) | ブリッジの `target_id` を型付き列にする計画（v2.0.0 予定の破壊的変更） |
+| [`docs/BRIDGE_ENDPOINT_MIGRATION.md`](docs/BRIDGE_ENDPOINT_MIGRATION.md) | ブリッジの端点を型付き列にした記録（v2.0.0 の破壊的変更、決定と実測） |
 
 **V2（駅・メッシュ・地図）**
 

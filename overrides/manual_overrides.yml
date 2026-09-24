@@ -8,7 +8,9 @@ overrides: []
 # - id: OVR-0001
 #   bridge: bridge_address_mlit
 #   source: {address_id: "jpa1..."}
-#   target: {mlit_code: "011010001001"}
+#   target: {mlit_record_id: "ml_..."}   # ブリッジの端点列名で書く。v2.0.0 で
+#                                        # target_id は端点ごとの名前に変わった
+#                                        # （docs/BRIDGE_ENDPOINT_MIGRATION.md）
 #   set: {relation_type: exact, confidence: 1.0, verification_status: manually_verified}
 #   reason: "..."
 #   evidence: "..."

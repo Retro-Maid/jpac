@@ -329,7 +329,7 @@ def build_telephone_bridges(
                                 "bridge_id": bridge_id(
                                     "bridge_municipality_telephone", lg, code, "T5"
                                 ),
-                                "lg_code": lg, "target_id": code,
+                                "lg_code": lg, "numbering_area_code": code,
                                 "direction": "telephone_to_municipality",
                                 "relation_type": "child",
                                 "match_method": "official_area_rule",
@@ -369,7 +369,7 @@ def build_telephone_bridges(
                         "bridge_id": bridge_id(
                             "bridge_municipality_telephone", None, code, r["coverage_id"]
                         ),
-                        "lg_code": None, "target_id": code,
+                        "lg_code": None, "numbering_area_code": code,
                         "direction": "telephone_to_municipality",
                         "relation_type": "unresolved", "match_method": "unresolved",
                         "matching_rule_id": "T7", "confidence": 0.0,
@@ -393,7 +393,7 @@ def build_telephone_bridges(
                                 "bridge_id": bridge_id(
                                     "bridge_municipality_telephone", lg, code, "T1"
                                 ),
-                                "lg_code": lg, "target_id": code,
+                                "lg_code": lg, "numbering_area_code": code,
                                 "direction": "telephone_to_municipality",
                                 "relation_type": "child" if ctype == "full" else "overlap",
                                 "match_method": "official_area_rule",
@@ -416,7 +416,7 @@ def build_telephone_bridges(
                             "bridge_id": bridge_id(
                                 "bridge_municipality_telephone", lg, code, "T6"
                             ),
-                            "lg_code": lg, "target_id": code,
+                            "lg_code": lg, "numbering_area_code": code,
                             "direction": "telephone_to_municipality",
                             "relation_type": "ambiguous",
                             "match_method": "official_area_rule",
@@ -441,7 +441,7 @@ def build_telephone_bridges(
             muni_rows.append(
                 {
                     "bridge_id": bridge_id("bridge_municipality_telephone", lg, code, rid),
-                    "lg_code": lg, "target_id": code,
+                    "lg_code": lg, "numbering_area_code": code,
                     "direction": "telephone_to_municipality",
                     "relation_type": rel, "match_method": "official_area_rule",
                     "matching_rule_id": rid, "confidence": conf,
@@ -461,7 +461,7 @@ def build_telephone_bridges(
             )
 
         schema = {
-            "bridge_id": pl.Utf8, "lg_code": pl.Utf8, "target_id": pl.Utf8,
+            "bridge_id": pl.Utf8, "lg_code": pl.Utf8, "numbering_area_code": pl.Utf8,
             "direction": pl.Utf8, "relation_type": pl.Utf8, "match_method": pl.Utf8,
             "matching_rule_id": pl.Utf8, "confidence": pl.Float64,
             "candidate_group_id": pl.Utf8, "candidate_count": pl.Int64,
@@ -496,7 +496,10 @@ def build_telephone_bridges(
                 ]
             ).drop("n_areas")
 
-        muni_bridge = finalize_bridge(muni_df, ctx, ["lg_code", "target_id"])
+        muni_bridge = finalize_bridge(
+            muni_df, ctx, ["lg_code", "numbering_area_code"],
+            "bridge_municipality_telephone",
+        )
 
         # T10: MIC's document is a municipality/area statement. Keep one row per
         # address so unmatched rows remain visible, but never attach a numbering
@@ -507,7 +510,7 @@ def build_telephone_bridges(
                 "bridge_id": bridge_id(
                     "bridge_address_telephone", aid, None, "T10"
                 ),
-                "address_id": aid, "target_id": None,
+                "address_id": aid, "numbering_area_code": None,
                 "direction": "address_to_telephone",
                 "relation_type": "unresolved", "match_method": "unresolved",
                 "matching_rule_id": "T10", "confidence": 0.0,
@@ -523,7 +526,10 @@ def build_telephone_bridges(
         addr_schema.pop("lg_code")
         addr_schema["address_id"] = pl.Utf8
         addr_df = pl.DataFrame(addr_rows, schema=addr_schema)
-        addr_bridge = finalize_bridge(addr_df, ctx, ["address_id", "target_id"])
+        addr_bridge = finalize_bridge(
+            addr_df, ctx, ["address_id", "numbering_area_code"],
+            "bridge_address_telephone",
+        )
 
         log.info(
             "built telephone bridges",

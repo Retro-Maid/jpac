@@ -17,11 +17,44 @@ from dataclasses import dataclass
 
 import polars as pl
 
+# どのブリッジがどの表を指しているか。これが列名になる
+# （docs/BRIDGE_ENDPOINT_MIGRATION.md A1）。
+#
+# 多態な `target_id` 1列をやめた理由は3つ、いずれも実測である:
+#
+# * 外部キーを付けられない —— 行によって指す表が変わる列に `REFERENCES` は書けない。
+#   v1.3.0 で20テーブルに外部キーが付いたあと、ここが唯一残った穴だった
+# * どの表に join するのか列が言っていない —— 出荷しているクエリ例が
+#   `b.target_id AS numbering_area_code` と別名を付けて読み手に教えていた
+# * `bridge_municipality_postal` は**表の内側で**多態だった —— P2 が郵便番号 8,207行、
+#   P3 が postal_record_id 1,910行を同じ列に入れていた。知らずに join すると 1,910行が
+#   静かに落ちる。この表は2つに分ける（A2）
+#
+# 1か所に置くのは、CHECK・外部キー・不変条件テストがこの同じ表を読むためである。
+# 7本それぞれに手書きの対応を持たせると、誰かが拡張を忘れる一覧が3つ増える。
+BRIDGE_ENDPOINTS: dict[str, str] = {
+    "bridge_address_postal_code": "postal_code",
+    "bridge_address_postal": "postal_record_id",
+    "bridge_address_mlit": "mlit_record_id",
+    "bridge_address_telephone": "numbering_area_code",
+    "bridge_municipality_postal_code": "postal_code",
+    "bridge_municipality_postal": "postal_record_id",
+    "bridge_municipality_telephone": "numbering_area_code",
+}
+
+# 主語の側。A9 のとおり、使わないほうの列も残す（v2.0.0 では落とさない）。
+BRIDGE_SUBJECTS: dict[str, str] = {
+    name: ("lg_code" if name.startswith("bridge_municipality_") else "address_id")
+    for name in BRIDGE_ENDPOINTS
+}
+
+ENDPOINT_PLACEHOLDER = "target_id"
+
 BRIDGE_COLUMNS: dict[str, pl.DataType] = {
     "bridge_id": pl.Utf8,
     "address_id": pl.Utf8,
     "lg_code": pl.Utf8,
-    "target_id": pl.Utf8,
+    ENDPOINT_PLACEHOLDER: pl.Utf8,
     "direction": pl.Utf8,
     "relation_type": pl.Utf8,
     "match_method": pl.Utf8,
@@ -52,6 +85,34 @@ BRIDGE_COLUMNS: dict[str, pl.DataType] = {
 
 AUTO_ACCEPT_RELATIONS = ("exact", "equivalent")
 AUTO_ACCEPT_MIN_CONFIDENCE = 0.98
+
+
+def endpoint_of(bridge: str) -> str:
+    """そのブリッジの端点列名。未登録のブリッジは黙って通さない。
+
+    知らない名前に `target_id` を返すと、新しいブリッジが多態な列を持って出荷される。
+    レジストリに足すのを忘れたことが、出荷物ではなく例外として現れるようにする。
+    """
+    try:
+        return BRIDGE_ENDPOINTS[bridge]
+    except KeyError:
+        raise KeyError(
+            f"{bridge} is not in BRIDGE_ENDPOINTS; a bridge must name the table its "
+            "endpoint points at (docs/BRIDGE_ENDPOINT_MIGRATION.md A1)"
+        ) from None
+
+
+def bridge_columns(bridge: str) -> dict[str, pl.DataType]:
+    """共通スキーマの端点列を、そのブリッジの名前にしたもの。
+
+    列の**順序**も共通のままにしてある。30列の並びは `docs/schema.sql` が公開している
+    定義そのもので、端点の位置だけが名前を変える。
+    """
+    endpoint = endpoint_of(bridge)
+    return {
+        (endpoint if name == ENDPOINT_PLACEHOLDER else name): dtype
+        for name, dtype in BRIDGE_COLUMNS.items()
+    }
 
 
 @dataclass(frozen=True)
@@ -101,11 +162,17 @@ def expr_verification_status() -> pl.Expr:
 
 
 def finalize_bridge(
-    df: pl.DataFrame, ctx: BuildContext, sort_keys: list[str]
+    df: pl.DataFrame, ctx: BuildContext, sort_keys: list[str], bridge: str
 ) -> pl.DataFrame:
-    """Fill defaults, apply the gate, enforce column order, sort deterministically."""
+    """Fill defaults, apply the gate, enforce column order, sort deterministically.
+
+    ``bridge`` はレジストリを引くための名前で、端点列がどう呼ばれるかを決める。
+    呼び出し側は端点列を**その名前で**渡す（`target_id` ではない）。
+    """
+    schema = bridge_columns(bridge)
+    endpoint = endpoint_of(bridge)
     if df.is_empty():
-        return pl.DataFrame(schema=BRIDGE_COLUMNS)
+        return pl.DataFrame(schema=schema)
 
     defaults: dict[str, pl.Expr] = {
         "candidate_count_is_complete": pl.lit(True),
@@ -120,7 +187,7 @@ def finalize_bridge(
         "is_current": pl.lit(True),
         "address_id": pl.lit(None, dtype=pl.Utf8),
         "lg_code": pl.lit(None, dtype=pl.Utf8),
-        "target_id": pl.lit(None, dtype=pl.Utf8),
+        endpoint: pl.lit(None, dtype=pl.Utf8),
         "candidate_group_id": pl.lit(None, dtype=pl.Utf8),
     }
     for name, expr in defaults.items():
@@ -150,19 +217,24 @@ def finalize_bridge(
     # verification_status is derived last so it always reflects the final values.
     df = df.with_columns(expr_verification_status().alias("verification_status"))
 
-    df = df.select(
-        [pl.col(name).cast(dtype) for name, dtype in BRIDGE_COLUMNS.items()]
-    )
+    df = df.select([pl.col(name).cast(dtype) for name, dtype in schema.items()])
     # Explicit total-order sort: Polars joins are not order-stable, and an
     # unstable order would break byte-level reproducibility (spec §46).
     return df.sort([*sort_keys, "bridge_id"])
 
 
 def assert_bridge_invariants(df: pl.DataFrame, name: str) -> list[str]:
-    """Return a list of violated invariants (docs/TEST_STRATEGY.md §3)."""
+    """Return a list of violated invariants (docs/TEST_STRATEGY.md §3).
+
+    端点列はレジストリから引く。リテラルの ``target_id`` を書いていると、列名が
+    変わった瞬間に**何も見ない検査**になって緑のまま通る。
+    """
     problems: list[str] = []
     if df.is_empty():
         return problems
+    endpoint = endpoint_of(name)
+    if endpoint not in df.columns:
+        return [f"{name}: endpoint column {endpoint} is absent"]
 
     def count(expr: pl.Expr) -> int:
         return df.filter(expr).height
@@ -184,13 +256,13 @@ def assert_bridge_invariants(df: pl.DataFrame, name: str) -> list[str]:
         "ambiguous without candidate_group_id": (pl.col("candidate_count") > 1)
         & pl.col("candidate_group_id").is_null(),
         "unresolved with a target": (pl.col("relation_type") == "unresolved")
-        & pl.col("target_id").is_not_null()
+        & pl.col(endpoint).is_not_null()
         & pl.col("address_id").is_not_null(),
         "resolved without a target": (pl.col("relation_type") != "unresolved")
-        & pl.col("target_id").is_null(),
+        & pl.col(endpoint).is_null(),
         "row with no endpoint at all": pl.col("address_id").is_null()
         & pl.col("lg_code").is_null()
-        & pl.col("target_id").is_null(),
+        & pl.col(endpoint).is_null(),
     }
     for label, expr in checks.items():
         n = count(expr)
