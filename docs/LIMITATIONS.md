@@ -62,7 +62,7 @@ release.)
    (`IDENTITY_MODEL.md` §3).
 6. **MIC 固定電話 assignment data is annual**, so `telephone_number_block` can lag the
    area-code list.
-7. **History accumulates, and what remains is the cost of that.** Until v1.2.0,
+7. **History accumulates, and what remains is the cost of that.** Until v1.3.0,
    `address_lineage`, `address_code` and `address_history` were rebuilt from the
    current run alone, so an event detected in an earlier release was gone from the
    next one — the P0 independent review 2 recorded as partially resolved. (The
@@ -118,7 +118,7 @@ release.)
    (`ARCHITECTURE.md` §8).
 10. **Byte reproducibility depends on the acquisition record, which is not in the
    repository.** Ids are content-addressed, every table is sorted on a total key, and
-   since v1.2.0 every date an artifact carries is derived from
+   since v1.3.0 every date an artifact carries is derived from
    `data/raw/<source>/_payload.yml` rather than from the clock, so two rebuilds of the
    same payloads are byte-identical (independent review 2's P1, now resolved for the
    normal case). What remains:
@@ -126,7 +126,7 @@ release.)
      acquired the payloads. The *signature* is committed
      (`ACQUISITION_DATES.md`, `tools/write_payload_manifests.py`) and regenerates them,
      but a clean checkout on another machine has neither payloads nor manifests, and a
-     build there would fall back to the clock — the pre-v1.2.0 behaviour.
+     build there would fall back to the clock — the pre-v1.3.0 behaviour.
    - **The time of day is the payload file's mtime.** The signed fact is the calendar
      date, corroborated by the documents named in `ACQUISITION_DATES.md`; mtime
      supplies the rest and is a mutable value that copying can lose.

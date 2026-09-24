@@ -930,7 +930,7 @@ CREATE TABLE "municipality" (
 コードは一切数値にしません。数値なのは `confidence`（REAL）と、候補数・フラグ類（INTEGER）
 だけです。
 
-**2. 外部キーは宣言されています（v1.2.0 以降）。ただし2種類の列は例外です。**
+**2. 外部キーは宣言されています（v1.3.0 以降）。ただし2種類の列は例外です。**
 `address_id` / `lg_code` / `match_run_id` / `postal_record_id` / `postal_code` /
 `mlit_record_id` / `numbering_area_code` / `n02_group_code` / `p11_stop_id`、および路線の
 複合参照 `(路線名, 運営会社)` に `FOREIGN KEY` が付いています。ビルドは書き終えた

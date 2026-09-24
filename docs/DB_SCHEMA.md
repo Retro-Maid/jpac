@@ -324,7 +324,7 @@ CREATE TABLE telephone_number_block (
 > `CHECK (address_id IS NOT NULL OR lg_code IS NOT NULL OR target_id IS NOT NULL)`,
 > so an unmatched record from either side is still retained.
 >
-> Since v1.2.0 the export **does** declare foreign keys, and the build runs
+> Since v1.3.0 the export **does** declare foreign keys, and the build runs
 > `PRAGMA foreign_key_check` over the finished database (`docs/LIMITATIONS.md` item
 > 8). What that reaches is every non-polymorphic reference — `address_id`, `lg_code`,
 > `match_run_id` and the rest. `target_id` still carries none, because a polymorphic
