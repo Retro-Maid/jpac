@@ -178,7 +178,9 @@ for lg, code, klass in resolved.select(
     entry = [code] if not klass else [code, klass]
     postal.setdefault(lg, []).append(entry)
 for lg in postal:
-    postal[lg] = sorted(postal[lg], key=lambda e: e[0])
+    # 郵便番号だけで並べると、同じ番号の「種別つき」と「種別なし」の相対順が入力順に
+    # 依存する（2表に分けたときに実際に入れ替わった）。総キーで並べる。
+    postal[lg] = sorted(postal[lg], key=lambda e: (e[0], e[1] if len(e) > 1 else ""))
 say(f"郵便番号 {resolved.height:,} 行 / {len(postal):,} 市区町村"
     f"（うち種別つき {resolved.filter(pl.col('parenthetical_class').is_not_null()).height:,}）")
 
