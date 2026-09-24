@@ -19,7 +19,7 @@ docs/POLICY.md §3.2 の範囲。地図でクリックした市区町村につ�
                   名前を持たせず添字で指す —— 素直に持つと 606 KB、集約すると 1/4 以下
     linesByLg     lg_code → lineNames の添字
     linesByStation 駅グループコード → lineNames の添字（乗換駅は複数）
-    postal        lg_code → 郵便番号。bridge_municipality_postal の P2（7桁そのもの）と
+    postal        lg_code → 郵便番号。bridge_municipality_postal_code（7桁そのもの）と
                   P3（「以下に掲載がない場合」等のレコード）を、どちらも実際の7桁に
                   解決したうえで種別を付ける
     telephone     lg_code → 市外局番。番号区画を経由し、区画の一部だけを含む場合は
@@ -142,23 +142,35 @@ say(f"駅 {len(stations):,}（代表点が取れなかったもの {missing_poin
     f"  市区町村に結び付いた駅 {sum(1 for s in stations if s['lg']):,}")
 
 # --------------------------------------------------------------- 郵便番号
-# P2 は target_id がそのまま7桁。P3 は日本郵便のレコード（「以下に掲載がない場合」など）
-# を指す ID なので、postal_record_version を引いて実際の7桁に直し、種別を残す。
+# v2.0.0 で2つの表に分かれた（docs/BRIDGE_ENDPOINT_MIGRATION.md A2）。
+# `bridge_municipality_postal_code` は7桁をそのまま持つ。`bridge_municipality_postal` は
+# 日本郵便のレコード（「以下に掲載がない場合」など）を指すので、postal_record_version を
+# 引いて実際の7桁に直し、種別を残す。
 say("郵便番号を解決中…")
-bp = rd("bridge_municipality_postal")
 prv = rd("postal_record_version").filter(pl.col("is_current") == 1)
-resolved = (
-    bp.join(
-        prv.select("postal_record_id", "postal_code", "parenthetical_class", "town_raw"),
-        left_on="target_id", right_on="postal_record_id", how="left",
+direct = rd("bridge_municipality_postal_code").select(
+    pl.col("lg_code"),
+    pl.col("postal_code").alias("code"),
+    pl.lit(None, dtype=pl.Utf8).alias("parenthetical_class"),
+)
+special = (
+    rd("bridge_municipality_postal")
+    .join(
+        prv.select("postal_record_id", "postal_code", "parenthetical_class"),
+        on="postal_record_id", how="left",
     )
-    .with_columns(
-        pl.coalesce(pl.col("postal_code"), pl.col("target_id")).alias("code"),
+    .select(
+        pl.col("lg_code"),
+        pl.col("postal_code").alias("code"),
+        pl.col("parenthetical_class"),
     )
 )
-bad = resolved.filter(~pl.col("code").str.contains(r"^\d{7}$"))
+resolved = pl.concat([direct, special], how="vertical")
+bad = resolved.filter(
+    pl.col("code").is_null() | ~pl.col("code").str.contains(r"^\d{7}$")
+)
 if bad.height:
-    sys.exit(f"7桁に解決できない郵便番号が {bad.height} 件: {bad['target_id'].head(3).to_list()}")
+    sys.exit(f"7桁に解決できない郵便番号が {bad.height} 件: {bad.head(3).to_dicts()}")
 postal: dict[str, list] = {}
 for lg, code, klass in resolved.select(
     "lg_code", "code", "parenthetical_class"
@@ -177,14 +189,13 @@ say("市外局番を解決中…")
 bt = rd("bridge_municipality_telephone")
 tav = rd("telephone_area_version").filter(pl.col("is_current") == 1)
 tel = bt.join(
-    tav.select("numbering_area_code", "area_code"),
-    left_on="target_id", right_on="numbering_area_code", how="left",
+    tav.select("numbering_area_code", "area_code"), on="numbering_area_code", how="left",
 )
 if tel.filter(pl.col("area_code").is_null()).height:
     sys.exit("番号区画に対応する市外局番が見つからない行がある")
 telephone: dict[str, list] = {}
 for lg, area, code, coverage, note in tel.select(
-    "lg_code", "area_code", "target_id", "coverage_type", "mismatch_note"
+    "lg_code", "area_code", "numbering_area_code", "coverage_type", "mismatch_note"
 ).iter_rows():
     entry = {"a": area, "z": code, "c": coverage}
     if note:
