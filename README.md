@@ -1277,6 +1277,10 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が回している
 | [`docs/STATION_JOIN_PREFLIGHT.md`](docs/STATION_JOIN_PREFLIGHT.md) | 実装前の実測調査 |
 | [`docs/ESTAT_BOUNDARY_VERIFICATION.md`](docs/ESTAT_BOUNDARY_VERIFICATION.md) | e-Stat 境界データの実測検証 |
 | [`docs/LICENSE_REVIEW_2026_09.md`](docs/LICENSE_REVIEW_2026_09.md) | V2 の元データの規約を逐語で読んだ記録 |
+| [`docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md`](docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md) | 市区町村の廃置分合を公式データで裏づけるための下調べ（未実装） |
+| [`docs/LICENSE_REVIEW_LINEAGE_2026_09.md`](docs/LICENSE_REVIEW_LINEAGE_2026_09.md) | 同上の規約の審査（未署名） |
+| [`docs/FACILITY_PREFLIGHT.md`](docs/FACILITY_PREFLIGHT.md) | 学校・役場等を市区町村に結ぶための下調べ（未実装） |
+| [`docs/LICENSE_REVIEW_FACILITY_2026_09.md`](docs/LICENSE_REVIEW_FACILITY_2026_09.md) | 同上の規約の審査（未署名） |
 | [`docs/N03_BOUNDARY_DESIGN.md`](docs/N03_BOUNDARY_DESIGN.md) | 国土数値情報 N03（行政区域）の設計と、配布を見送っている理由 |
 | [`docs/GEO_EXPANSION_RESEARCH.md`](docs/GEO_EXPANSION_RESEARCH.md) | 地理情報の拡張候補の調査 |
 
