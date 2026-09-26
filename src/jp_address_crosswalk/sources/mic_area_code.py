@@ -42,6 +42,12 @@ PREFECTURES = [
 _PAREN_OPEN = "（("
 _PAREN_CLOSE = "）)"
 _MUNI_SUFFIX = re.compile(r"(市|区|町|村)$")
+# A note on dialling between two numbering areas, not a territorial qualifier.
+# Matched whole and literally, so any other wording keeps the conservative reading.
+_DIALING_NOTE = re.compile(
+    r"市外局番を除く電気通信番号による発信については、"
+    r"番号区画コード[0-9０-９]+(?:-[0-9０-９]+)?の番号区画を含む。?"
+)
 _COUNTY_RE = re.compile(r"^(.+?郡)(.*)$")
 _CURRENT_AS_OF = re.compile(r"（?(令和|平成)([０-９0-9元]+)年([０-９0-9]+)月([０-９0-9]+)日現在）?")
 
@@ -306,9 +312,13 @@ def parse_area_text(code: str, area_text: str) -> list[dict]:
             outer_kind = county_qualifier_kind(inner)
             if outer_kind:
                 qualifier = outer_kind
-            # Neither: the group is not a territorial qualifier at all (福岡県の
-            # 「市外局番を除く電気通信番号による発信については…を含む。」). Kept on
-            # the earlier reading so those four clauses do not change here.
+            elif _DIALING_NOTE.fullmatch(inner.strip()):
+                # 「市外局番を除く電気通信番号による発信については、番号区画コード
+                # 578の番号区画を含む。」 says how a call is dialled, not which land
+                # the area covers. Reading its 除く as an exclusion made 糸島市,
+                # 鞍手町 and 小竹町 partial when the source names them whole. The
+                # wording stays in exception_text.
+                pass
             elif "除く" in inner:
                 qualifier = "exclude"
             elif "限る" in inner:
