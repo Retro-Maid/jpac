@@ -218,6 +218,20 @@ def _first_paren_span(text: str) -> tuple[int, int] | None:
     return None
 
 
+def _depth_zero_text(text: str) -> str:
+    """``text`` with every parenthesised group removed, nesting honoured."""
+    out: list[str] = []
+    depth = 0
+    for ch in text:
+        if ch in _PAREN_OPEN:
+            depth += 1
+        elif ch in _PAREN_CLOSE and depth:
+            depth -= 1
+        elif depth == 0:
+            out.append(ch)
+    return "".join(out)
+
+
 def _split_county(rest_wo: str) -> tuple[str | None, str]:
     """Separate 郡 from municipality, without inventing counties.
 
@@ -285,12 +299,16 @@ def parse_area_text(code: str, area_text: str) -> list[dict]:
             inner = rest[span[0] + 1 : span[1] - 1]
             exception_text = rest[span[0] : span[1]]
             # The qualifier is the one that closes the *outer* group; a nested
-            # 「…に限る。」 inside an exclusion describes what is excluded.
-            tail = inner[max(0, len(inner) - 12):]
-            if "除く" in tail:
-                qualifier = "exclude"
-            elif "限る" in tail:
-                qualifier = "limit"
+            # 「…に限る。」 inside an exclusion describes what is excluded. Read it
+            # from the depth-zero text: a fixed-width tail of the inner string saw
+            # 「（…丹生谷を除く。）に限る。」 and called the whole clause an
+            # exclusion. Six 郡 clauses were inverted that way (高市郡, 南会津郡…).
+            outer_kind = county_qualifier_kind(inner)
+            if outer_kind:
+                qualifier = outer_kind
+            # Neither: the group is not a territorial qualifier at all (福岡県の
+            # 「市外局番を除く電気通信番号による発信については…を含む。」). Kept on
+            # the earlier reading so those four clauses do not change here.
             elif "除く" in inner:
                 qualifier = "exclude"
             elif "限る" in inner:
@@ -421,6 +439,45 @@ def _split_county_members(inner: str) -> list[tuple[str, str | None]]:
             return []
         out.append((name, member_inner))
     return out
+
+
+def county_qualifier_kind(inner: str) -> str | None:
+    """``"exclude"`` / ``"limit"`` by the group's depth-zero ending, else ``None``.
+
+    ``None`` means the group is not a territorial qualifier at all — 福岡県の
+    「市外局番を除く電気通信番号による発信については…を含む。」 mentions 除く but
+    ends with 含む.
+    """
+    outer = _depth_zero_text(inner).rstrip()
+    if re.search(r"除く。?$", outer):
+        return "exclude"
+    if re.search(r"限る。?$", outer):
+        return "limit"
+    return None
+
+
+def split_county_exclusion(inner: str) -> list[tuple[str, bool]] | None:
+    """Items of 「〇〇郡（…を除く。）」, each as ``(name_text, has_own_group)``.
+
+    ``name_text`` is what precedes the item's own parenthesis, if any: a whole
+    member (「酒々井町」), a member with its own qualifier (「大豊町（…に限る。）」
+    → 「大豊町」, True), or a member followed by a place inside it
+    (「木城町中之又」). Which of these a name is can only be decided against the
+    郡's member list, so that is left to the caller. ``None`` when the group does
+    not close with 「を除く。」 at depth zero.
+    """
+    body = inner.strip()
+    if county_qualifier_kind(body) != "exclude":
+        return None
+    body = re.sub(r"を除く。?\s*$", "", body)
+    out: list[tuple[str, bool]] = []
+    for chunk in _split_top_level_connectives(body):
+        span = _first_paren_span(chunk)
+        name = (chunk[: span[0]] if span else chunk).strip()
+        if not name:
+            return None
+        out.append((name, span is not None))
+    return out or None
 
 
 def _split_top_level_connectives(text: str) -> list[str]:

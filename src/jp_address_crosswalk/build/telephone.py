@@ -15,6 +15,7 @@ import polars as pl
 
 from ..logging_setup import get_logger, stage_context
 from ..normalize import normalize_conservative
+from ..sources.mic_area_code import county_qualifier_kind, split_county_exclusion
 from .common import BuildContext, bridge_id, candidate_group_id, finalize_bridge
 from .source_aliases import NameAlias
 
@@ -226,6 +227,48 @@ def _county_index(municipality: pl.DataFrame) -> dict[tuple[str, str], list[str]
     return {k: sorted(set(v)) for k, v in index.items()}
 
 
+def _county_exclusion_plan(
+    items: list[tuple[str, bool]],
+    pref: str,
+    county: str,
+    members: list[str],
+    index: dict[tuple[str, str], list[str]],
+) -> tuple[list[str], list[str]] | None:
+    """``(whole, partial)`` members of 「〇〇郡（…を除く。）」, or ``None``.
+
+    Each excluded item must resolve to exactly one member of that 郡:
+    a bare member name is excluded outright; a member carrying its own group
+    (「大豊町（…に限る。）」) or followed by a place (「木城町中之又」) loses only
+    part of its area, so it stays as partial. Anything that does not resolve —
+    a name outside the 郡, or two readings — makes the whole clause unreadable,
+    because dropping one item would silently widen the area.
+    """
+    in_county = set(members)
+    excluded: set[str] = set()
+    partial: set[str] = set()
+    for name, has_group in items:
+        n = normalize_conservative(name)
+        hit = (
+            set(index.get((pref, n), []))
+            | set(index.get((pref, normalize_conservative(county) + n), []))
+        ) & in_county
+        if len(hit) == 1:
+            (excluded if not has_group else partial).update(hit)
+            continue
+        if hit:
+            return None
+        codes, tail = _longest_prefix(name, pref, index)
+        codes_in = set(codes) & in_county
+        if len(codes_in) == 1 and tail:
+            partial.update(codes_in)
+            continue
+        return None
+    if excluded & partial:
+        return None
+    whole = sorted(in_county - excluded - partial)
+    return whole, sorted(partial)
+
+
 def _resolve_by_longest_prefix(
     text: str, pref: str, index: dict[tuple[str, str], list[str]]
 ) -> list[str]:
@@ -322,6 +365,77 @@ def build_telephone_bridges(
             # T5: a bare 郡 means every municipality in it.
             if not candidates and county and not name:
                 members = counties.get((pref, normalize_conservative(county)), [])
+                # 「印旛郡（酒々井町を除く。）」 is not a bare 郡. Expanding it whole
+                # put 酒々井町 into an area the source excludes it from — 41
+                # clauses nationally. Named members come out, members with a
+                # place carved out of them become partial, and a clause that
+                # cannot be read against the member list falls through to T7.
+                sub = r.get("sub_municipal_text") or ""
+                kind = county_qualifier_kind(sub) if sub else None
+                excl = split_county_exclusion(sub) if kind == "exclude" else None
+                unreadable = kind == "limit" or (kind == "exclude" and excl is None)
+                if members and excl is not None:
+                    plan = _county_exclusion_plan(excl, pref, county, members, index)
+                    if plan is not None:
+                        whole, partial = plan
+                        for lg in whole:
+                            muni_rows.append(
+                                {
+                                    "bridge_id": bridge_id(
+                                        "bridge_municipality_telephone", lg, code, "T5"
+                                    ),
+                                    "lg_code": lg, "numbering_area_code": code,
+                                    "direction": "telephone_to_municipality",
+                                    "relation_type": "child",
+                                    "match_method": "official_area_rule",
+                                    "matching_rule_id": "T5", "confidence": 0.95,
+                                    "candidate_group_id": None, "candidate_count": 1,
+                                    "coverage_type": "full",
+                                    "derivation": "expanded_from_county",
+                                    "mismatch_note": r.get("clause_raw"),
+                                }
+                            )
+                        for lg in partial:
+                            muni_rows.append(
+                                {
+                                    "bridge_id": bridge_id(
+                                        "bridge_municipality_telephone", lg, code, "T3"
+                                    ),
+                                    "lg_code": lg, "numbering_area_code": code,
+                                    "direction": "telephone_to_municipality",
+                                    "relation_type": "overlap",
+                                    "match_method": "official_area_rule",
+                                    "matching_rule_id": "T3", "confidence": 0.70,
+                                    "candidate_group_id": None, "candidate_count": 1,
+                                    "coverage_type": "partial",
+                                    "derivation": "expanded_from_county",
+                                    "mismatch_note": r.get("clause_raw"),
+                                }
+                            )
+                        continue
+                    unreadable = True
+                if members and unreadable:
+                    # Straight to T7. Letting an exclusion fall through would hand
+                    # 「酒々井町を除く。」 to the T3 prefix match below and assert
+                    # the one town the source excludes; a 「…に限る。」 that the
+                    # parser could not split into members (T4) reaches here too,
+                    # and expanding that whole is the same defect inverted.
+                    muni_rows.append(
+                        {
+                            "bridge_id": bridge_id(
+                                "bridge_municipality_telephone", None, code,
+                                r["coverage_id"],
+                            ),
+                            "lg_code": None, "numbering_area_code": code,
+                            "direction": "telephone_to_municipality",
+                            "relation_type": "unresolved", "match_method": "unresolved",
+                            "matching_rule_id": "T7", "confidence": 0.0,
+                            "candidate_group_id": None, "candidate_count": 0,
+                            "coverage_type": "unresolved", "derivation": None,
+                            "mismatch_note": r.get("clause_raw"),
+                        }
+                    )
+                    continue
                 if members:
                     for lg in members:
                         muni_rows.append(

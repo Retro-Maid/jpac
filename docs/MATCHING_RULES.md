@@ -177,7 +177,7 @@ verbatim `exception_text`.
 | **T1** | Clause names a municipality with **no** qualifier, and that municipality resolves to exactly one `lg_code` | `child` | `official_area_rule` | 0.99 | `bridge_municipality_telephone`, `coverage_type='full'` |
 | **T3** | Clause carries 「〜を除く。」 or 「〜に限る。」 naming **sub-municipal** places | `overlap` | `official_area_rule` | 0.70 | `bridge_municipality_telephone`, `coverage_type='partial'`, `exception_text` verbatim. Never expanded to 町字. |
 | **T4** | Clause carries 「〜に限る。」 naming **whole municipalities** inside a 郡 | `child` | `official_area_rule` | 0.99 | Treated as T1 for each named municipality |
-| **T5** | Clause names a 郡 with no qualifier | `child` | `official_area_rule` | 0.95 | Expanded only to the municipalities of that 郡 |
+| **T5** | Clause names a 郡, bare or with 「〜を除く。」 | `child` | `official_area_rule` | 0.95 | Expanded only to the municipalities of that 郡. With 「〜を除く。」 (since 2.0.0): a member named outright is left out, a member losing only a place is T3 partial, and a clause whose items do not each resolve to exactly one member of that 郡 is T7 |
 | **T6** | Municipality name resolves ambiguously | `ambiguous` | `official_area_rule` | 0.50 | All candidates kept |
 | **T7** | Clause unparseable | `unresolved` | `unresolved` | 0.00 | `exception_text` kept verbatim for review |
 | **T1b** | Municipality name matches only after folding ヶ/ケ, **and** the folded name is unique in that prefecture | `child` | `official_area_rule` | 0.95 | MIC writes 袖ヶ浦市 / 鎌ヶ谷市 / 龍ヶ崎市 where ABR writes ケ |
