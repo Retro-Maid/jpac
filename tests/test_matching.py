@@ -13,6 +13,7 @@ import polars as pl
 import pytest
 import yaml
 
+from jp_address_crosswalk.build import telephone
 from jp_address_crosswalk.build.common import (
     BuildContext,
     assert_bridge_invariants,
@@ -343,3 +344,88 @@ class TestAreaTextParsing:
     def test_prefecture_carries_across_clauses(self):
         out = parse_area_text("001", "北海道江別市、札幌市")
         assert all(c["pref_name"] == "北海道" for c in out)
+
+    def test_outer_qualifier_wins_over_a_nested_one(self):
+        """「（…を除く。）に限る。」 is a limit. A fixed-width tail saw 除く."""
+        out = parse_area_text(
+            "385-2", "奈良県高市郡（明日香村及び高取町（越智、車木、寺崎及び丹生谷を除く。）に限る。）"
+        )
+        by_name = {c["municipality_name"]: c for c in out}
+        assert set(by_name) == {"明日香村", "高取町"}
+        assert by_name["明日香村"]["coverage_type"] == "full"
+        assert by_name["高取町"]["coverage_type"] == "partial"
+
+    def test_county_exclusion_keeps_the_excluded_names(self):
+        out = parse_area_text("250", "千葉県印旛郡（酒々井町を除く。）")
+        assert len(out) == 1
+        assert out[0]["county_name"] == "印旛郡"
+        assert out[0]["municipality_name"] is None
+        assert out[0]["qualifier"] == "exclude"
+
+
+class TestCountyExclusion:
+    """「〇〇郡（…を除く。）」 is not a bare 郡 (docs/MATCHING_RULES.md T5).
+
+    Expanding it whole asserted coverage the source explicitly denies — 41
+    clauses nationally, 309-2 carrying 大治町 against 「海部郡（大治町を除く。）」.
+    """
+
+    MUNI = pl.DataFrame(
+        [
+            ("122041", "千葉県", None, "船橋市", None),
+            ("123226", "千葉県", "印旛郡", "酒々井町", None),
+            ("123293", "千葉県", "印旛郡", "栄町", None),
+            ("454044", "宮崎県", "児湯郡", "木城町", None),
+            ("454052", "宮崎県", "児湯郡", "川南町", None),
+            ("393444", "高知県", "長岡郡", "大豊町", None),
+            ("393410", "高知県", "長岡郡", "本山町", None),
+        ],
+        schema=["lg_code", "pref", "county", "city", "ward"],
+        orient="row",
+    )
+
+    @classmethod
+    def bridge(cls, code, text):
+        cov = pl.DataFrame(parse_area_text(code, text))
+        area = pl.DataFrame(
+            [(code, "0", "0", text, "DE", "2026-03-01")],
+            schema=["numbering_area_code", "area_code", "area_code_raw",
+                    "area_text_raw", "local_digit_pattern", "current_as_of"],
+            orient="row",
+        )
+        tables = telephone.prepare_telephone(area, cov, "snap_test", "2026-08-23")
+        addr = pl.DataFrame({"address_id": ["a1"]})
+        muni, _ = telephone.build_telephone_bridges(
+            addr, cls.MUNI, tables["telephone_area_coverage"], CTX
+        )
+        return {
+            r["lg_code"]: (r["coverage_type"], r["matching_rule_id"])
+            for r in muni.iter_rows(named=True)
+        }
+
+    def test_named_member_is_left_out(self):
+        got = self.bridge("250", "千葉県印旛郡（酒々井町を除く。）")
+        assert got == {"123293": ("full", "T5")}
+
+    def test_member_losing_a_place_is_partial_not_dropped(self):
+        got = self.bridge("639", "宮崎県児湯郡（木城町中之又を除く。）")
+        assert got == {"454044": ("partial", "T3"), "454052": ("full", "T5")}
+
+    def test_member_with_its_own_group_is_partial(self):
+        """The common real shape: 長岡郡, 網走郡, 田村郡, 伊都郡, 西伯郡, 玉名郡…"""
+        got = self.bridge("558", "高知県長岡郡（大豊町（馬瀬、角茂谷、久寿軒及び戸手野に限る。）を除く。）")
+        assert got == {"393444": ("partial", "T3"), "393410": ("full", "T5")}
+
+    def test_limit_the_parser_could_not_split_is_unresolved(self):
+        """「…に限る。」 reaching T5 must not expand whole — the same defect inverted."""
+        got = self.bridge("250", "千葉県印旛郡（酒々井町中川に限る。）")
+        assert got == {None: ("unresolved", "T7")}
+
+    def test_unreadable_exclusion_is_unresolved_not_expanded(self):
+        """A name outside the 郡 must not be dropped silently — that widens the area."""
+        got = self.bridge("250", "千葉県印旛郡（船橋市を除く。）")
+        assert got == {None: ("unresolved", "T7")}
+
+    def test_bare_county_still_expands(self):
+        got = self.bridge("250", "千葉県印旛郡")
+        assert got == {"123226": ("full", "T5"), "123293": ("full", "T5")}
