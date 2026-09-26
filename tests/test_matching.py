@@ -355,6 +355,19 @@ class TestAreaTextParsing:
         assert by_name["明日香村"]["coverage_type"] == "full"
         assert by_name["高取町"]["coverage_type"] == "partial"
 
+    def test_dialing_note_is_not_an_exclusion(self):
+        """福岡の4条文: the group says how to dial, not what land is covered."""
+        out = parse_area_text(
+            "577",
+            "福岡県糸島市（市外局番を除く電気通信番号による発信については、"
+            "番号区画コード578の番号区画を含む。）",
+        )
+        assert len(out) == 1
+        assert out[0]["municipality_name"] == "糸島市"
+        assert out[0]["coverage_type"] == "full"
+        assert out[0]["qualifier"] == "none"
+        assert "番号区画コード578" in out[0]["exception_text"]
+
     def test_county_exclusion_keeps_the_excluded_names(self):
         out = parse_area_text("250", "千葉県印旛郡（酒々井町を除く。）")
         assert len(out) == 1

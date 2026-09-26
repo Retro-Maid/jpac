@@ -216,6 +216,10 @@ telephone:
     rationale: >-
       e.g. 北海道夕張市（富野を除く。） — the source does not enumerate 町字, so neither
       does this project. exception_text is preserved verbatim.
+      2.0.0: a group that only says how to dial between two areas
+      （「市外局番を除く電気通信番号による発信については、番号区画コード578の番号区画を
+      含む。」, four 福岡県 clauses） is not a qualifier. Its 除く made 糸島市, 鞍手町 and
+      小竹町 partial when the source names them whole; they are now T1.
   - id: T4
     description: "Clause carries に限る naming WHOLE municipalities inside a 郡"
     relation_type: child
