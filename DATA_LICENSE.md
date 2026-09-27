@@ -187,6 +187,21 @@ them. Terms were read verbatim and reviewed by a person — N02 and e-Stat on 20
   clipped to 3次 cells unsimplified for deciding a click (`docs/POLICY.md` §3.2). That is
   processed data under the terms above, never described as 行政区域.
 
+### 総務省統計局 — 廃置分合等情報（e-Stat）
+
+- **Terms:** 政府統計の総合窓口(e-Stat)利用規約 (政府標準利用規約 第2.0版 準拠, stated to be
+  compatible with CC BY 4.0). Unlike the boundary data above, this is e-Stat's own
+  content and the terms apply directly. <https://www.e-stat.go.jp/terms-of-use>
+  Reviewed by a person on 2026-09-27
+  ([`docs/LICENSE_REVIEW_LINEAGE_2026_09.md`](docs/LICENSE_REVIEW_LINEAGE_2026_09.md)).
+- `required: false`. What is shipped is the publisher's rows as published
+  (`municipality_change_raw`) and the old→new code edges read from them
+  (`municipality_lineage_edge`) — processed data under the terms above.
+
+```
+「廃置分合等情報」（政府統計の総合窓口（e-Stat）、https://www.e-stat.go.jp/）を加工して作成
+```
+
 ### Background map of the static map — OpenStreetMap
 
 The map in `site/` displays © OpenStreetMap contributors raster tiles as a background

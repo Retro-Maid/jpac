@@ -22,9 +22,11 @@ spec §45）。だから「この payload をいつ取得したか」をビル�
 | `mlit_ksj_n02`（国土数値情報 鉄道 N02 2025年版） | **2026-09-05** | `STATION_JOIN_PREFLIGHT.md`（同日に取得して実測） |
 | `estat_boundary`（令和2年国勢調査 小地域境界 47ファイル） | **2026-09-05** | `STATION_JOIN_PREFLIGHT.md`（同日に全47県を取得して実測） |
 | `mlit_ksj_p11`（国土数値情報 バス停留所 P11 令和4年度版） | **2026-09-17** | `LICENSE_REVIEW_P11_2026_09.md`（同日の逐語読みと取得） |
+| `estat_municipality_change`（e-Stat 廃置分合等情報 CSV 3本） | **2026-09-27** | `LICENSE_REVIEW_LINEAGE_2026_09.md` §4.1（同日に取得したクエリ URL と SHA-256） |
 
 - **attested_by**: `retro.maid.itworker@gmail.com`
-- **attested_on**: 2026-09-23
+- **attested_on**: 2026-09-23（`estat_municipality_change` の行のみ 2026-09-27。メンテナが同日の
+  作業セッションで署名を指示し、その指示に基づいて記入した）
 
 ## 根拠を2つ置いている理由
 

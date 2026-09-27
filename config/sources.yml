@@ -768,6 +768,76 @@ sources:
       - name: "3次〜6次メッシュ境界"
         reason: "行政区域に対応しない。"
 
+  estat_municipality_change:
+    provider: "総務省統計局"
+    provider_en: "Statistics Bureau of Japan"
+    required: false
+    landing_page: "https://www.e-stat.go.jp/municipalities/cities/absorption-separation-of-municipalities"
+    discovery:
+      method: search_query_csv
+      # CSV は検索のたびに生成される。版は無く、クエリの URL そのものが来歴になる。
+      # 全文は docs/LICENSE_REVIEW_LINEAGE_2026_09.md §4.1。3本は同じ条件で、新設・廃止の
+      # 2本は hs_flg を1つ足しただけ。3本は同じ時点で取る（build/municipality_change.py が
+      # 取得時点のずれを検査して止める）。
+      query: "境界変更を除く全事由・全都道府県・1970-01-01〜2028-12-31、CSV（UTF-8、BOM なし）"
+      resources:
+        changes:
+          extra_params: ""
+          observed_sha256: "8abb622827b01041e2919d8d786c940a29384b9342551c19ad01f2bd73e3da0c"
+          observed_bytes: 978849
+        changes_created:
+          extra_params: "hs_flg%5B1%5D=1"
+          observed_sha256: "ec572a1cdb929b72fa4a494298520b8867c198cfa94d7b0351857583df796431"
+          observed_bytes: 218467
+        changes_abolished:
+          extra_params: "hs_flg%5B2%5D=2"
+          observed_sha256: "8e8e0568fbab0f88260399bc4a571e5ad1f3b57c1a5ea2a016968eec0aac2987"
+          observed_bytes: 690789
+    license:
+      name: "政府統計の総合窓口(e-Stat)利用規約（政府標準利用規約 第2.0版 準拠 / CC BY 4.0 互換）"
+      url: "https://www.e-stat.go.jp/terms-of-use"
+      reviewed_on: "2026-09-27"
+      reviewed_by: "jp-address-crosswalk"
+      review_2026_09_27: >-
+        2026-09-27、メンテナが作業セッションで署名を指示した（docs/LICENSE_REVIEW_LINEAGE_2026_09.md
+        §1）。廃置分合等情報は e-Stat 本体のコンテンツで、境界データのように統計地理情報
+        システムの機能利用規約を経由せず、直接 e-Stat 利用規約が適用される。同規約は複製・
+        公衆送信・翻案・商用利用を認め、CC BY 4.0 と互換である旨を明記している。同日、規約
+        ページの本文ハッシュを snapshot.license_text_hash_bytes() で再計算し、estat_boundary の
+        ベースラインと一致することを確かめた。
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。編集・加工した場合は出典とは別に加工した旨を記載し、あたかも国（又は
+          府省等）が作成したかのような態様で公表・利用しない。
+      attribution:
+        unmodified: |
+          出典：「廃置分合等情報」（政府統計の総合窓口（e-Stat）、https://www.e-stat.go.jp/）
+        processed: |
+          「廃置分合等情報」（政府統計の総合窓口（e-Stat）、https://www.e-stat.go.jp/）を加工して作成
+      artifacts:
+        - role: primary_terms
+          name: "政府統計の総合窓口(e-Stat) 利用規約"
+          url: "https://www.e-stat.go.jp/terms-of-use"
+          text_sha256: "93c44dc2fc4de2f33789c71ca80bceac80877ee42f4b707a69d345bc3ff28fa1"
+          text_sha256_decoded: "93c44dc2fc4de2f33789c71ca80bceac80877ee42f4b707a69d345bc3ff28fa1"
+          note: >-
+            estat_boundary と同じページ・同じハッシュ。2026-09-27 に実ページから再計算して
+            一致を確かめた（charset は応答ヘッダが UTF-8 と宣言しているので、2つの値は同じ）。
+    datasets:
+      municipality_change:
+        title: "廃置分合等情報（境界変更を除く）"
+        encoding: utf-8
+        rows_observed: 3739
+        note: >-
+          旧→新の5桁コードは改正事由の本文に「名称(コード)」の形で書かれている。
+          build/municipality_change.py が文型ごとの規則で厳密に読み、読めない行は未解決として
+          残す（docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md）。
+    excluded_datasets:
+      - name: "境界変更の行"
+        reason: "市区町村コードは変わらない。系譜の辺にならない。"
+
 http:
   timeout_connect_s: 15
   timeout_read_s: 120

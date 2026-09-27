@@ -83,6 +83,7 @@ from .sources import mlit_ksj_p11 as p11_source
 from .sources.abr import AbrSource
 from .sources.base import DiscoveredResource, Discovery
 from .sources.estat import EstatBoundarySource
+from .sources.estat_municipality_change import EstatMunicipalityChangeSource
 from .sources.japanpost import JapanPostSource
 from .sources.mic_area_code import MicAreaCodeSource
 from .sources.mic_number_assignment import MicNumberAssignmentSource
@@ -101,6 +102,8 @@ SOURCE_CLASSES = {
     "estat_boundary": EstatBoundarySource,
     "mlit_ksj_n02": MlitKsjN02Source,
     "mlit_ksj_p11": p11_source.MlitKsjP11Source,
+    # 市区町村の廃置分合。required: false で、無ければ署名の検査が skip になるだけ。
+    "estat_municipality_change": EstatMunicipalityChangeSource,
 }
 
 

@@ -1,8 +1,8 @@
 """e-Stat 廃置分合等情報 adapter（docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md）.
 
-**まだ登録していない。** ``SOURCE_CLASSES`` にも ``config/sources.yml`` にも無いので、
-この adapter は ``jpac build`` からは呼ばれない。登録にはライセンスの人による確認
-（``docs/LICENSE_REVIEW_LINEAGE_2026_09.md`` §1）と、取得側でのペイロードの受け入れが要る。
+ライセンスは 2026-09-27 に人が署名した（``docs/LICENSE_REVIEW_LINEAGE_2026_09.md`` §1）。
+``required: false`` で、ペイロードが無ければ ``jpac build`` はこのソースを飛ばし、署名の
+検査を ``skip`` として品質レポートに記録する。
 
 ペイロードは3本の CSV で、どれも同じ検索条件（境界変更を除く全事由・全都道府県・
 1970-01-01〜2028-12-31）の結果である。
