@@ -293,6 +293,18 @@ def build_change_tables(
         (r["effective_date_raw"], r["area_code_raw"])
         for r in abolished_rows.iter_rows(named=True)
     }
+    # 3本はリクエストのたびに生成されるので、別の日に取った組が混ざりうる。古い廃止
+    # ファイルは偽の存続の辺と誤った候補数を、表全体に黙って撒く。絞り込み2本の
+    # (施行日, コード) はすべて本体に無ければならない。
+    in_main = {
+        (r["effective_date_raw"], r["area_code_raw"]) for r in main.iter_rows(named=True)
+    }
+    stray = sorted((created | abolished) - in_main)
+    if stray:
+        raise ValueError(
+            f"新設・廃止の CSV に、本体に無い (施行日, コード) が {len(stray)} 件ある"
+            f"（例: {stray[:3]}）。3本を同じ時点で取り直すこと"
+        )
 
     raw_rows: list[dict] = []
     edges: list[dict] = []
@@ -359,7 +371,16 @@ def build_change_tables(
             pl.col("new_jis_code").map_elements(check_digit, return_dtype=pl.Utf8)
             .alias("new_lg_code"),
         )
-        .with_columns((pl.col("candidate_count") == 1).alias("is_unique_match"))
+        .with_columns(
+            (pl.col("candidate_count") == 1).alias("is_unique_match"),
+            # 辺を決める列から作る決定的な行 ID。発行元は辺に識別子を与えない。
+            pl.concat_str(
+                [pl.col(c).fill_null("\x00") for c in keys], separator="\x1f"
+            ).map_elements(
+                lambda v: "mle_" + hashlib.blake2s(v.encode("utf-8"), digest_size=12).hexdigest(),
+                return_dtype=pl.Utf8,
+            ).alias("edge_id"),
+        )
         .sort(["effective_date", "old_jis_code", "new_jis_code", "event_type"],
               nulls_last=True)
     )

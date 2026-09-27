@@ -35,7 +35,16 @@ def frame(rows: list[dict]) -> pl.DataFrame:
 
 
 def build(rows, created=(), abolished=()):
-    return build_change_tables(frame(rows), frame(list(created)), frame(list(abolished)))
+    """発行元では、新設・廃止に挙がるコードは本体にも自分の行を持つ。それを補う."""
+    have = {(r["effective_date_raw"], r["area_code_raw"]) for r in rows}
+    filler = [
+        row("", f["area_code_raw"], f["effective_date_raw"], "")
+        for f in [*created, *abolished]
+        if (f["effective_date_raw"], f["area_code_raw"]) not in have
+    ]
+    return build_change_tables(
+        frame([*rows, *filler]), frame(list(created)), frame(list(abolished))
+    )
 
 
 def edges_of(tables) -> set[tuple]:
@@ -51,7 +60,7 @@ class TestCheckDigit:
         ("13101", "131016"),  # 千代田区
         ("01100", "011002"),  # 札幌市
         ("22138", "221384"),  # 浜松市中央区
-        ("22135", "221350"),  # 浜松市北区。11 - r が 11 になる場合は下1桁の 0
+        ("22135", "221350"),  # 浜松市北区。r = 1 で 11 - r = 10、下1桁の 0
     ])
     def test_known_codes(self, jis5, lg):
         assert check_digit(jis5) == lg
@@ -201,7 +210,7 @@ class TestParsing:
         gone = [row("", "46521", "1973-04-01", "")]
         t = build([one, many], abolished=gone)
         assert edges_of(t) == {("46521", "46303", "county_change", 1)}
-        assert t["municipality_change_raw"]["parse_status"].to_list() == ["parsed", "unresolved"]
+        assert t["municipality_change_raw"]["parse_status"].to_list()[:2] == ["parsed", "unresolved"]
 
 
 class TestAttestedLineageGate:
@@ -272,3 +281,56 @@ def test_source_refuses_to_guess_without_all_three_files(tmp_path):
     })
     assert tables["municipality_change_raw"].height == 1
     assert tables["municipality_change_raw"]["hs_flag"][0] == "SH"
+
+
+def test_filter_files_from_another_day_are_refused():
+    """新設・廃止の CSV に本体に無い行があれば、3本の取得時点が揃っていない."""
+    r = row("編入合併", "14422", "2006-03-20", "津久井町(14422)が相模原市(14209)に編入")
+    stale = [row("", "99999", "2030-01-01", "")]
+    with pytest.raises(ValueError, match="本体に無い"):
+        build_change_tables(frame([r]), frame([]), frame(stale))
+
+
+def test_edge_id_is_deterministic_and_unique():
+    r = row("分離", "14116", "1986-11-03",
+            "戸塚区(14110)から分離し、栄区(14115)、泉区(14116)を新設")
+    a = build([r])["municipality_lineage_edge"]
+    b = build([r])["municipality_lineage_edge"]
+    assert a["edge_id"].to_list() == b["edge_id"].to_list()
+    assert a["edge_id"].n_unique() == a.height
+
+
+class TestPipelineGlue:
+    """``pipeline._build_lineage_tables``: 検査結果は非公開の表に置き、配布物に出さない."""
+
+    TABLES = build(
+        [row("区の再編", "22138", "2024-01-01",
+             "浜松市(22130)の区の再編 中区(22131)を中央区(22138)に再編")],
+        abolished=[row("", "22131", "2024-01-01", "")],
+    )
+
+    def run(self, tmp_path, yml: str, parsed=True):
+        from jp_address_crosswalk import pipeline
+
+        (tmp_path / "municipality_lineage.yml").write_text(yml, encoding="utf-8")
+        paths = SimpleNamespace(overrides=tmp_path)
+        outcome = SimpleNamespace(
+            parsed={"estat_municipality_change": self.TABLES} if parsed else {}
+        )
+        return pipeline._build_lineage_tables(paths, outcome, lambda *a: "snap_test")
+
+    def test_clean_attestation_passes(self, tmp_path):
+        out = self.run(tmp_path, 'transitions:\n  - old_lg_code: "221317"\n'
+                                 '    new_lg_code: "221384"\n    effective_date: 2024-01-01\n')
+        assert out["_lineage_gate"].height == 0
+        assert (out["municipality_lineage_edge"]["source_snapshot_id"] == "snap_test").all()
+        public = {k for k in out if not k.startswith("_")}
+        assert public == {"municipality_change_raw", "municipality_lineage_edge"}
+
+    def test_contradicting_attestation_fails(self, tmp_path):
+        out = self.run(tmp_path, 'transitions:\n  - old_lg_code: "221317"\n'
+                                 '    new_lg_code: "221392"\n    effective_date: 2024-01-01\n')
+        assert out["_lineage_gate"].height == 1
+
+    def test_absent_payload_produces_nothing(self, tmp_path):
+        assert self.run(tmp_path, "transitions: []\n", parsed=False) == {}
