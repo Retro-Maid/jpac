@@ -25,6 +25,7 @@ from .build import (
     canonical,
     diffing,
     mlit_bridge,
+    municipality_change,
     postal,
     quality,
     source_aliases,
@@ -82,6 +83,7 @@ from .sources import mlit_ksj_p11 as p11_source
 from .sources.abr import AbrSource
 from .sources.base import DiscoveredResource, Discovery
 from .sources.estat import EstatBoundarySource
+from .sources.estat_municipality_change import EstatMunicipalityChangeSource
 from .sources.japanpost import JapanPostSource
 from .sources.mic_area_code import MicAreaCodeSource
 from .sources.mic_number_assignment import MicNumberAssignmentSource
@@ -100,6 +102,8 @@ SOURCE_CLASSES = {
     "estat_boundary": EstatBoundarySource,
     "mlit_ksj_n02": MlitKsjN02Source,
     "mlit_ksj_p11": p11_source.MlitKsjP11Source,
+    # 市区町村の廃置分合。required: false で、無ければ署名の検査が skip になるだけ。
+    "estat_municipality_change": EstatMunicipalityChangeSource,
 }
 
 
@@ -547,6 +551,11 @@ def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str,
             paths, outcome, tables["municipality_version"], snapshot_for
         )
     )
+
+    # --- 市区町村の廃置分合 (docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md)
+    # Optional like the V2 sources. When present, the human-attested lineage file
+    # is checked against it; when absent, the check is reported as not run.
+    tables.update(_build_lineage_tables(paths, outcome, snapshot_for))
 
     # --- Provenance
     tables["source_snapshot"] = pl.DataFrame(
@@ -1150,6 +1159,32 @@ def _resolve_edition(spec: dict, observed: dict) -> tuple[str | None, str | None
     return version, published, origins.pop() if len(origins) == 1 else "mixed"
 
 
+def _build_lineage_tables(
+    paths: Paths, outcome: FetchOutcome, snapshot_for
+) -> dict[str, pl.DataFrame]:
+    """``municipality_change_raw`` / ``municipality_lineage_edge`` と、署名の検査結果.
+
+    検査結果は ``_lineage_gate``（非公開）に置き、品質ゲートが読む。ペイロードが
+    無ければ何も返さず、品質ゲートは検査を ``skip`` として記録する —— 黙って通すと
+    「検査した結果、問題が無かった」と区別できなくなる。I3 の挙動はここでは変えない。
+    """
+    parsed = outcome.parsed.get("estat_municipality_change")
+    if not parsed:
+        return {}
+    snap = snapshot_for("estat_municipality_change")
+    out = {
+        name: df.with_columns(pl.lit(snap).alias("source_snapshot_id"))
+        for name, df in parsed.items()
+    }
+    problems = municipality_change.check_attested_lineage(
+        out["municipality_lineage_edge"], _load_lineage_document(paths)
+    )
+    out["_lineage_gate"] = pl.DataFrame(
+        problems, schema={"entry": pl.Utf8, "problem": pl.Utf8}
+    )
+    return out
+
+
 def _load_municipality_lineage(paths: Paths) -> dict[str, str]:
     path = paths.overrides / "municipality_lineage.yml"
     if not path.exists():
@@ -1380,6 +1415,22 @@ def export(
             "observed": invariant_failures,
             "limit": invariant_limit,
             "status": "pass" if invariant_failures <= invariant_limit else "fail",
+        }
+    )
+    lineage_gate = tables.get("_lineage_gate")
+    report.thresholds.append(
+        {
+            "check": "attested_lineage_matches_official",
+            "reason": "e-Stat 廃置分合等情報のペイロードが無いため未検査",
+            "status": "skip",
+        }
+        if lineage_gate is None
+        else {
+            "check": "attested_lineage_matches_official",
+            "observed": lineage_gate.height,
+            "limit": 0,
+            "problems": [f"{r['entry']}: {r['problem']}" for r in lineage_gate.iter_rows(named=True)],
+            "status": "pass" if lineage_gate.height == 0 else "fail",
         }
     )
     report.thresholds.append(

@@ -3,8 +3,10 @@
 -- このファイルは手書きではありません。出荷済みの成果物からそのまま抽出し、
 -- 読みやすいように改行だけを入れたものです。定義そのものは一切変えていません。
 --
---   抽出元ビルド: v2.0.0+data-2026-09-17 (built_at 2026-09-17T06:53:02+09:00)
---   内訳: テーブル 37 / ビュー 9 / 索引 33（PRIMARY KEY の自動索引を除く）
+--   抽出元ビルド: v2.0.0+data-2026-09-17 (built_at 2026-09-17T06:53:02+09:00)。
+--     municipality_change_raw / municipality_lineage_edge の2表は 2.0.1+data-2026-09-27 の
+--     開発ビルドから同じ方法で抽出して足した（e-Stat 廃置分合等情報の受け入れ）
+--   内訳: テーブル 39 / ビュー 9 / 索引 33（PRIMARY KEY の自動索引を除く）
 --
 --   ビュー9本のうち6本は `*_v1` の互換ビューです。v2.0.0 で端点列の名前が変わり、
 --   `bridge_municipality_postal` は2つに分かれました。旧い名前で読みたいクエリは
@@ -695,6 +697,44 @@ CREATE TABLE "municipality" (
   "lg_code" TEXT PRIMARY KEY,
   "jis_city_code" TEXT,
   "first_observed_snapshot_id" TEXT
+);
+
+CREATE TABLE "municipality_change_raw" (
+  "row_ordinal" INTEGER PRIMARY KEY,
+  "event_pattern_raw" TEXT,
+  "subprefecture_county_raw" TEXT,
+  "subprefecture_county_kana_raw" TEXT,
+  "area_code_raw" TEXT,
+  "pref_raw" TEXT,
+  "parent_raw" TEXT,
+  "parent_kana_raw" TEXT,
+  "municipality_raw" TEXT,
+  "municipality_kana_raw" TEXT,
+  "effective_date_raw" TEXT,
+  "reason_raw" TEXT,
+  "notice_date_raw" TEXT,
+  "notice_number_raw" TEXT,
+  "row_sha256" TEXT,
+  "hs_flag" TEXT,
+  "parse_status" TEXT,
+  "unresolved_reason" TEXT,
+  "source_snapshot_id" TEXT
+);
+
+CREATE TABLE "municipality_lineage_edge" (
+  "effective_date" TEXT,
+  "old_jis_code" TEXT,
+  "new_jis_code" TEXT,
+  "event_type" TEXT,
+  "area_qualifier_raw" TEXT,
+  "parse_rule_id" TEXT,
+  "source_row_ordinals" TEXT,
+  "candidate_count" INTEGER,
+  "old_lg_code" TEXT,
+  "new_lg_code" TEXT,
+  "is_unique_match" INTEGER,
+  "edge_id" TEXT PRIMARY KEY,
+  "source_snapshot_id" TEXT
 );
 
 CREATE TABLE "municipality_version" (

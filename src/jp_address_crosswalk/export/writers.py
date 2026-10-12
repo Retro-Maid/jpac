@@ -73,6 +73,9 @@ SORT_KEYS: dict[str, list[str]] = {
     ],
     "p11_bus_stop": ["p11_stop_id"],
     "bridge_bus_stop_municipality": ["p11_stop_id", "boundary_jis_city_code"],
+    # 市区町村の廃置分合（未登録。docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md）
+    "municipality_change_raw": ["row_ordinal"],
+    "municipality_lineage_edge": ["edge_id"],
 }
 
 # Columns that must never be written as a numeric type (docs/POLICY.md §8).
@@ -526,6 +529,11 @@ PRIMARY_KEYS = {
     # (name, operator, coordinates) collides 12 times nationwide
     # (src/jp_address_crosswalk/sources/mlit_ksj_p11.py).
     "p11_bus_stop": "p11_stop_id",
+    # 発行元の CSV の行番号。1ビルドは1つの取得断面だけを持つ。全列が同じ行が発行元に
+    # 2組あるので、行の中身は主キーにならない。
+    "municipality_change_raw": "row_ordinal",
+    # 辺を決める列（施行日・旧・新・事由・区域の注記）から作った決定的な ID。
+    "municipality_lineage_edge": "edge_id",
     "address_lineage": "lineage_id", "address_history": "history_id",
     "address_rsdt_variant": "rsdt_variant_id",
     **{b: "bridge_id" for b in [

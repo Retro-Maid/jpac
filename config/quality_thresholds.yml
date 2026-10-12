@@ -132,6 +132,23 @@ approved_row_count_changes:
       gis_terms, caveats_pdf, definition_pdf and catalog_discrepancy. These are
       the artifacts whose baselines docs/LICENSE_REVIEW_2026_09.md and
       docs/LICENSE_REVIEW_P11_2026_09.md ask a human to review.
+  # 2026-09-27: e-Stat 廃置分合等情報（estat_municipality_change）の受け入れ。上の
+  # 9 → 18 は v1.0.0 断面からの一跳びを記録したもので、18 は v2.0.1 のリリースが基準に
+  # なった値である。ここはそこからの次の一跳び。
+  - table: snapshot_license_artifact
+    from_rows: 18
+    to_rows: 19
+    tolerance_rows: 0
+    attested_by: retro.maid.itworker@gmail.com
+    attested_on: "2026-09-27"
+    rationale: >-
+      +1 terms document: estat_municipality_change contributes one primary_terms
+      artifact (the e-Stat 利用規約, the same page and hash as estat_boundary,
+      re-verified against the live page on 2026-09-27). The table holds 18 rows,
+      so a single added source exceeds the 5% limit by construction; the limit is
+      left as it is and only this exact transition is approved. Licence review:
+      docs/LICENSE_REVIEW_LINEAGE_2026_09.md §1. Approved by the maintainer in the
+      2026-09-27 working session.
 
 rationale: >-
   exact_rate_rise_points_without_rule_bump exists because a sudden jump in exact matches
