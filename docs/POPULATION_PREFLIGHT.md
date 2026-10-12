@@ -185,9 +185,9 @@ jpac に人口を載せるための取得元・形式・実測を記録する。
 
 | テーブル | 主キー | 中身 |
 |---|---|---|
-| `census_population_raw` | `(source_snapshot_id, table_id, row_ordinal)` | 第1-1表の1行 = 1行。地域識別コード・地域コード・地域名と全セルを `*_raw` の文字列で持つ。`9` と `a` の行も消さない。面積と人口密度の列は持たない |
+| `census_population_raw` | `(table_id, row_ordinal)` | 第1-1表の1行 = 1行。地域識別コード・地域コード・地域名と全セルを `*_raw` の文字列で持つ。`9` と `a` の行も消さない。面積と人口密度の列は持たない |
 | `census_population_municipality` | `(census_year, lg_code)` | 1,918行。人口（総数・男・女）、世帯数（総数・一般・施設等）、世帯人員（同）、2020年の人口と世帯数（組替）。`area_level`（地域識別コード）。北方領土の6行は値を NULL にし、`value_status = 'not_enumerated'` |
-| `census_population_age` | `(census_year, lg_code, nationality, sex, age_class)` | 第2-7表を縦持ちに。年齢21区分と不詳。再掲と構成比は持たない（区分から再計算できるので） |
+| `census_population_age` | `(census_year, region_key, nationality_raw, sex_raw, age_class_raw)` | 第2-7表を縦持ちに（538,824行）。全地域を持ち、現行の市区町村の行だけ `lg_code` を持つ（2000年の市区町村と集計行は NULL）。`region_key` は（階層, 2000年の地域コード, 2025年の地域コード）で一意。年齢21区分と不詳。再掲と構成比は持たない（区分から再計算できるので） |
 | `census_population_numbering_area` | `(census_year, numbering_area_code)` | 582行。確実な301区画だけ値を持ち、残りは NULL と `value_status = 'partial_municipality'` |
 
 - 値の列は整数。`-` は §2.3 のとおり、件数では 0、率では NULL。元の文字列は raw 層に残る。
