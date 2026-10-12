@@ -50,10 +50,18 @@ def _col_index(ref: str) -> int:
 
 
 def _text(el: ET.Element | None) -> str:
-    """``<si>`` / ``<is>`` の文字列。書式つきの断片（``<r><t>``）も順に連結する."""
+    """``<si>`` / ``<is>`` の文字列。書式つきの断片（``<r><t>``）も順に連結する.
+
+    直下の ``<t>`` と ``<r><t>`` だけを読む。``<rPh><t>`` はふりがなで、拾うと
+    「泊村トマリムラ」のように本文へ混ざる。
+    """
     if el is None:
         return ""
-    return "".join(t.text or "" for t in el.iter(f"{{{_NS['m']}}}t"))
+    t = f"{{{_NS['m']}}}t"
+    parts = el.findall(t) + el.findall(f"{{{_NS['m']}}}r/{t}")
+    if el.find(t) is not None and el.find(f"{{{_NS['m']}}}r") is not None:
+        raise ValueError("<t> と <r> が混在する文字列は順序を保てないので読まない")
+    return "".join(p.text or "" for p in parts)
 
 
 def read_xlsx_rows(data: bytes) -> list[list[str | None]]:
@@ -498,6 +506,12 @@ def consistency_problems(raw: pl.DataFrame, age: pl.DataFrame | None = None) -> 
         problems.append(f"00000: 都道府県の合計 {sum(pref_rows.values())} ≠ 全国 {national}")
 
     if age is not None:
+        only_t01 = set(raw["region_key"]) - set(age["region_key"])
+        only_t07 = set(age["region_key"]) - set(raw["region_key"])
+        for k in sorted(only_t01):
+            problems.append(f"{k}: 第1-1表にあって第2-7表に無い地域")
+        for k in sorted(only_t07):
+            problems.append(f"{k}: 第2-7表にあって第1-1表に無い地域")
         a = age.filter(pl.col("area_level_raw").is_in(MUNICIPAL_LEVELS)).filter(
             (pl.col("nationality_raw") == "0_国籍総数") & (pl.col("sex_raw") == "0_総数")
         ).group_by("area_code_2025_raw").agg(pl.col("population").sum())
@@ -557,8 +571,8 @@ def numbering_area_population(
 ) -> pl.DataFrame:
     """``census_population_numbering_area``: 番号区画ごとの人口. **按分しない.**
 
-    区画に親（政令市）が丸ごと含まれ、その区も載るときは親の行を外す（区の合計 = 親
-    なので、区の行だけで同じ範囲を表す）。残る行がすべて ``child`` で、どの市区町村にも人口が
+    区画に親（政令市）が丸ごと含まれ、その区も載るときは区の行を外し、親の値を使う
+    （区は親の内側にある）。残る行がすべて ``child`` で、どの市区町村にも人口が
     あるときだけ和を出す。そうでなければ NULL と理由。
 
     区画の構成が欠けていないことは、ブリッジの作り方に頼っている。条文を市区町村に
@@ -573,25 +587,34 @@ def numbering_area_population(
     }
     b = bridge_tel.select("numbering_area_code", "lg_code", "relation_type")
     b = b.with_columns(
-        pl.col("lg_code").replace_strict(parent_of, default=None).alias("_parent")
+        pl.col("lg_code").replace_strict(parent_of, default=None, return_dtype=pl.Utf8)
+        .alias("_parent")
     )
-    wards_present = b.filter(pl.col("_parent").is_not_null()).select(
-        "numbering_area_code", pl.col("_parent").alias("lg_code")
-    ).unique().with_columns(pl.lit(True).alias("_covered_by_wards"))
-    # 外してよいのは、親が丸ごと含まれる（child）ときだけ。親が overlap なら、市の
-    # どの部分が区画に入るかは区の行が言い尽くしているとは限らない（条文が区ではなく
-    # 町名で切ることがある）ので、親の行を残して区画を partial のままにする。
-    b = b.join(wards_present, on=["numbering_area_code", "lg_code"], how="left").filter(
-        pl.col("_covered_by_wards").is_null() | (pl.col("relation_type") != "child")
+    # 親が丸ごと含まれる（child）区画では、その区の child の行は親に含まれるので外し、
+    # 親の値だけを使う。区が全部載っているかに頼らない（一部しか載らなくても二重にも
+    # 過小にもならない）。区の行が child でなければ親と食い違うので残し、区画は
+    # partial になる。親が overlap なら何も外さない —— 条文が区ではなく町名で切る
+    # ことがあり、区の行だけでは区画の範囲を言い尽くせないので、区画は partial になる。
+    whole_parents = b.filter(pl.col("relation_type") == "child").select(
+        "numbering_area_code", pl.col("lg_code").alias("_parent")
+    ).with_columns(pl.lit(True).alias("_parent_is_whole"))
+    b = b.join(whole_parents, on=["numbering_area_code", "_parent"], how="left").filter(
+        ~(pl.col("_parent_is_whole").fill_null(False) & (pl.col("relation_type") == "child"))
     ).join(
         municipal.select("lg_code", "value_status", *NUMBERING_AREA_VALUES),
         on="lg_code", how="left",
     )
     agg = b.group_by("numbering_area_code").agg(
         pl.len().alias("municipality_count"),
-        pl.col("relation_type").is_in(["unresolved", "ambiguous"]).any().alias("_unresolved"),
-        (pl.col("relation_type") == "child").all().alias("_all_child"),
-        (pl.col("value_status") == "published").all().alias("_all_published"),
+        # NULL を無視させない。lg_code が無い行や、人口の表に無い市区町村が混ざれば、
+        # 区画は確実とは言えない（polars の all() は既定で NULL を飛ばす）。
+        (
+            pl.col("relation_type").is_in(["unresolved", "ambiguous"])
+            | pl.col("lg_code").is_null() | pl.col("value_status").is_null()
+        ).any().alias("_unresolved"),
+        (pl.col("relation_type") == "child").all(ignore_nulls=False).alias("_all_child"),
+        (pl.col("value_status") == "published").all(ignore_nulls=False)
+        .alias("_all_published"),
         *[pl.col(c).sum().alias(c) for c in NUMBERING_AREA_VALUES],
     )
     if areas is not None:

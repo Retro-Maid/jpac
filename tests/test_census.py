@@ -147,6 +147,16 @@ class TestRead:
         with pytest.raises(census.CensusLayoutError):
             census.parse_t01(xlsx(rows))
 
+    def test_furigana_runs_are_not_read_into_the_text(self):
+        ns = "http://schemas.openxmlformats.org/spreadsheetml/2006/main"
+        from xml.etree import ElementTree as ET
+        si = ET.fromstring(
+            f'<si xmlns="{ns}"><t>泊村</t><rPh sb="0" eb="2"><t>トマリムラ</t></rPh></si>'
+        )
+        assert census._text(si) == "泊村"
+        rich = ET.fromstring(f'<si xmlns="{ns}"><r><t>泊</t></r><r><t>村</t></r></si>')
+        assert census._text(rich) == "泊村"
+
     def test_a_row_with_values_but_no_level_code_stops(self):
         rows = t01_rows(NATIONAL)
         rows.append([None, "01_x", "01999", None, "01_x", "01999", "謎の地域", 1])
@@ -259,6 +269,34 @@ class TestNumberingArea:
                          ("001", "011029", "child"), ("001", "014036", "child")])
         out = census.numbering_area_population(m, b, MUNICIPALITY, raw).row(0, named=True)
         assert out["population_total"] == 700   # 札幌市 600 + 泊村 100。1,300 ではない
+
+    def test_a_whole_parent_with_only_some_wards_listed_uses_the_parent(self, raw):
+        """区が一部しか載らなくても、親の値を使う。区の和（過小）にも親+区（二重）にもしない."""
+        m = census.municipality_population(raw, MUNICIPALITY)
+        b = self.bridge([("004", "011002", "child"), ("004", "011011", "child")])
+        out = census.numbering_area_population(m, b, MUNICIPALITY, raw).row(0, named=True)
+        assert out["population_total"] == 600
+        assert out["value_status"] == "complete"
+
+    def test_a_member_missing_from_the_census_table_is_not_skipped(self, raw):
+        """polars の all() は NULL を飛ばす。人口の表に無い市区町村を complete に混ぜない."""
+        m = census.municipality_population(raw, MUNICIPALITY).filter(
+            pl.col("lg_code") != "014036"
+        )
+        b = self.bridge([("005", "012025", "child"), ("005", "014036", "child")])
+        out = census.numbering_area_population(m, b, MUNICIPALITY, raw).row(0, named=True)
+        assert out["value_status"] == "unresolved_member"
+        assert out["population_total"] is None
+
+    def test_works_without_any_wards(self):
+        rows = [r for r in NATIONAL if r[0] not in ("0", "1")]
+        rows = [r if r[1] != "01000" else ["a", "01000", r[2], None, vals(400, 200, 200)]
+                for r in rows]
+        raw = census.parse_t01(xlsx(t01_rows(rows)))
+        m = census.municipality_population(raw, MUNICIPALITY)
+        b = self.bridge([("011", "012025", "child")])
+        out = census.numbering_area_population(m, b, MUNICIPALITY, raw).row(0, named=True)
+        assert out["population_total"] == 300
 
     def test_a_partial_parent_is_not_replaced_by_its_wards(self, raw):
         """親が overlap なら、区がすべて child でも親の行を外さない。条文が区ではなく
@@ -377,6 +415,8 @@ class TestAge:
         age, _summary = census.parse_t07(xlsx(t07_rows([("3", "01403", "0090_泊村", ages(99))])))
         problems = census.consistency_problems(raw, age)
         assert any("01403" in p and "第2-7表" in p for p in problems)
+        # 第2-7表には泊村しか無いので、第1-1表の他の地域が欠けとして挙がる
+        assert any("01202" in p and "第2-7表に無い地域" in p for p in problems)
 
 
 class TestSqlite:
