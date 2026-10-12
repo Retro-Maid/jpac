@@ -57,6 +57,21 @@ ATTESTED: dict[str, tuple[str, str]] = {
     "mlit_ksj_p11": (
         "2026-09-17", "docs/LICENSE_REVIEW_P11_2026_09.md（同日の逐語読みと取得）",
     ),
+    "estat_municipality_change": (
+        "2026-09-27",
+        "docs/LICENSE_REVIEW_LINEAGE_2026_09.md §4.1（同日に取得したクエリ URL と SHA-256）",
+    ),
+    "estat_census_2025": (
+        "2026-10-12",
+        "docs/POPULATION_PREFLIGHT.md §1.1（同日に取得した statInfId と SHA-256）",
+    ),
+}
+
+# 署名した日が ATTESTED_ON と違うソース。後から足したソースの署名を、2026-09-23 に
+# したことにしないため。
+ATTESTED_ON_BY_SOURCE: dict[str, str] = {
+    "estat_municipality_change": "2026-09-27",
+    "estat_census_2025": "2026-10-12",
 }
 
 HEADER = """\
@@ -124,7 +139,8 @@ def main(check_only: bool, raw: Path = RAW) -> int:
             stamps[f.stem] = ts.isoformat(timespec="seconds")
 
         body = HEADER.format(
-            source=source, evidence=evidence, date=date, by=ATTESTED_BY, on=ATTESTED_ON
+            source=source, evidence=evidence, date=date, by=ATTESTED_BY,
+            on=ATTESTED_ON_BY_SOURCE.get(source, ATTESTED_ON),
         ) + "".join(
             f"  {stem}:\n    downloaded_at: \"{ts}\"\n"
             for stem, ts in sorted(stamps.items())

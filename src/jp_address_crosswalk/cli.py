@@ -18,7 +18,7 @@ import typer
 from . import __version__
 from .errors import JpacError
 from .logging_setup import configure, get_logger
-from .pipeline import Paths, rebuild_offline, release_artifacts
+from .pipeline import TABLES_ZIP_NAME, Paths, rebuild_offline, release_artifacts
 from .pipeline import build as build_tables
 from .pipeline import export as export_tables
 
@@ -225,6 +225,9 @@ def export(
     }
     if not tables:
         _abort(f"export: no parquet tables in {p.parquet}", "run `jpac build` first")
+    writers.write_tables_zip(
+        sorted(p.parquet.glob("*.parquet")), p.dist / TABLES_ZIP_NAME
+    )
     flat = writers.build_flat_view(tables, accepted_only=True)
     flat_all = writers.build_flat_view(tables, accepted_only=False)
     flat.write_parquet(p.dist / "jp_address_crosswalk.parquet", compression="zstd")

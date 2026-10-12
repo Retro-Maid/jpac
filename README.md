@@ -13,8 +13,8 @@
 </p>
 
 <p align="center">
-  <sub>地図：クリックした地点の市区町村・緯度経度・メッシュコードと、その市区町村の駅・郵便番号・市外局番が出ます（ブラウザだけで動きます）<br>
-  データ：Parquet 35.2 MB ／ CSV.gz 41.3 MB ／ SQLite 1.95 GiB</sub>
+  <sub>地図：クリックした地点の市区町村・緯度経度・メッシュコードと、その市区町村の駅・郵便番号・市外局番・人口が出ます（ブラウザだけで動きます）<br>
+  データ：Parquet 35.2 MB ／ CSV.gz 41.3 MB ／ SQLite 2.09 GiB ／ テーブル別 Parquet 177.8 MB</sub>
 </p>
 
 ---
@@ -25,7 +25,7 @@
 |---|---|
 | 日本の「住所」を | デジタル庁が定める町字（「西新宿一丁目」までの単位）を、住所の基準として扱います |
 | 横断的に紐づける | 郵便番号・市外局番・国土交通省コードとの対応を、どの方向からでも辿れます。郵便番号から住所へも、市外局番から郵便番号へも |
-| データ群 | 1枚の表ではありません。28のテーブルからなり、対応と一緒にその根拠も保持します |
+| データ群 | 1枚の表ではありません。44のテーブルからなり、対応と一緒にその根拠も保持します |
 
 どこか1つの役所だけでは答えられない問いに答えるためのデータです。
 
@@ -33,22 +33,25 @@
 - 旧郵便番号 → 現行の郵便番号 → 住所 → 国土交通省コード
 - 郵便番号 → 市外局番の候補 ／ 市外局番 → 番号区画 → 市区町村 → 郵便番号
 - 国土交通省コード → 住所 → 代表点の緯度経度
+- 市区町村 → 人口・世帯数・年齢別人口（国勢調査 令和7年） ／ 旧い市区町村コード → 現行のコード
 
 [クイックスタート](#クイックスタート) ・ [列定義](#フラット表の列) ・ [例](#例) ・
 [データ構成](#データ構成) ・ [キーと関係](#キーと関係) ・
 [収録データと統計](#収録データと統計) ・ [元データ](#元データ) ・
 [confidence と relation_type](#confidence-と-relation_type) ・ [クエリ例](#クエリ例) ・
 [テーブル構成と ER 図](#テーブル構成と-er-図) ・ [ビルド](#ビルド) ・
-[ライセンス](#ライセンス) ・ [駅と地図](#駅と地図v110-で追加) ・ [静的マップ](#静的マップ) ・
+[ライセンス](#ライセンス) ・ [駅と地図](#駅と地図v110-で追加) ・ [人口](#人口国勢調査-令和7年v210-で追加) ・
+[廃置分合](#市区町村の廃置分合v210-で追加) ・ [静的マップ](#静的マップ) ・
 [リポジトリ構成](#リポジトリ構成)
 
 ---
 
 ## クイックスタート
 
-リリースデータは3つのファイルで、中身は同じです。1枚の表として集計するなら Parquet か CSV.gz、
-テーブル間の関係を辿るなら SQLite を使ってください。入手は GitHub Release から
-（[リリースデータ](#リリースデータ)）。
+リリースデータは4つのファイルです。1枚の表として集計するなら Parquet か CSV.gz、
+テーブル間の関係を辿るなら SQLite を使ってください。人口や駅など、1枚の表に入らない
+テーブルだけを手軽に読みたいときは、テーブル別 Parquet の zip が使えます。入手は GitHub
+Release から（[リリースデータ](#リリースデータ)）。
 
 ### 読み込み
 
@@ -69,6 +72,13 @@ x = pd.read_csv("jp_address_crosswalk.csv.gz", dtype=str)
 # SQLite は gzip で配っています。解凍してから開いてください
 gunzip jp_address_crosswalk.sqlite.gz
 sqlite3 jp_address_crosswalk.sqlite
+```
+
+```python
+# テーブル別 Parquet（44本）は zip 1つにまとめてあります。zip は無圧縮なので展開は一瞬です
+import zipfile
+zipfile.ZipFile("jp_address_crosswalk_tables.zip").extractall("tables")
+pop = pl.read_parquet("tables/census_population_municipality.parquet")
 ```
 
 ### 郵便番号から住所を引く
@@ -130,8 +140,9 @@ confident = x.filter(pl.col("postal_status") == "auto")   # 674,578行
 
 Parquet と CSV.gz、SQLite のビュー `address_crosswalk` は、いずれも同じ43列の1枚の表です。
 ほとんどの用途はこの表だけで済みます。以下はその全列の定義で、数値は
-`v2.0.1+data-2026-09-17`（727,110行）の実測値です。**v2.0.0 でブリッジの列名が変わりましたが、
-この43列は1列も変わっていません。** v2.0.1 の修正（市区町村 ↔ 市外局番）もこの表の値は変えていません。
+`v2.1.0+data-2026-10-12`（727,110行）の実測値です。**v2.0.0 でブリッジの列名が変わりましたが、
+この43列は1列も変わっていません。** v2.1.0 の追加（人口・廃置分合）もこの表には入らず、
+ファイルは v2.0.1 とバイト単位で同じです。
 
 ### 1行が表すもの
 
@@ -359,7 +370,7 @@ v1.1.0 で加わった対応です。どれも市区町村までで、町字（`
 市区町村に結びます。この2つの元データはどちらも任意で、`data/raw/` にあるときだけ
 `jpac build` が次の3テーブルを出力します（v1.0.0 の28テーブル → v1.1.0 の31テーブル。
 路線とバス停を加えた v1.2.0 は36、`bridge_municipality_postal` を2つに分けた v2.0.0 は
-37テーブルです）。
+37、人口と廃置分合を加えた v2.1.0 は44テーブルです）。
 
 | テーブル | 行数 | 中身 |
 |---|---:|---|
@@ -439,6 +450,110 @@ v1.1.0 で加わった対応です。どれも市区町村までで、町字（`
 設計と検証: [`docs/STATION_JOIN_PLAN.md`](docs/STATION_JOIN_PLAN.md) ・
 [`docs/ESTAT_BOUNDARY_VERIFICATION.md`](docs/ESTAT_BOUNDARY_VERIFICATION.md) ・
 [`docs/MESH_MUNICIPALITY_LOOKUP.md`](docs/MESH_MUNICIPALITY_LOOKUP.md)。
+
+---
+
+## 人口（国勢調査 令和7年）（v2.1.0 で追加）
+
+令和7年国勢調査 人口等基本集計（総務省統計局、2026-09-29 公表、**2025年10月1日現在**）の
+原数値を、市区町村と市外局番の番号区画に結びます。粒度は**市区町村まで**で、町字
+（`address_id`）や郵便番号には結びません。
+
+| テーブル | 行数 | 中身 |
+|---|---:|---|
+| `census_population_municipality` | 1,918 | 市区町村ごとの人口（総数・男・女）、世帯数・世帯人員（一般・施設等）、2020年の人口・世帯数（2025年の境域に組み替えた公式値）。**まずはこれを使ってください** |
+| `census_population_age` | 538,824 | 5歳階級の年齢別人口（21区分と年齢「不詳」）。国籍総数／日本人 × 男女の縦持ち |
+| `census_population_age_summary` | 24,492 | 平均年齢・年齢中位数（公表値のまま） |
+| `census_population_numbering_area` | 582 | 番号区画ごとの人口。**値があるのは301区画だけ**（下記） |
+| `census_population_raw` | 4,082 | 発行元の表の1行 = 1行。全セルを文字列のまま |
+
+いずれもフラット表（43列）には入りません。住所の1行ごとに同じ市区町村の値を繰り返すことに
+なるためです。SQLite か、テーブル別 Parquet（`jp_address_crosswalk_tables.zip`）で読み、
+**`lg_code` で結合**してください。
+
+### 使い方
+
+```sql
+-- 住所に、その市区町村の人口を付ける
+SELECT a.address_id, a.town_name, p.population_total, p.households_total
+FROM   address_crosswalk a
+JOIN   census_population_municipality p USING (lg_code)
+WHERE  a.postal_code = '1600023';
+
+-- 全国の人口（122,972,528）。政令市の親の行（area_level = '1'）を除いて足す
+SELECT sum(population_total)
+FROM   census_population_municipality
+WHERE  area_level <> '1';
+
+-- 新宿区の 65歳以上（国籍総数・男女総数）
+SELECT sum(population)
+FROM   census_population_age
+WHERE  lg_code = '131041'
+  AND  nationality_raw = '0_国籍総数' AND sex_raw = '0_総数'
+  AND  age_class_raw >= '14' AND age_class_raw < '22';   -- 14_65～69歳 〜 21_100歳以上
+```
+
+```python
+pop = pl.read_parquet("tables/census_population_municipality.parquet")
+x.join(pop.select("lg_code", "population_total"), on="lg_code", how="left")
+```
+
+> ⚠️ **政令市は、市全体の行（`area_level = '1'`、20市）と区の行（`'0'`）の両方が載っています。**
+> そのまま全部足すと政令市の人口を二重に数えます。合計を出すときは `area_level <> '1'`
+> で絞ってください。市全体の値がほしいときは `'1'` の行をそのまま使えます。
+
+### 値の読み方
+
+- **公表された件数だけを持ちます。按分はしません。** 推計や補完をした値はありません。
+  統計局が「不詳」を補完した推計値（不詳補完値）も使いません。
+- 北方領土の6村は国勢調査の対象外で、値は NULL、`value_status = 'not_enumerated'` です。
+  それ以外の1,912市区町村は `published` です。
+- 「-」（該当数値がないもの）は件数では 0、率では NULL です。元の文字列は `*_raw` に残ります。
+- 年齢のテーブルは、全国・都道府県・特別区部・2000年の境域の市区町村の行も持ちます。
+  これらは市区町村ではないので `lg_code` が NULL です。市区町村だけを見るなら
+  `lg_code IS NOT NULL` で絞ってください。
+- 番号区画の人口は、区画に属する市区町村が**すべて丸ごと**含まれる区画（301区画、全国の
+  人口の35.4%）だけ、その和として出します。市区町村の一部だけを含む区画は、値を NULL に
+  して理由（`value_status`）を残します。
+- 郵便番号ごとの人口は持ちません（2025年の小地域集計が出てから測り直します）。
+- **面積と人口密度は載せません。** 結果表の面積は国土地理院の面積調によるもので、人口密度は
+  そこから算出されているためです。
+
+ビルドの品質チェック（`census_tables_consistent`）で、男女の和、都道府県・全国の合計、
+政令市と区の合計、年齢の和が第1-1表の総数と一致することを毎回確かめています。
+
+設計と実測: [`docs/POPULATION_PREFLIGHT.md`](docs/POPULATION_PREFLIGHT.md)。
+
+---
+
+## 市区町村の廃置分合（v2.1.0 で追加）
+
+e-Stat「廃置分合等情報」（1970-04-20〜2024-01-01 の施行分）から、市区町村コードの旧→新の
+対応を作ります。古いデータに残る市区町村コードを、現行のコードに読み替えるための表です。
+
+| テーブル | 行数 | 中身 |
+|---|---:|---|
+| `municipality_lineage_edge` | 2,528 | 旧コード → 新コードの辺。施行日、事由（`event_type`）、候補数、一意かどうか |
+| `municipality_change_raw` | 3,739 | 発行元の CSV の1行 = 1行。原文を `*_raw` のまま保持し、解析の結果を添える |
+
+```sql
+-- 旧浜松市中区（221317）は、2024-01-01 にどのコードへ移ったか
+SELECT effective_date, new_lg_code, event_type, candidate_count, is_unique_match
+FROM   municipality_lineage_edge
+WHERE  old_lg_code = '221317';
+```
+
+- **一意に決まる辺（`is_unique_match = 1`）は 2,383本です。** 分割や分離では旧コードに
+  複数の行き先があり、`candidate_count` が2以上になります。どれか1つに決めてはいけません。
+- 旧コードが分離のあとも残る場合は、存続の辺（`event_type = 'continues'`、旧→旧）を
+  持ちます。これが無いと「分離した先だけが唯一の行き先」に見えてしまうためです。
+- 改正事由の文面を規則で読み、読めたものだけを辺にします。推測しないと読めない10行は
+  `municipality_change_raw.parse_status = 'unresolved'` のまま残し、辺にしていません
+  （鳳至郡の2町の郡変更、上九一色村の大字単位の分割など）。
+- 旧→新を1段ずつ持つ表です。何度も合併した市町村を現行まで辿るときは、施行日の順に
+  辺をつないでください。
+
+設計と実測: [`docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md`](docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md)。
 
 ---
 
@@ -635,13 +750,15 @@ id     = "jpa1" + digest を base32 で 16 文字に
 
 ## 収録データと統計
 
-> 以下はすべて `v2.0.1+data-2026-09-17` の実測値です（品質チェック180項目すべて合格）。
+> 以下はすべて `v2.1.0+data-2026-10-12` の実測値です（品質チェック194項目すべて合格）。
 > 数値は版が変わると変わります。最新値はリリースデータに同梱される `QUALITY_REPORT.md`
-> にあります。データ版 `+data-2026-09-17` は**元データを取得した日**で、ビルド日では
-> ありません（[`docs/ACQUISITION_DATES.md`](docs/ACQUISITION_DATES.md)）。
+> にあります。データ版 `+data-2026-10-12` は**元データを取得した日**（最も新しいもの。
+> 今回は国勢調査）で、ビルド日ではありません（[`docs/ACQUISITION_DATES.md`](docs/ACQUISITION_DATES.md)）。
+> 住所・郵便番号・国土交通省・市外局番・駅の元データは v2.0.1 と同じファイルです。
 
 約72万件の住所を中心に、12万件の郵便番号、19万件の国土交通省コード、582件の番号区画、
-9千件の駅を繋いでいます。市区町村は1,918。
+9千件の駅を繋いでいます。市区町村は1,918で、その人口（国勢調査 令和7年）と、コードの
+廃置分合の履歴も持ちます（[人口](#人口国勢調査-令和7年v210-で追加)・[廃置分合](#市区町村の廃置分合v210-で追加)）。
 
 ### 住所
 
@@ -705,8 +822,8 @@ id     = "jpa1" + digest を base32 で 16 文字に
 14駅（中央区と浜名区に分割され承継先が一意でないため、候補2つで28行）、府県境をまたぐ
 大阪空港2行、どの境界にも入らない4行です。
 
-来歴の記録として `source_snapshot` 116 件（取得したファイル1本 = 1行。URL・SHA-256・規約・
-行数）、`match_run` 1 件、`match_run_input` 113 件。合計37テーブル。
+来歴の記録として `source_snapshot` 122 件（取得したファイル1本 = 1行。URL・SHA-256・規約・
+行数）、`match_run` 1 件、`match_run_input` 118 件。合計44テーブル。
 
 ### 到達率
 
@@ -722,10 +839,11 @@ id     = "jpa1" + digest を base32 で 16 文字に
 
 ### ファイルサイズ
 
-Parquet 35.2 MB ／ CSV.gz 41.3 MB ／ SQLite 1.95 GiB ／ テーブル別 Parquet 37本。
+Parquet 35.2 MB ／ CSV.gz 41.3 MB ／ SQLite 2.09 GiB（gzip 426 MB）／ テーブル別 Parquet 44本（zip 177.8 MB）。
 1枚にまとめた表（Flat View）は 727,110行 × 43列です。1つの郵便番号が複数行になるため、
 行数は住所の件数より多くなります。43列は住所・郵便番号・国土交通省・市外局番の4系統で、
-駅と境界の3テーブルはこの表には入りません（SQLite か テーブル別 Parquet で引いてください）。
+駅・路線・バス停・境界・人口・廃置分合のテーブルはこの表には入りません（SQLite か
+テーブル別 Parquet で引いてください）。
 
 ---
 
@@ -742,6 +860,8 @@ Parquet 35.2 MB ／ CSV.gz 41.3 MB ／ SQLite 1.95 GiB ／ テーブル別 Parqu
 | 総務省 | 電気通信番号指定状況（固定電話等） | 市内局番の割り当て | 年1回 |
 | 国土交通省 | 国土数値情報 鉄道データ（N02）2025年版 | V2・任意：駅 | 年1回 |
 | 総務省統計局 | 令和2年国勢調査 小地域（町丁・字等別）境界データ | V2・任意：駅と地図の市区町村判定 | 国勢調査ごと（5年） |
+| 総務省統計局 | 令和7年国勢調査 人口等基本集計（第1-1表・第2-7表） | 任意：人口 | 国勢調査ごと（5年） |
+| 総務省統計局 | 廃置分合等情報（e-Stat） | 任意：市区町村コードの旧→新 | 廃置分合の都度 |
 
 日本郵便の月次差分ファイル（追加・廃止）は受け入れて来歴に記録していますが、V1 では
 テーブルに取り込んでいません。変更履歴として扱うには連続した月数の観測が必要なためです。
@@ -809,7 +929,8 @@ jpac は全角英数の半角化や、丁目の漢数字→算用数字といっ
 | ファイル | 中身 | 用途 |
 |---|---|---|
 | `jp_address_crosswalk.parquet` | 1枚にまとめた表（727,110行 × 43列） | polars / pandas / DuckDB |
-| `jp_address_crosswalk.sqlite.gz` | テーブル37本 + ビュー9本（うち6本は `_v1` 互換）+ 索引33本（**gzip。解凍して使います**） | SQL で関係をたどる |
+| `jp_address_crosswalk.sqlite.gz` | テーブル44本 + ビュー3本 + 索引33本（**gzip。解凍して使います**） | SQL で関係をたどる |
+| `jp_address_crosswalk_tables.zip` | テーブル別 Parquet 44本（v2.1.0 から）。中身は SQLite のテーブルと同じ | 人口・駅などを SQLite なしで読む |
 | `jp_address_crosswalk.csv.gz` | 1枚にまとめた表 | 汎用・アーカイブ |
 | `QUALITY_REPORT.md` | そのビルドの全統計とチェック結果 | 数値の裏取り |
 | `DIFF_REPORT.md` | 前回リリースからの変化 | 更新時の影響確認 |
@@ -828,7 +949,7 @@ jpac は全角英数の半角化や、丁目の漢数字→算用数字といっ
 sha256sum -c SHA256SUMS
 ```
 
-リリースのタグはコード版とデータ版を併記します（`v2.0.1+data-2026-09-17`）。同じコードでも
+リリースのタグはコード版とデータ版を併記します（`v2.1.0+data-2026-10-12`）。同じコードでも
 元データの版が違えば中身は変わるため、利用時は**タグ全体**を記録してください。
 
 データ版は**元データを取得した日のうち最も新しいもの**です。v1.2.0 まではその記録が無く、
@@ -927,13 +1048,14 @@ ORDER  BY t.area_code;
 いました（P2 が郵便番号 8,207行、P3 が `postal_record_id` 1,910行）。知らずに join すると
 片方が静かに落ちるので、住所側と同じく2つの表に分けました。
 
-**旧い列名で読みたいクエリは `*_v1` ビューを使えます**（`bridge_address_postal_v1` など
-6本）。`target_id` という名前で読めますが、**v2.1.0 で落とします**。
+v2.0.x にあった旧い列名の互換ビュー（`bridge_address_postal_v1` など `*_v1` の6本）は、
+予告どおり **v2.1.0 で落としました**。`target_id` で読んでいたクエリは、上の表の端点列の
+名前に書き換えてください。
 
 ### テーブル定義（DDL）
 
 出荷されている SQLite の定義そのものを [`docs/schema.sql`](docs/schema.sql) に置いてあります。
-手書きではなく、リリースデータから抽出して改行だけを入れたものです（テーブル37・ビュー9・索引33）。
+手書きではなく、リリースデータから抽出して改行だけを入れたものです（テーブル44・ビュー3・索引33）。
 読む前に押さえておく点が4つあります。
 
 **1. 型はほぼ全部 `TEXT` です。**
@@ -1039,7 +1161,7 @@ CHECK (relation_type IN ('exact','equivalent','parent','child','contains',
 - 全国ビルドのピークメモリは概ね 4〜6 GB。8 GB のマシンが実質的な下限です。
 - `jpac build` は shapely を使いません。静的マップの境界データを作る
   `tools/build_site_geo.py` だけが追加依存 `pip install -e ".[geo]"` を必要とします。
-- 版番号はコード版とデータ版を分離しています（`v2.0.1+data-2026-09-17`）。
+- 版番号はコード版とデータ版を分離しています（`v2.1.0+data-2026-10-12`）。
 
 ```bash
 git clone git@github.com:Retro-Maid/jpac.git && cd jpac
@@ -1082,18 +1204,18 @@ jpac build           # data/raw から完全再構築 → 検証 → 品質ゲ�
 jpac validate        # dist/parquet に対してブリッジの不変条件を再検査
 jpac verify          # 出来上がったデータを元データと突き合わせて検証
 jpac diff            # 前回ビルドとの差分レポートを表示
-jpac export          # dist/parquet からデータ3ファイルを再出力（再構築はしない）
+jpac export          # dist/parquet からデータ4ファイルを再出力（再構築はしない）
 jpac baseline        # 期待スキーマのベースラインを書き出す（リリースは作らない）
 jpac --version       # コード版を表示
 ```
 
 | コマンド | 前提 | 出力 |
 |---|---|---|
-| `build` | `data/raw/` に受け入れ済み payload | `dist/parquet/` のテーブル（V2 の元データがあれば37本、無ければ29本）、データ3ファイル、`QUALITY_REPORT.md`、`DIFF_REPORT.md`、`NOTICE.md`、`SOURCES.yml`、`SHA256SUMS` |
+| `build` | `data/raw/` に受け入れ済み payload | `dist/parquet/` のテーブル（任意の元データがすべてあれば44本、無ければ29本）、データ4ファイル、`QUALITY_REPORT.md`、`DIFF_REPORT.md`、`NOTICE.md`、`SOURCES.yml`、`SHA256SUMS` |
 | `validate` | `build` 済み | なし（検査のみ） |
 | `verify` | `build` 済み + `data/raw/` | なし（検査のみ） |
 | `diff` | `build` 済み | なし（表示のみ） |
-| `export` | `dist/parquet/` があること | データ3ファイルと `SHA256SUMS` を作り直す |
+| `export` | `dist/parquet/` があること | データ4ファイルと `SHA256SUMS` を作り直す |
 | `baseline` | `data/raw/` に payload | `config/expected_schema/*.yml` を書き直す（失敗時は元に戻します） |
 
 `build` は要約を表示します。全文が要るときは `--json` を付けてください
@@ -1243,7 +1365,7 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が回している
 | | |
 |---|---|
 | [`docs/queries/`](docs/queries/) | そのまま実行できる SQL 12本と、結果の読み方 |
-| [`docs/schema.sql`](docs/schema.sql) | 出荷されている SQLite の定義そのもの（テーブル37・ビュー9・索引33） |
+| [`docs/schema.sql`](docs/schema.sql) | 出荷されている SQLite の定義そのもの（テーブル44・ビュー3・索引33） |
 | [`docs/LIMITATIONS.md`](docs/LIMITATIONS.md) | 対象外にしているものと、V1 で分かっている制約 |
 | [`DATA_LICENSE.md`](DATA_LICENSE.md) | データの利用条件（コードの MIT とは別です） |
 
@@ -1277,8 +1399,10 @@ CI（[`.github/workflows/ci.yml`](.github/workflows/ci.yml)）が回している
 | [`docs/STATION_JOIN_PREFLIGHT.md`](docs/STATION_JOIN_PREFLIGHT.md) | 実装前の実測調査 |
 | [`docs/ESTAT_BOUNDARY_VERIFICATION.md`](docs/ESTAT_BOUNDARY_VERIFICATION.md) | e-Stat 境界データの実測検証 |
 | [`docs/LICENSE_REVIEW_2026_09.md`](docs/LICENSE_REVIEW_2026_09.md) | V2 の元データの規約を逐語で読んだ記録 |
-| [`docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md`](docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md) | 市区町村の廃置分合を公式データで裏づけるための下調べ（未実装） |
-| [`docs/LICENSE_REVIEW_LINEAGE_2026_09.md`](docs/LICENSE_REVIEW_LINEAGE_2026_09.md) | 同上の規約の審査（未署名） |
+| [`docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md`](docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md) | 市区町村の廃置分合を公式データで裏づける設計と実測（v2.1.0 で実装） |
+| [`docs/LICENSE_REVIEW_LINEAGE_2026_09.md`](docs/LICENSE_REVIEW_LINEAGE_2026_09.md) | 同上の規約の審査（e-Stat は 2026-09-27 署名。団体コード表は未署名） |
+| [`docs/POPULATION_PREFLIGHT.md`](docs/POPULATION_PREFLIGHT.md) | 人口（国勢調査 令和7年）の設計と実測（v2.1.0 で実装） |
+| [`docs/LICENSE_REVIEW_POPULATION_2026_10.md`](docs/LICENSE_REVIEW_POPULATION_2026_10.md) | 同上の規約の審査（2026-10-12 署名） |
 | [`docs/FACILITY_PREFLIGHT.md`](docs/FACILITY_PREFLIGHT.md) | 学校・役場等を市区町村に結ぶための下調べ（未実装） |
 | [`docs/LICENSE_REVIEW_FACILITY_2026_09.md`](docs/LICENSE_REVIEW_FACILITY_2026_09.md) | 同上の規約の審査（未署名） |
 | [`docs/N03_BOUNDARY_DESIGN.md`](docs/N03_BOUNDARY_DESIGN.md) | 国土数値情報 N03（行政区域）の設計と、配布を見送っている理由 |

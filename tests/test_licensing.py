@@ -16,7 +16,7 @@ from pathlib import Path
 import pytest
 import yaml
 
-from jp_address_crosswalk.pipeline import Config, Paths, _attribution_section
+from jp_address_crosswalk.pipeline import Config, Paths, _attribution_section, _source_of
 from jp_address_crosswalk.snapshot import (
     DEFAULT_HTML_ENCODING,
     license_text_hash,
@@ -302,3 +302,30 @@ class TestLicenceArtifactRows:
         assert [r["artifact_id"] for r in first.values()] == [
             r["artifact_id"] for r in second.values()
         ]
+
+
+class TestSourceOfDatasetNames:
+    """SOURCES.yml の審査日と規約の基準値は、データセット名から元のソースを引いて
+    埋める。引けない名前は審査日が null で出荷される（v2.0.1 の境界データ47本）。"""
+
+    @pytest.mark.parametrize(
+        ("dataset_name", "source"),
+        [
+            ("abr_town_master", "abr"),
+            ("japanpost_ken_all", "japanpost"),
+            ("mlit_isj", "mlit"),
+            ("mic_shigai_list", "mic_area_code"),
+            ("mic_fixed_phone", "mic_number_assignment"),
+            # `mlit_` より長い接頭辞が先に当たる
+            ("mlit_ksj_n02_n02", "mlit_ksj_n02"),
+            ("mlit_ksj_p11_P11-22_SHP", "mlit_ksj_p11"),
+            ("estat_boundary_pref_01", "estat_boundary"),
+            ("estat_municipality_change_changes_created", "estat_municipality_change"),
+            ("estat_census_2025_population", "estat_census_2025"),
+        ],
+    )
+    def test_each_dataset_maps_to_a_configured_source(
+        self, dataset_name: str, source: str
+    ) -> None:
+        assert _source_of(dataset_name) == source
+        assert source in SOURCES

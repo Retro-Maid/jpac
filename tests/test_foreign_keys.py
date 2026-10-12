@@ -144,9 +144,9 @@ class TestTheShippedDdl:
         """v2.0.0 の到達点。**表**に `target_id` は無い。
 
         この検査は「`target_id` という文字列が schema.sql に無い」ではない ——
-        `_v1` 互換ビューは旧い名前を出すために `AS "target_id"` を持っているので、
-        文字列だけを見ていると移行前と移行後を区別できない（実際、移行直後にこの
-        tripwire が鳴らなかった）。表の列を1つずつ見る。
+        v2.0.x の `_v1` 互換ビューは旧い名前を出すために `AS "target_id"` を持って
+        いたので、文字列だけを見ていると移行前と移行後を区別できなかった（実際、
+        移行直後にこの tripwire が鳴らなかった）。表の列を1つずつ見る。
         """
         conn = sqlite3.connect(":memory:")
         conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
@@ -159,20 +159,19 @@ class TestTheShippedDdl:
                 offenders.append(table)
         assert offenders == [], offenders
 
-    def test_the_v1_views_are_the_only_place_the_old_name_survives(self) -> None:
-        """互換ビューは旧い名前を出す。それが A7 の目的である。"""
+    def test_the_old_name_survives_nowhere(self) -> None:
+        """v2.1.0 で `_v1` 互換ビューを落とした。ビューにも旧い名前は無い。"""
         conn = sqlite3.connect(":memory:")
         conn.executescript(SCHEMA_SQL.read_text(encoding="utf-8"))
-        views = {
+        views = sorted(
             n for (n,) in conn.execute(
                 "SELECT name FROM sqlite_master WHERE type='view'"
             )
-        }
-        v1 = {v for v in views if v.endswith("_v1")}
-        assert len(v1) == 6, sorted(v1)
-        for view in sorted(v1):
+        )
+        assert not [v for v in views if v.endswith("_v1")], views
+        for view in views:
             cols = [r[1] for r in conn.execute(f'PRAGMA table_info("{view}")')]
-            assert "target_id" in cols, view
+            assert "target_id" not in cols, view
 
 
 class TestTheDatabaseChecksItself:

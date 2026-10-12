@@ -59,6 +59,7 @@ const ICONS = {
   train: "M12 2c-4 0-8 .5-8 4v9.5C4 17.43 5.57 19 7.5 19L6 20.5v.5h12v-.5L16.5 19c1.93 0 3.5-1.57 3.5-3.5V6c0-3.5-3.58-4-8-4zM7.5 17c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm3.5-7H6V6h5v4zm2 0V6h5v4h-5zm3.5 7c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5z",
   mail: "M20 4H4c-1.1 0-1.99.9-1.99 2L2 18c0 1.1.9 2 2 2h16c1.1 0 2-.9 2-2V6c0-1.1-.9-2-2-2zm0 4-8 5-8-5V6l8 5 8-5v2z",
   call: "M6.62 10.79c1.44 2.83 3.76 5.14 6.59 6.59l2.2-2.2c.27-.27.67-.36 1.02-.24 1.12.37 2.33.57 3.57.57.55 0 1 .45 1 1V20c0 .55-.45 1-1 1-9.39 0-17-7.61-17-17 0-.55.45-1 1-1h3.5c.55 0 1 .45 1 1 0 1.25.2 2.45.57 3.57.11.35.03.74-.25 1.02l-2.2 2.2z",
+  group: "M16 11c1.66 0 2.99-1.34 2.99-3S17.66 5 16 5c-1.66 0-3 1.34-3 3s1.34 3 3 3zm-8 0c1.66 0 2.99-1.34 2.99-3S9.66 5 8 5C6.34 5 5 6.34 5 8s1.34 3 3 3zm0 2c-2.33 0-7 1.17-7 3.5V19h14v-2.5c0-2.33-4.67-3.5-7-3.5zm8 0c-.29 0-.62.02-.97.05 1.16.84 1.97 1.97 1.97 3.45V19h6v-2.5c0-2.33-4.67-3.5-7-3.5z",
   bus: "M4 16c0 .88.39 1.67 1 2.22V20c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1h8v1c0 .55.45 1 1 1h1c.55 0 1-.45 1-1v-1.78c.61-.55 1-1.34 1-2.22V6c0-3.5-3.58-4-8-4s-8 .5-8 4v10zm3.5 1c-.83 0-1.5-.67-1.5-1.5S6.67 14 7.5 14s1.5.67 1.5 1.5S8.33 17 7.5 17zm9 0c-.83 0-1.5-.67-1.5-1.5s.67-1.5 1.5-1.5 1.5.67 1.5 1.5-.67 1.5-1.5 1.5zM18 11H6V6h12v5z",
   fit: "M3 5v4h2V5h4V3H5c-1.1 0-2 .9-2 2zm2 10H3v4c0 1.1.9 2 2 2h4v-2H5v-4zm14 4h-4v2h4c1.1 0 2-.9 2-2v-4h-2v4zm0-16h-4v2h4v4h2V5c0-1.1-.9-2-2-2z",
   code: "M9.4 16.6 4.8 12l4.6-4.6L8 6l-6 6 6 6 1.4-1.4zm5.2 0 4.6-4.6-4.6-4.6L16 6l6 6-6 6-1.4-1.4z",
@@ -757,6 +758,26 @@ function jpacSections(lg, meshCode) {
   if (!S.jpac || !lg) return "";
   const rows = [];
   const inMesh = meshCode ? (S.stationsByMesh.get(meshCode) || []) : [];
+
+  // 人口（国勢調査 令和7年、2025-10-01 時点）。公表された値のまま（POLICY.md §3.3）。
+  const pop = (S.jpac.population || {})[lg];
+  if (pop) {
+    const [total, male, female, households, meanAge, status] = pop;
+    if (total == null) {
+      rows.push(row({
+        ic: "group", note: true,
+        text: status === "not_enumerated" ? "人口：国勢調査の対象外" : "人口：結果表にありません",
+      }));
+    } else {
+      rows.push(row({
+        ic: "group", text: `人口 ${total.toLocaleString()} 人`,
+        sub: `男 ${male.toLocaleString()}・女 ${female.toLocaleString()}・世帯 ${households.toLocaleString()}`
+          + (meanAge != null ? `・平均年齢 ${meanAge} 歳` : "")
+          + "（令和7年国勢調査、2025年10月1日現在）",
+        copy: String(total),
+      }));
+    }
+  }
   const inLg = S.stationsByLg.get(lg) || [];
 
   if (inMesh.length) {
@@ -823,7 +844,10 @@ function jpacSections(lg, meshCode) {
       ic: "call", text: esc(t.a),
       sub: t.c === "partial"
         ? `番号区画 ${esc(t.z)}。この市区町村の一部のみ${t.t ? "：" + esc(String(t.t).slice(0, 60)) + (String(t.t).length > 60 ? "…" : "") : ""}`
-        : `番号区画 ${esc(t.z)}。市区町村全域`,
+        : `番号区画 ${esc(t.z)}。市区町村全域`
+          // 区画の人口は、市区町村を丸ごと含む区画にだけある（按分しない）。
+          + (((S.jpac.populationByArea || {})[t.z] != null)
+            ? `（区画の人口 ${S.jpac.populationByArea[t.z].toLocaleString()} 人）` : ""),
       copy: t.a,
     }));
   }

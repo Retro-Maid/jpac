@@ -3,12 +3,11 @@
 -- このファイルは手書きではありません。出荷済みの成果物からそのまま抽出し、
 -- 読みやすいように改行だけを入れたものです。定義そのものは一切変えていません。
 --
---   抽出元ビルド: v2.0.0+data-2026-09-17 (built_at 2026-09-17T06:53:02+09:00)
---   内訳: テーブル 37 / ビュー 9 / 索引 33（PRIMARY KEY の自動索引を除く）
+--   抽出元ビルド: v2.1.0+data-2026-10-12。tools/verify_artifacts_agree.py の 3c で、
+--     このビルドの出荷物と全オブジェクトが一致することを確かめた。
+--   内訳: テーブル 44 / ビュー 3 / 索引 33（PRIMARY KEY の自動索引を除く）
 --
---   ビュー9本のうち6本は `*_v1` の互換ビューです。v2.0.0 で端点列の名前が変わり、
---   `bridge_municipality_postal` は2つに分かれました。旧い名前で読みたいクエリは
---   表名に `_v1` を足してください。**v2.1.0 で落とします**
+--   v2.0.x にあった `*_v1` の互換ビュー6本は、予告どおり v2.1.0 で落としました
 --   （docs/BRIDGE_ENDPOINT_MIGRATION.md A7）。
 --
 -- このファイルが古くならないこと自体を検証しています。
@@ -623,6 +622,125 @@ CREATE TABLE "bridge_station_municipality" (
   FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
 );
 
+CREATE TABLE "census_population_age" (
+  "census_year" INTEGER,
+  "region_key" TEXT,
+  "lg_code" TEXT,
+  "area_level_raw" TEXT,
+  "pref_2000_raw" TEXT,
+  "area_code_2000_raw" TEXT,
+  "year_2000_raw" TEXT,
+  "pref_2025_raw" TEXT,
+  "area_code_2025_raw" TEXT,
+  "area_name_raw" TEXT,
+  "nationality_raw" TEXT,
+  "sex_raw" TEXT,
+  "age_class_raw" TEXT,
+  "population" INTEGER,
+  "population_raw" TEXT,
+  "valid_from" TEXT,
+  "source_snapshot_id" TEXT,
+  PRIMARY KEY ("census_year", "region_key", "nationality_raw", "sex_raw", "age_class_raw"),
+  CHECK (population >= 0),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
+);
+
+CREATE TABLE "census_population_age_summary" (
+  "census_year" INTEGER,
+  "region_key" TEXT,
+  "lg_code" TEXT,
+  "area_level_raw" TEXT,
+  "pref_2000_raw" TEXT,
+  "area_code_2000_raw" TEXT,
+  "year_2000_raw" TEXT,
+  "pref_2025_raw" TEXT,
+  "area_code_2025_raw" TEXT,
+  "area_name_raw" TEXT,
+  "nationality_raw" TEXT,
+  "sex_raw" TEXT,
+  "mean_age" REAL,
+  "mean_age_raw" TEXT,
+  "median_age" REAL,
+  "median_age_raw" TEXT,
+  "valid_from" TEXT,
+  "source_snapshot_id" TEXT,
+  PRIMARY KEY ("census_year", "region_key", "nationality_raw", "sex_raw"),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
+);
+
+CREATE TABLE "census_population_municipality" (
+  "census_year" INTEGER,
+  "lg_code" TEXT,
+  "area_level" TEXT,
+  "population_total" INTEGER,
+  "population_male" INTEGER,
+  "population_female" INTEGER,
+  "population_2020_rebased" INTEGER,
+  "population_change_5y" INTEGER,
+  "households_total" INTEGER,
+  "households_general" INTEGER,
+  "households_institutional" INTEGER,
+  "households_2020_rebased" INTEGER,
+  "households_change_5y" INTEGER,
+  "household_members_total" INTEGER,
+  "household_members_general" INTEGER,
+  "household_members_institutional" INTEGER,
+  "value_status" TEXT,
+  "valid_from" TEXT,
+  "source_snapshot_id" TEXT,
+  PRIMARY KEY ("census_year", "lg_code"),
+  CHECK (value_status IN ('published', 'not_enumerated', 'missing_from_table')),
+  CHECK ((value_status = 'published') = (population_total IS NOT NULL)),
+  CHECK (population_total IS NULL OR population_total >= 0)
+);
+
+CREATE TABLE "census_population_numbering_area" (
+  "census_year" INTEGER,
+  "numbering_area_code" TEXT,
+  "municipality_count" INTEGER,
+  "population_total" INTEGER,
+  "population_male" INTEGER,
+  "population_female" INTEGER,
+  "households_total" INTEGER,
+  "value_status" TEXT,
+  "valid_from" TEXT,
+  "source_snapshot_id" TEXT,
+  PRIMARY KEY ("census_year", "numbering_area_code"),
+  CHECK (value_status IN ('complete', 'partial_municipality', 'unresolved_member', 'member_not_enumerated', 'no_municipality')),
+  CHECK ((value_status = 'complete') = (population_total IS NOT NULL))
+);
+
+CREATE TABLE "census_population_raw" (
+  "table_id" TEXT,
+  "row_ordinal" INTEGER,
+  "area_level_raw" TEXT,
+  "pref_2000_raw" TEXT,
+  "area_code_2000_raw" TEXT,
+  "year_2000_raw" TEXT,
+  "pref_2025_raw" TEXT,
+  "area_code_2025_raw" TEXT,
+  "area_name_raw" TEXT,
+  "population_total_raw" TEXT,
+  "population_male_raw" TEXT,
+  "population_female_raw" TEXT,
+  "population_2020_rebased_raw" TEXT,
+  "population_change_5y_raw" TEXT,
+  "population_change_rate_5y_raw" TEXT,
+  "sex_ratio_raw" TEXT,
+  "households_total_raw" TEXT,
+  "households_general_raw" TEXT,
+  "households_institutional_raw" TEXT,
+  "households_2020_rebased_raw" TEXT,
+  "households_change_5y_raw" TEXT,
+  "households_change_rate_5y_raw" TEXT,
+  "household_members_total_raw" TEXT,
+  "household_members_general_raw" TEXT,
+  "household_members_institutional_raw" TEXT,
+  "region_key" TEXT,
+  "source_snapshot_id" TEXT,
+  PRIMARY KEY ("table_id", "row_ordinal")
+);
+
 CREATE TABLE "estat_small_area" (
   "key_code" TEXT,
   "pref_code" TEXT,
@@ -695,6 +813,44 @@ CREATE TABLE "municipality" (
   "lg_code" TEXT PRIMARY KEY,
   "jis_city_code" TEXT,
   "first_observed_snapshot_id" TEXT
+);
+
+CREATE TABLE "municipality_change_raw" (
+  "row_ordinal" INTEGER PRIMARY KEY,
+  "event_pattern_raw" TEXT,
+  "subprefecture_county_raw" TEXT,
+  "subprefecture_county_kana_raw" TEXT,
+  "area_code_raw" TEXT,
+  "pref_raw" TEXT,
+  "parent_raw" TEXT,
+  "parent_kana_raw" TEXT,
+  "municipality_raw" TEXT,
+  "municipality_kana_raw" TEXT,
+  "effective_date_raw" TEXT,
+  "reason_raw" TEXT,
+  "notice_date_raw" TEXT,
+  "notice_number_raw" TEXT,
+  "row_sha256" TEXT,
+  "hs_flag" TEXT,
+  "parse_status" TEXT,
+  "unresolved_reason" TEXT,
+  "source_snapshot_id" TEXT
+);
+
+CREATE TABLE "municipality_lineage_edge" (
+  "effective_date" TEXT,
+  "old_jis_code" TEXT,
+  "new_jis_code" TEXT,
+  "event_type" TEXT,
+  "area_qualifier_raw" TEXT,
+  "parse_rule_id" TEXT,
+  "source_row_ordinals" TEXT,
+  "candidate_count" INTEGER,
+  "old_lg_code" TEXT,
+  "new_lg_code" TEXT,
+  "is_unique_match" INTEGER,
+  "edge_id" TEXT PRIMARY KEY,
+  "source_snapshot_id" TEXT
 );
 
 CREATE TABLE "municipality_version" (
@@ -1008,26 +1164,6 @@ LEFT JOIN (
            ORDER BY postal_code, old_postal_code)
    GROUP BY postal_code
 ) op ON op.postal_code = bp.postal_code;
-
-CREATE VIEW "bridge_address_mlit_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "mlit_record_id" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_address_mlit";
-
-CREATE VIEW "bridge_address_postal_code_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "postal_code" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_address_postal_code";
-
-CREATE VIEW "bridge_address_postal_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "postal_record_id" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_address_postal";
-
-CREATE VIEW "bridge_address_telephone_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "numbering_area_code" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_address_telephone";
-
-CREATE VIEW "bridge_municipality_postal_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "postal_code" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_municipality_postal_code"
-  UNION ALL
-  SELECT "bridge_id", "address_id", "lg_code", "postal_record_id" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_municipality_postal";
-
-CREATE VIEW "bridge_municipality_telephone_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "numbering_area_code" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_municipality_telephone";
 
 CREATE VIEW unmatched_records AS
   SELECT 'postal_record' AS kind, postal_record_id AS record_id, matching_rule_id

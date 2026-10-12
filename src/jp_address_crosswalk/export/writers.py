@@ -13,15 +13,14 @@ from __future__ import annotations
 import gzip
 import hashlib
 import sqlite3
+import zipfile
 from pathlib import Path
 
 import polars as pl
 
 from ..build.common import (
-    BRIDGE_COLUMNS,
     BRIDGE_ENDPOINTS,
     BRIDGE_SUBJECTS,
-    ENDPOINT_PLACEHOLDER,
 )
 from ..errors import ValidationFailed
 from ..logging_setup import get_logger, stage_context
@@ -73,6 +72,17 @@ SORT_KEYS: dict[str, list[str]] = {
     ],
     "p11_bus_stop": ["p11_stop_id"],
     "bridge_bus_stop_municipality": ["p11_stop_id", "boundary_jis_city_code"],
+    # 市区町村の廃置分合（未登録。docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md）
+    "municipality_change_raw": ["row_ordinal"],
+    "municipality_lineage_edge": ["edge_id"],
+    # 人口（未登録。docs/POPULATION_PREFLIGHT.md）
+    "census_population_raw": ["table_id", "row_ordinal"],
+    "census_population_municipality": ["census_year", "lg_code"],
+    "census_population_age": [
+        "census_year", "region_key", "nationality_raw", "sex_raw", "age_class_raw",
+    ],
+    "census_population_age_summary": ["census_year", "region_key", "nationality_raw", "sex_raw"],
+    "census_population_numbering_area": ["census_year", "numbering_area_code"],
 }
 
 # Columns that must never be written as a numeric type (docs/POLICY.md §8).
@@ -331,55 +341,6 @@ CREATE VIEW IF NOT EXISTS unmatched_records AS
 """
 
 
-# v1 互換ビュー（docs/BRIDGE_ENDPOINT_MIGRATION.md A7）。
-#
-# v2.0.0 で端点列の名前が変わり、`bridge_municipality_postal` は2つに分かれた。旧い
-# 名前で読めるビューを置くので、既存のクエリは表名に `_v1` を足すだけで動く。
-#
-# **ビューは列名の互換であって、値の互換ではない。** 2つ、意図して違う:
-#
-# * `bridge_id` は内容アドレスで、材料にブリッジ名が入る（分割した表は名前が違う）ので
-#   値が変わる。v2.0.0 の破壊的変更に含まれる（計画 §4）
-# * `bridge_municipality_postal_v1` の `candidate_count` は、分割後の各表が自分の中で
-#   数えた値である。旧い表は P2 と P3 をまとめて数えていた（A8、署名済み）
-#
-# そしてビューは外部キーを持てない。`_v1` を読み続ける利用者は参照整合性の恩恵を
-# 受けない —— それが移行の圧力として正しく働く。
-#
-# **v2.1.0 で落とす。** 期限はリリースノートに書く。期限の無い互換層は落ちない。
-_V1_VIEW_SOURCES: dict[str, list[str]] = {
-    "bridge_address_postal_code": ["bridge_address_postal_code"],
-    "bridge_address_postal": ["bridge_address_postal"],
-    "bridge_address_mlit": ["bridge_address_mlit"],
-    "bridge_address_telephone": ["bridge_address_telephone"],
-    # 旧い1表 = 新しい2表。UNION ALL で元の形に戻す。
-    "bridge_municipality_postal": [
-        "bridge_municipality_postal_code", "bridge_municipality_postal",
-    ],
-    "bridge_municipality_telephone": ["bridge_municipality_telephone"],
-}
-
-
-def v1_compatibility_views(present: set[str]) -> str:
-    """旧い列名で読めるビューの DDL。存在する表からだけ作る。"""
-    out = []
-    for old_name, sources in _V1_VIEW_SOURCES.items():
-        usable = [t for t in sources if t in present]
-        if not usable:
-            continue
-        selects = []
-        for table in usable:
-            endpoint = BRIDGE_ENDPOINTS[table]
-            cols = ", ".join(
-                f'"{endpoint}" AS "target_id"' if name == ENDPOINT_PLACEHOLDER
-                else f'"{name}"'
-                for name in BRIDGE_COLUMNS
-            )
-            selects.append(f'  SELECT {cols} FROM "{table}"')
-        body = "\n  UNION ALL\n".join(selects)
-        out.append(f'CREATE VIEW IF NOT EXISTS "{old_name}_v1" AS\n{body};')
-    return "\n".join(out) + ("\n" if out else "")
-
 INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_addr_lg ON address(lg_code)",
     "CREATE INDEX IF NOT EXISTS idx_addr_jis_norm ON address(jis_city_code, full_name_normalized)",
@@ -463,7 +424,6 @@ def write_sqlite(
                 )
             conn.executescript(FLAT_VIEWS)
             conn.executescript(DDL_VIEWS)
-            conn.executescript(v1_compatibility_views(set(tables)))
             planned = list(INDEXES)
             for table, statements in V2_INDEXES.items():
                 if table in tables and not tables[table].is_empty():
@@ -526,6 +486,22 @@ PRIMARY_KEYS = {
     # (name, operator, coordinates) collides 12 times nationwide
     # (src/jp_address_crosswalk/sources/mlit_ksj_p11.py).
     "p11_bus_stop": "p11_stop_id",
+    # 発行元の CSV の行番号。1ビルドは1つの取得断面だけを持つ。全列が同じ行が発行元に
+    # 2組あるので、行の中身は主キーにならない。
+    "municipality_change_raw": "row_ordinal",
+    # 辺を決める列（施行日・旧・新・事由・区域の注記）から作った決定的な ID。
+    "municipality_lineage_edge": "edge_id",
+    # 発行元の表の行番号。1ビルドは1つの取得断面だけを持つ。
+    "census_population_raw": ("table_id", "row_ordinal"),
+    # 国勢調査の回ごとに行を足し、上書きしない（docs/POPULATION_PREFLIGHT.md §5）。
+    "census_population_municipality": ("census_year", "lg_code"),
+    # 地域は (階層, 2000年の地域コード, 2025年の地域コード) で一意。lg_code は
+    # 2000年の市区町村と集計行で NULL なので鍵にならない。
+    "census_population_age": (
+        "census_year", "region_key", "nationality_raw", "sex_raw", "age_class_raw",
+    ),
+    "census_population_age_summary": ("census_year", "region_key", "nationality_raw", "sex_raw"),
+    "census_population_numbering_area": ("census_year", "numbering_area_code"),
     "address_lineage": "lineage_id", "address_history": "history_id",
     "address_rsdt_variant": "rsdt_variant_id",
     **{b: "bridge_id" for b in [
@@ -631,6 +607,20 @@ SMALL_AREA_CHECKS = [
 ]
 
 N02_STATION_CHECKS = ["CHECK (feature_count >= 1)"]
+
+# 人口（docs/POPULATION_PREFLIGHT.md）。値が無いことと、その理由が食い違わないこと。
+CENSUS_MUNICIPALITY_CHECKS = [
+    "CHECK (value_status IN ('published', 'not_enumerated', 'missing_from_table'))",
+    "CHECK ((value_status = 'published') = (population_total IS NOT NULL))",
+    "CHECK (population_total IS NULL OR population_total >= 0)",
+]
+CENSUS_AGE_CHECKS = ["CHECK (population >= 0)"]
+# 按分しないので、値を持つのは市区町村を丸ごと含む区画だけ。
+CENSUS_NUMBERING_AREA_CHECKS = [
+    "CHECK (value_status IN ('complete', 'partial_municipality', 'unresolved_member',"
+    " 'member_not_enumerated', 'no_municipality'))",
+    "CHECK ((value_status = 'complete') = (population_total IS NOT NULL))",
+]
 
 BUS_STOP_CHECKS = [
     "CHECK (length(pref_code) = 2)",
@@ -855,6 +845,12 @@ def _write_table(
         types.extend(SMALL_AREA_CHECKS)
     if name == "n02_station":
         types.extend(N02_STATION_CHECKS)
+    if name == "census_population_municipality":
+        types.extend(CENSUS_MUNICIPALITY_CHECKS)
+    if name == "census_population_age":
+        types.extend(CENSUS_AGE_CHECKS)
+    if name == "census_population_numbering_area":
+        types.extend(CENSUS_NUMBERING_AREA_CHECKS)
     if name == "postal_code_entity":
         types.append("CHECK (length(postal_code) = 7)")
     if name == "address":
@@ -919,6 +915,32 @@ def write_sqlite_gz(src: Path, out: Path) -> Path:
         log.info(
             "wrote sqlite.gz", path=str(out), size=after, uncompressed=before,
             ratio=round(before / after, 2) if after else None,
+        )
+        return out
+
+
+def write_tables_zip(parquet_paths: list[Path], out: Path) -> Path:
+    """テーブル別 Parquet を1つの zip にまとめる。リリースが配るのはこちらである。
+
+    フラット表に入らないテーブル（人口・駅・境界・廃置分合など）を、SQLite を
+    解凍しなくても読めるようにする。Parquet は中で zstd 圧縮済みなので、zip では
+    圧縮しない（ZIP_STORED）。
+
+    write_csv_gz と同じく、同じデータなら同じハッシュになるようにする: 名前順に
+    並べ、日時は固定し、パスは書き込まない。
+    """
+    with stage_context("export", "tables_zip"):
+        out.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(out, "w", compression=zipfile.ZIP_STORED) as zf:
+            for p in sorted(parquet_paths, key=lambda x: x.name):
+                info = zipfile.ZipInfo(p.name, date_time=(1980, 1, 1, 0, 0, 0))
+                info.external_attr = 0o644 << 16
+                with p.open("rb") as src, zf.open(info, "w") as dst:
+                    for chunk in iter(lambda: src.read(1 << 22), b""):
+                        dst.write(chunk)
+        log.info(
+            "wrote tables zip", path=str(out), tables=len(parquet_paths),
+            size=out.stat().st_size,
         )
         return out
 
