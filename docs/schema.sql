@@ -5,8 +5,10 @@
 --
 --   抽出元ビルド: v2.0.0+data-2026-09-17 (built_at 2026-09-17T06:53:02+09:00)。
 --     municipality_change_raw / municipality_lineage_edge の2表は 2.0.1+data-2026-09-27 の
---     開発ビルドから同じ方法で抽出して足した（e-Stat 廃置分合等情報の受け入れ）
---   内訳: テーブル 39 / ビュー 9 / 索引 33（PRIMARY KEY の自動索引を除く）
+--     開発ビルドから同じ方法で抽出して足した（e-Stat 廃置分合等情報の受け入れ）。
+--     census_population_* の5表は 2.0.1+data-2026-10-12 の開発ビルドから同じ方法で抽出して
+--     足した（国勢調査 令和7年の受け入れ）
+--   内訳: テーブル 44 / ビュー 9 / 索引 33（PRIMARY KEY の自動索引を除く）
 --
 --   ビュー9本のうち6本は `*_v1` の互換ビューです。v2.0.0 で端点列の名前が変わり、
 --   `bridge_municipality_postal` は2つに分かれました。旧い名前で読みたいクエリは
@@ -623,6 +625,125 @@ CREATE TABLE "bridge_station_municipality" (
   CHECK (relation_type <> 'unresolved' OR (lg_code IS NULL AND confidence = 0.0)),
   FOREIGN KEY ("n02_group_code") REFERENCES "n02_station"("n02_group_code"),
   FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
+);
+
+CREATE TABLE "census_population_age" (
+  "census_year" INTEGER,
+  "region_key" TEXT,
+  "lg_code" TEXT,
+  "area_level_raw" TEXT,
+  "pref_2000_raw" TEXT,
+  "area_code_2000_raw" TEXT,
+  "year_2000_raw" TEXT,
+  "pref_2025_raw" TEXT,
+  "area_code_2025_raw" TEXT,
+  "area_name_raw" TEXT,
+  "nationality_raw" TEXT,
+  "sex_raw" TEXT,
+  "age_class_raw" TEXT,
+  "population" INTEGER,
+  "population_raw" TEXT,
+  "valid_from" TEXT,
+  "source_snapshot_id" TEXT,
+  PRIMARY KEY ("census_year", "region_key", "nationality_raw", "sex_raw", "age_class_raw"),
+  CHECK (population >= 0),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
+);
+
+CREATE TABLE "census_population_age_summary" (
+  "census_year" INTEGER,
+  "region_key" TEXT,
+  "lg_code" TEXT,
+  "area_level_raw" TEXT,
+  "pref_2000_raw" TEXT,
+  "area_code_2000_raw" TEXT,
+  "year_2000_raw" TEXT,
+  "pref_2025_raw" TEXT,
+  "area_code_2025_raw" TEXT,
+  "area_name_raw" TEXT,
+  "nationality_raw" TEXT,
+  "sex_raw" TEXT,
+  "mean_age" REAL,
+  "mean_age_raw" TEXT,
+  "median_age" REAL,
+  "median_age_raw" TEXT,
+  "valid_from" TEXT,
+  "source_snapshot_id" TEXT,
+  PRIMARY KEY ("census_year", "region_key", "nationality_raw", "sex_raw"),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
+);
+
+CREATE TABLE "census_population_municipality" (
+  "census_year" INTEGER,
+  "lg_code" TEXT,
+  "area_level" TEXT,
+  "population_total" INTEGER,
+  "population_male" INTEGER,
+  "population_female" INTEGER,
+  "population_2020_rebased" INTEGER,
+  "population_change_5y" INTEGER,
+  "households_total" INTEGER,
+  "households_general" INTEGER,
+  "households_institutional" INTEGER,
+  "households_2020_rebased" INTEGER,
+  "households_change_5y" INTEGER,
+  "household_members_total" INTEGER,
+  "household_members_general" INTEGER,
+  "household_members_institutional" INTEGER,
+  "value_status" TEXT,
+  "valid_from" TEXT,
+  "source_snapshot_id" TEXT,
+  PRIMARY KEY ("census_year", "lg_code"),
+  CHECK (value_status IN ('published', 'not_enumerated', 'missing_from_table')),
+  CHECK ((value_status = 'published') = (population_total IS NOT NULL)),
+  CHECK (population_total IS NULL OR population_total >= 0)
+);
+
+CREATE TABLE "census_population_numbering_area" (
+  "census_year" INTEGER,
+  "numbering_area_code" TEXT,
+  "municipality_count" INTEGER,
+  "population_total" INTEGER,
+  "population_male" INTEGER,
+  "population_female" INTEGER,
+  "households_total" INTEGER,
+  "value_status" TEXT,
+  "valid_from" TEXT,
+  "source_snapshot_id" TEXT,
+  PRIMARY KEY ("census_year", "numbering_area_code"),
+  CHECK (value_status IN ('complete', 'partial_municipality', 'unresolved_member', 'member_not_enumerated', 'no_municipality')),
+  CHECK ((value_status = 'complete') = (population_total IS NOT NULL))
+);
+
+CREATE TABLE "census_population_raw" (
+  "table_id" TEXT,
+  "row_ordinal" INTEGER,
+  "area_level_raw" TEXT,
+  "pref_2000_raw" TEXT,
+  "area_code_2000_raw" TEXT,
+  "year_2000_raw" TEXT,
+  "pref_2025_raw" TEXT,
+  "area_code_2025_raw" TEXT,
+  "area_name_raw" TEXT,
+  "population_total_raw" TEXT,
+  "population_male_raw" TEXT,
+  "population_female_raw" TEXT,
+  "population_2020_rebased_raw" TEXT,
+  "population_change_5y_raw" TEXT,
+  "population_change_rate_5y_raw" TEXT,
+  "sex_ratio_raw" TEXT,
+  "households_total_raw" TEXT,
+  "households_general_raw" TEXT,
+  "households_institutional_raw" TEXT,
+  "households_2020_rebased_raw" TEXT,
+  "households_change_5y_raw" TEXT,
+  "households_change_rate_5y_raw" TEXT,
+  "household_members_total_raw" TEXT,
+  "household_members_general_raw" TEXT,
+  "household_members_institutional_raw" TEXT,
+  "region_key" TEXT,
+  "source_snapshot_id" TEXT,
+  PRIMARY KEY ("table_id", "row_ordinal")
 );
 
 CREATE TABLE "estat_small_area" (

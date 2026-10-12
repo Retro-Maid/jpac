@@ -23,6 +23,7 @@ from .build import (
 )
 from .build import (
     canonical,
+    census,
     diffing,
     mlit_bridge,
     municipality_change,
@@ -83,6 +84,7 @@ from .sources import mlit_ksj_p11 as p11_source
 from .sources.abr import AbrSource
 from .sources.base import DiscoveredResource, Discovery
 from .sources.estat import EstatBoundarySource
+from .sources.estat_census import EstatCensusSource
 from .sources.estat_municipality_change import EstatMunicipalityChangeSource
 from .sources.japanpost import JapanPostSource
 from .sources.mic_area_code import MicAreaCodeSource
@@ -104,6 +106,8 @@ SOURCE_CLASSES = {
     "mlit_ksj_p11": p11_source.MlitKsjP11Source,
     # 市区町村の廃置分合。required: false で、無ければ署名の検査が skip になるだけ。
     "estat_municipality_change": EstatMunicipalityChangeSource,
+    # 人口（国勢調査 令和7年）。required: false で、無ければ整合の検査が skip になるだけ。
+    "estat_census_2025": EstatCensusSource,
 }
 
 
@@ -557,6 +561,17 @@ def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str,
     # is checked against it; when absent, the check is reported as not run.
     tables.update(_build_lineage_tables(paths, outcome, snapshot_for))
 
+    # --- 人口 (docs/POPULATION_PREFLIGHT.md, docs/POLICY.md §3.3)
+    # Optional like the V2 sources: without the census payload nothing is added
+    # and the consistency gate is reported as not run.
+    tables.update(
+        _build_census_tables(
+            outcome, tables["municipality_version"],
+            tables["bridge_municipality_telephone"], tables.get("telephone_area"),
+            snapshot_for,
+        )
+    )
+
     # --- Provenance
     tables["source_snapshot"] = pl.DataFrame(
         [s.as_dict() for s in [*snapshots, *aggregate_snapshots]]
@@ -822,6 +837,7 @@ def _source_of(dataset_name: str) -> str:
     for prefix, source in [
         ("abr_", "abr"), ("japanpost_", "japanpost"), ("mlit_", "mlit"),
         ("mic_shigai", "mic_area_code"), ("mic_fixed", "mic_number_assignment"),
+        ("estat_census_2025_", "estat_census_2025"),
     ]:
         if dataset_name.startswith(prefix):
             return source
@@ -1185,6 +1201,50 @@ def _build_lineage_tables(
     return out
 
 
+def _build_census_tables(
+    outcome: FetchOutcome, municipality: pl.DataFrame,
+    bridge_tel: pl.DataFrame, telephone_area: pl.DataFrame | None, snapshot_for,
+) -> dict[str, pl.DataFrame]:
+    """国勢調査の5表と、表の整合の検査結果（``_census_gate``、非公開）.
+
+    ペイロードが無ければ何も返さず、品質ゲートは検査を ``skip`` として記録する。
+    """
+    parsed = outcome.parsed.get("estat_census_2025")
+    if not parsed:
+        return {}
+    snap_pop = snapshot_for("estat_census_2025_population")
+    snap_age = snapshot_for("estat_census_2025_age")
+    raw, age = parsed["census_population_raw"], parsed["_census_age"]
+    municipal = census.municipality_population(raw, municipality)
+    problems = [
+        {"problem": p} for p in [
+            *census.consistency_problems(raw, age),
+            *(f"{c}: jpac の現行市区町村に無い" for c in
+              census.unmatched_census_codes(raw, municipality)),
+            *(f"{c}: 結果表に無い（国勢調査の対象外とも分かっていない）" for c in
+              census.missing_from_census(raw, municipality)),
+        ]
+    ]
+    return {
+        "census_population_raw": raw.with_columns(pl.lit(snap_pop).alias("source_snapshot_id")),
+        "census_population_municipality": municipal.with_columns(
+            pl.lit(snap_pop).alias("source_snapshot_id")
+        ),
+        "census_population_age": census.age_population(age, municipality).with_columns(
+            pl.lit(snap_age).alias("source_snapshot_id")
+        ),
+        "census_population_age_summary": census.age_summary(
+            parsed["_census_age_summary"], municipality
+        ).with_columns(pl.lit(snap_age).alias("source_snapshot_id")),
+        "census_population_numbering_area": census.numbering_area_population(
+            municipal, bridge_tel, municipality, raw,
+            areas=None if telephone_area is None
+            else telephone_area["numbering_area_code"].to_list(),
+        ).with_columns(pl.lit(snap_pop).alias("source_snapshot_id")),
+        "_census_gate": pl.DataFrame(problems, schema={"problem": pl.Utf8}),
+    }
+
+
 def _load_municipality_lineage(paths: Paths) -> dict[str, str]:
     path = paths.overrides / "municipality_lineage.yml"
     if not path.exists():
@@ -1431,6 +1491,22 @@ def export(
             "limit": 0,
             "problems": [f"{r['entry']}: {r['problem']}" for r in lineage_gate.iter_rows(named=True)],
             "status": "pass" if lineage_gate.height == 0 else "fail",
+        }
+    )
+    census_gate = tables.get("_census_gate")
+    report.thresholds.append(
+        {
+            "check": "census_tables_consistent",
+            "reason": "国勢調査のペイロードが無いため未検査",
+            "status": "skip",
+        }
+        if census_gate is None
+        else {
+            "check": "census_tables_consistent",
+            "observed": census_gate.height,
+            "limit": 0,
+            "problems": census_gate["problem"].to_list(),
+            "status": "pass" if census_gate.height == 0 else "fail",
         }
     )
     report.thresholds.append(

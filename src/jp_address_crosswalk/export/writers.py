@@ -76,6 +76,14 @@ SORT_KEYS: dict[str, list[str]] = {
     # 市区町村の廃置分合（未登録。docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md）
     "municipality_change_raw": ["row_ordinal"],
     "municipality_lineage_edge": ["edge_id"],
+    # 人口（未登録。docs/POPULATION_PREFLIGHT.md）
+    "census_population_raw": ["table_id", "row_ordinal"],
+    "census_population_municipality": ["census_year", "lg_code"],
+    "census_population_age": [
+        "census_year", "region_key", "nationality_raw", "sex_raw", "age_class_raw",
+    ],
+    "census_population_age_summary": ["census_year", "region_key", "nationality_raw", "sex_raw"],
+    "census_population_numbering_area": ["census_year", "numbering_area_code"],
 }
 
 # Columns that must never be written as a numeric type (docs/POLICY.md §8).
@@ -534,6 +542,17 @@ PRIMARY_KEYS = {
     "municipality_change_raw": "row_ordinal",
     # 辺を決める列（施行日・旧・新・事由・区域の注記）から作った決定的な ID。
     "municipality_lineage_edge": "edge_id",
+    # 発行元の表の行番号。1ビルドは1つの取得断面だけを持つ。
+    "census_population_raw": ("table_id", "row_ordinal"),
+    # 国勢調査の回ごとに行を足し、上書きしない（docs/POPULATION_PREFLIGHT.md §5）。
+    "census_population_municipality": ("census_year", "lg_code"),
+    # 地域は (階層, 2000年の地域コード, 2025年の地域コード) で一意。lg_code は
+    # 2000年の市区町村と集計行で NULL なので鍵にならない。
+    "census_population_age": (
+        "census_year", "region_key", "nationality_raw", "sex_raw", "age_class_raw",
+    ),
+    "census_population_age_summary": ("census_year", "region_key", "nationality_raw", "sex_raw"),
+    "census_population_numbering_area": ("census_year", "numbering_area_code"),
     "address_lineage": "lineage_id", "address_history": "history_id",
     "address_rsdt_variant": "rsdt_variant_id",
     **{b: "bridge_id" for b in [
@@ -639,6 +658,20 @@ SMALL_AREA_CHECKS = [
 ]
 
 N02_STATION_CHECKS = ["CHECK (feature_count >= 1)"]
+
+# 人口（docs/POPULATION_PREFLIGHT.md）。値が無いことと、その理由が食い違わないこと。
+CENSUS_MUNICIPALITY_CHECKS = [
+    "CHECK (value_status IN ('published', 'not_enumerated', 'missing_from_table'))",
+    "CHECK ((value_status = 'published') = (population_total IS NOT NULL))",
+    "CHECK (population_total IS NULL OR population_total >= 0)",
+]
+CENSUS_AGE_CHECKS = ["CHECK (population >= 0)"]
+# 按分しないので、値を持つのは市区町村を丸ごと含む区画だけ。
+CENSUS_NUMBERING_AREA_CHECKS = [
+    "CHECK (value_status IN ('complete', 'partial_municipality', 'unresolved_member',"
+    " 'member_not_enumerated', 'no_municipality'))",
+    "CHECK ((value_status = 'complete') = (population_total IS NOT NULL))",
+]
 
 BUS_STOP_CHECKS = [
     "CHECK (length(pref_code) = 2)",
@@ -863,6 +896,12 @@ def _write_table(
         types.extend(SMALL_AREA_CHECKS)
     if name == "n02_station":
         types.extend(N02_STATION_CHECKS)
+    if name == "census_population_municipality":
+        types.extend(CENSUS_MUNICIPALITY_CHECKS)
+    if name == "census_population_age":
+        types.extend(CENSUS_AGE_CHECKS)
+    if name == "census_population_numbering_area":
+        types.extend(CENSUS_NUMBERING_AREA_CHECKS)
     if name == "postal_code_entity":
         types.append("CHECK (length(postal_code) = 7)")
     if name == "address":
