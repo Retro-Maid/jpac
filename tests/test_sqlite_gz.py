@@ -18,9 +18,10 @@ from __future__ import annotations
 
 import gzip
 import sqlite3
+import zipfile
 
-from jp_address_crosswalk.export.writers import write_sqlite_gz
-from jp_address_crosswalk.pipeline import RELEASE_ARTIFACT_NAMES
+from jp_address_crosswalk.export.writers import write_sqlite_gz, write_tables_zip
+from jp_address_crosswalk.pipeline import RELEASE_ARTIFACT_NAMES, TABLES_ZIP_NAME
 
 
 def _a_database(path):
@@ -75,3 +76,34 @@ class TestTheReleaseShipsTheCompressedCopy:
     def test_the_uncompressed_database_is_not(self) -> None:
         """生の .sqlite は dist/ に残るが、配らない。2 GiB 上限がその理由である。"""
         assert "jp_address_crosswalk.sqlite" not in RELEASE_ARTIFACT_NAMES
+
+
+class TestTablesZip:
+    """テーブル別 Parquet の zip（v2.1.0 から配る）。"""
+
+    def _tables(self, tmp_path):
+        paths = []
+        for name, body in [("b", b"\x00" * 1000), ("a", "漢字".encode() * 300)]:
+            p = tmp_path / f"{name}.parquet"
+            p.write_bytes(body)
+            paths.append(p)
+        return paths
+
+    def test_it_holds_every_table_unchanged_in_name_order(self, tmp_path) -> None:
+        paths = self._tables(tmp_path)
+        out = write_tables_zip(paths, tmp_path / "t.zip")
+        with zipfile.ZipFile(out) as zf:
+            assert zf.namelist() == ["a.parquet", "b.parquet"]
+            for p in paths:
+                assert zf.read(p.name) == p.read_bytes()
+
+    def test_same_tables_give_the_same_bytes(self, tmp_path) -> None:
+        paths = self._tables(tmp_path)
+        first = write_tables_zip(paths, tmp_path / "t1.zip").read_bytes()
+        for p in paths:  # 日時が変わっても中身が同じなら同じハッシュ
+            p.touch()
+        second = write_tables_zip(paths, tmp_path / "t2.zip").read_bytes()
+        assert first == second
+
+    def test_the_zip_is_a_release_artifact(self) -> None:
+        assert TABLES_ZIP_NAME in RELEASE_ARTIFACT_NAMES

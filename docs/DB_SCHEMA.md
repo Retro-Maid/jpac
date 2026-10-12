@@ -337,8 +337,9 @@ CREATE TABLE telephone_number_block (
 > looked from is never NULL, the far side is NULL exactly when `relation_type` is
 > `unresolved`. Nothing is dropped — an unmatched record from either side keeps its row.
 >
-> Queries written against the old polymorphic column can read the `*_v1` views, which
-> present the previous column names. **They are removed in v2.1.0.**
+> The `*_v1` views that presented the previous column names shipped in v2.0.x and were
+> **removed in v2.1.0**, as announced. Queries still reading `target_id` must switch to the
+> named endpoint column.
 >
 > The definitions as shipped are in [`schema.sql`](schema.sql).
 

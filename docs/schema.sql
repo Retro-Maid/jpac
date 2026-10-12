@@ -3,16 +3,11 @@
 -- このファイルは手書きではありません。出荷済みの成果物からそのまま抽出し、
 -- 読みやすいように改行だけを入れたものです。定義そのものは一切変えていません。
 --
---   抽出元ビルド: v2.0.0+data-2026-09-17 (built_at 2026-09-17T06:53:02+09:00)。
---     municipality_change_raw / municipality_lineage_edge の2表は 2.0.1+data-2026-09-27 の
---     開発ビルドから同じ方法で抽出して足した（e-Stat 廃置分合等情報の受け入れ）。
---     census_population_* の5表は 2.0.1+data-2026-10-12 の開発ビルドから同じ方法で抽出して
---     足した（国勢調査 令和7年の受け入れ）
---   内訳: テーブル 44 / ビュー 9 / 索引 33（PRIMARY KEY の自動索引を除く）
+--   抽出元ビルド: v2.1.0+data-2026-10-12。tools/verify_artifacts_agree.py の 3c で、
+--     このビルドの出荷物と全オブジェクトが一致することを確かめた。
+--   内訳: テーブル 44 / ビュー 3 / 索引 33（PRIMARY KEY の自動索引を除く）
 --
---   ビュー9本のうち6本は `*_v1` の互換ビューです。v2.0.0 で端点列の名前が変わり、
---   `bridge_municipality_postal` は2つに分かれました。旧い名前で読みたいクエリは
---   表名に `_v1` を足してください。**v2.1.0 で落とします**
+--   v2.0.x にあった `*_v1` の互換ビュー6本は、予告どおり v2.1.0 で落としました
 --   （docs/BRIDGE_ENDPOINT_MIGRATION.md A7）。
 --
 -- このファイルが古くならないこと自体を検証しています。
@@ -1169,26 +1164,6 @@ LEFT JOIN (
            ORDER BY postal_code, old_postal_code)
    GROUP BY postal_code
 ) op ON op.postal_code = bp.postal_code;
-
-CREATE VIEW "bridge_address_mlit_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "mlit_record_id" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_address_mlit";
-
-CREATE VIEW "bridge_address_postal_code_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "postal_code" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_address_postal_code";
-
-CREATE VIEW "bridge_address_postal_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "postal_record_id" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_address_postal";
-
-CREATE VIEW "bridge_address_telephone_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "numbering_area_code" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_address_telephone";
-
-CREATE VIEW "bridge_municipality_postal_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "postal_code" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_municipality_postal_code"
-  UNION ALL
-  SELECT "bridge_id", "address_id", "lg_code", "postal_record_id" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_municipality_postal";
-
-CREATE VIEW "bridge_municipality_telephone_v1" AS
-  SELECT "bridge_id", "address_id", "lg_code", "numbering_area_code" AS "target_id", "direction", "relation_type", "match_method", "matching_rule_id", "confidence", "candidate_group_id", "candidate_count", "candidate_count_is_complete", "is_unique_match", "verification_status", "override_stale", "derivation", "coverage_type", "normalization_profile", "mismatch_note", "valid_from", "valid_to", "observed_from", "observed_to", "is_current", "match_run_id", "source_snapshot_id", "matching_rule_version", "normalization_profile_version", "created_at", "updated_at" FROM "bridge_municipality_telephone";
 
 CREATE VIEW unmatched_records AS
   SELECT 'postal_record' AS kind, postal_record_id AS record_id, matching_rule_id

@@ -327,6 +327,9 @@ RELEASE_ARTIFACT_NAMES = (
     # されていないファイル」を載せることになり、`sha256sum -c` が落ちる。
     "jp_address_crosswalk.sqlite.gz",
     "jp_address_crosswalk.csv.gz",
+    # テーブル別 Parquet をまとめたもの（export/writers.py の write_tables_zip）。
+    # フラット表に入らないテーブルを、SQLite を解凍せずに読むための配布物。
+    "jp_address_crosswalk_tables.zip",
     "quality_report.json",
     "diff_report.json",
     "QUALITY_REPORT.md",
@@ -334,6 +337,9 @@ RELEASE_ARTIFACT_NAMES = (
     "SOURCES.yml",
     "NOTICE.md",
 )
+
+
+TABLES_ZIP_NAME = "jp_address_crosswalk_tables.zip"
 
 
 def release_artifacts(paths: Paths) -> list[Path]:
@@ -833,11 +839,20 @@ def commit_identity_ledger(paths: Paths) -> None:
 
 
 def _source_of(dataset_name: str) -> str:
-    """Map a dataset name back to its data/raw/<source>/ directory."""
+    """Map a dataset name back to its data/raw/<source>/ directory.
+
+    Longer prefixes come first: `mlit_ksj_n02_n02` belongs to `mlit_ksj_n02`,
+    not to `mlit`, and each carries its own reviewed date and terms baseline.
+    A name that falls through to itself matches no `config/sources.yml` entry,
+    and SOURCES.yml then records its review as null.
+    """
     for prefix, source in [
+        ("mlit_ksj_n02_", "mlit_ksj_n02"), ("mlit_ksj_p11_", "mlit_ksj_p11"),
+        ("estat_boundary_", "estat_boundary"),
+        ("estat_municipality_change_", "estat_municipality_change"),
+        ("estat_census_2025_", "estat_census_2025"),
         ("abr_", "abr"), ("japanpost_", "japanpost"), ("mlit_", "mlit"),
         ("mic_shigai", "mic_area_code"), ("mic_fixed", "mic_number_assignment"),
-        ("estat_census_2025_", "estat_census_2025"),
     ]:
         if dataset_name.startswith(prefix):
             return source
@@ -1411,7 +1426,8 @@ def export(
 ) -> dict:
     public = {k: v for k, v in tables.items() if not k.startswith("_") and v.width}
 
-    writers.write_parquet(public, paths.parquet)
+    table_files = writers.write_parquet(public, paths.parquet)
+    writers.write_tables_zip(table_files, paths.dist / TABLES_ZIP_NAME)
     flat_all = writers.build_flat_view(public, accepted_only=False)
     flat = writers.build_flat_view(public, accepted_only=True)
 
