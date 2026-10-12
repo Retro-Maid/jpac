@@ -231,6 +231,37 @@ than harder:
 - **Never described as a 停留所標識の位置.** It is the point the publisher
   gives for the stop, in the same spirit as the 駅舎・出入口 restriction above.
 
+## 3.3 Population extension (国勢調査)
+
+Added 2026-10-12, at preflight. §3 lists `population` as out of scope for V1 and
+is **left exactly as written**, for the reason §3.1 gives. This states what is
+added on top. No source is registered until the licence review is signed
+(`docs/LICENSE_REVIEW_POPULATION_2026_10.md` §1). Measurements are in
+`docs/POPULATION_PREFLIGHT.md`.
+
+| | |
+|---|---|
+| **Subject** | 人口・世帯 (国勢調査 令和7年 人口等基本集計、原数値) |
+| **Origins** | **None.** 総務省統計局 is MIC, already covered in §3; e-Stat is already a source |
+| **Granularity** | 市区町村, and 番号区画 only where it is a sum of whole municipalities |
+
+- **Published counts only, never estimates.** No apportionment by area, points,
+  households or anything else. The bureau's 不詳補完値 tables are estimates and
+  are not used; the 原数値 tables, which keep 不詳 as its own class, are. A unit
+  that cannot be summed losslessly from published counts gets NULL and a reason,
+  and its row is kept (§5).
+- **No geometry and no GSI-derived figures.** The tables' 面積（参考） column is
+  stated by the publisher to come from 国土地理院's 面積調, and 人口密度 is
+  computed from it. Both are excluded, consistent with the 2026-09-28 decision to
+  refuse sources that cite 国土地理院 or third-party originals.
+- **One census round per table, never mixed.** 2025 counts do not join the 2020
+  `estat_small_area` boundaries. The 2020 figures the bureau re-tabulated to 2025
+  boundaries (組替) are the publisher's own and may be carried, with the year in
+  the column name.
+- **`valid_from` is the census date** (2025-10-01), as stated by the source.
+- **`required: false`.** A release must not depend on this source, as with the
+  V2 sources in §3.1.
+
 ## 4. Ambiguity policy (hard)
 
 > Leaving data unresolved is acceptable. Inventing a wrong 1:1 mapping is a defect.
