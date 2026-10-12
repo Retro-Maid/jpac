@@ -141,11 +141,17 @@ jpac に人口を載せるための取得元・形式・実測を記録する。
 |---|---:|---:|
 | 確実に出せる | **301** | 43,558,529（**35.4%**） |
 | うち、政令市の親と区が両方載る区画（親の値だけを使う） | 6 | |
-| 出せない（一部だけを含む市区町村がある） | 281 | NULL と理由を残す |
+| 出せない（一部だけを含む市区町村がある） | 280 | NULL と `partial_municipality` |
+| 出せない（市区町村を1つに決められない条文がある、T6） | 1 | NULL と `unresolved_member` |
 
 `child` は規則 T1・T1b・T1c・T4・T5 が出す関係で、「番号区画がその市区町村を含む」ことを
 意味する（`docs/MATCHING_RULES.md`）。`overlap` は T3（「〜を除く。」「〜に限る。」で
 市区町村の一部だけを指す条文）。この数字は、ブリッジの今の分類を前提にした下限である。
+
+**区画の構成が欠けていないこと**は、ブリッジの作り方に頼っている。条文を市区町村に解決
+できなければ `build/telephone.py` は行を落とさず T7（`unresolved`、`lg_code` NULL）の行を
+出すので、その区画は丸ごと含む区画として数えられない。現在の `telephone_area` は582区画で、
+ブリッジも582区画すべてに行を持ち、T7 の行は0件だった。
 
 政令市は、jpac の `municipality` に親と区の両方が載っている。両方を足すと二重に数えるので、
 親が丸ごと含まれる区画では親の値だけを使う（区の合計 = 親 であることは 3.2 で確かめた）。
@@ -178,6 +184,10 @@ jpac に人口を載せるための取得元・形式・実測を記録する。
    依存を足すなら `docs/ARCHITECTURE.md` §5 に理由を書く。
 6. **ファイルは同じ statInfId で差し替えられうる。** 確報で数値が直るときは、SHA-256 の
    変化として止まる。そのときは差分を確かめてから受け入れる。
+7. **国勢調査の期日より後の廃置分合で、品質ゲートが止まる。** 結果表に無くてよいのは
+   北方領土の6村だけと決めておき、それ以外の現行市区町村が表に無ければ止める。
+   2025-10-01 より後に新設された市区町村はここで止まり、どう扱うかは人が決める。
+   e-Stat 廃置分合等情報（2026-09-27 取得）には、2025-10-01 より後の変更は0件だった。
 
 ---
 
@@ -185,10 +195,11 @@ jpac に人口を載せるための取得元・形式・実測を記録する。
 
 | テーブル | 主キー | 中身 |
 |---|---|---|
-| `census_population_raw` | `(source_snapshot_id, table_id, row_ordinal)` | 第1-1表の1行 = 1行。地域識別コード・地域コード・地域名と全セルを `*_raw` の文字列で持つ。`9` と `a` の行も消さない。面積と人口密度の列は持たない |
-| `census_population_municipality` | `(census_year, lg_code)` | 1,918行。人口（総数・男・女）、世帯数（総数・一般・施設等）、世帯人員（同）、2020年の人口と世帯数（組替）。`area_level`（地域識別コード）。北方領土の6行は値を NULL にし、`value_status = 'not_enumerated'` |
-| `census_population_age` | `(census_year, lg_code, nationality, sex, age_class)` | 第2-7表を縦持ちに。年齢21区分と不詳。再掲と構成比は持たない（区分から再計算できるので） |
-| `census_population_numbering_area` | `(census_year, numbering_area_code)` | 582行。確実な301区画だけ値を持ち、残りは NULL と `value_status = 'partial_municipality'` |
+| `census_population_raw` | `(table_id, row_ordinal)` | 第1-1表の1行 = 1行。地域識別コード・地域コード・地域名と全セルを `*_raw` の文字列で持つ。`9` と `a` の行も消さない。面積と人口密度の列は持たない |
+| `census_population_municipality` | `(census_year, lg_code)` | 1,918行。人口（総数・男・女）、世帯数（総数・一般・施設等）、世帯人員（同）、2020年の人口と世帯数（組替）。`area_level`（地域識別コード）。北方領土の6行は値を NULL にし、`value_status = 'not_enumerated'`。それ以外の欠けは `missing_from_table` で、品質ゲートを止める |
+| `census_population_age` | `(census_year, region_key, nationality_raw, sex_raw, age_class_raw)` | 第2-7表を縦持ちに（538,824行）。全地域を持ち、現行の市区町村の行だけ `lg_code` を持つ（2000年の市区町村と集計行は NULL）。`region_key` は（階層, 2000年の地域コード, 2025年の地域コード）で一意。年齢21区分と不詳。再掲と構成比は持たない（区分の和として作れるので） |
+| `census_population_age_summary` | `(census_year, region_key, nationality_raw, sex_raw)` | 第2-7表の平均年齢と年齢中位数（24,492行）。5歳階級からは再計算できない公式の値なので、別の表に持つ |
+| `census_population_numbering_area` | `(census_year, numbering_area_code)` | 582行。確実な301区画だけ値を持ち、残りは NULL と `value_status`（`partial_municipality` / `unresolved_member` / `member_not_enumerated` / `no_municipality`） |
 
 - 値の列は整数。`-` は §2.3 のとおり、件数では 0、率では NULL。元の文字列は raw 層に残る。
 - `census_year` は 2025。将来の国勢調査は行を足し、上書きしない。
