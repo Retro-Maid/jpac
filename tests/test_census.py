@@ -187,6 +187,15 @@ class TestMunicipality:
         assert hakodate["population_total"] == 300   # 2025年の函館市。旧：函館市の 250 ではない
         assert census.unmatched_census_codes(raw, MUNICIPALITY) == []
 
+    def test_only_the_known_northern_villages_may_be_absent(self, raw):
+        extra = pl.concat([MUNICIPALITY, pl.DataFrame({
+            "lg_code": ["999990"], "jis_city_code": ["99999"], "is_current": [1],
+        })])
+        assert census.missing_from_census(raw, MUNICIPALITY) == []
+        assert census.missing_from_census(raw, extra) == ["99999"]
+        m = census.municipality_population(raw, extra)
+        assert m.filter(pl.col("lg_code") == "999990")["value_status"].item() ==             "missing_from_table"
+
     def test_dash_counts_are_zero(self, raw):
         m = census.municipality_population(raw, MUNICIPALITY)
         assert m.filter(pl.col("lg_code") == "014036")["households_institutional"].item() == 0
@@ -252,6 +261,22 @@ class TestNumberingArea:
         out = census.numbering_area_population(m, b, MUNICIPALITY, raw).row(0, named=True)
         assert out["value_status"] == "partial_municipality"
 
+    def test_an_unresolved_clause_leaves_the_area_null(self, raw):
+        """T7 の行（lg_code NULL）がある区画は、構成が分からないので出さない."""
+        m = census.municipality_population(raw, MUNICIPALITY)
+        b = pl.DataFrame({"numbering_area_code": ["014", "014"],
+                          "lg_code": ["012025", None],
+                          "relation_type": ["child", "unresolved"]})
+        out = census.numbering_area_population(m, b, MUNICIPALITY, raw).row(0, named=True)
+        assert out["value_status"] == "unresolved_member"
+        assert out["population_total"] is None
+
+    def test_an_area_without_rows_is_kept(self, raw):
+        m = census.municipality_population(raw, MUNICIPALITY)
+        b = self.bridge([("011", "012025", "child")])
+        out = census.numbering_area_population(m, b, MUNICIPALITY, raw, areas=["011", "099"])
+        assert out.filter(pl.col("numbering_area_code") == "099")["value_status"].item() ==             "no_municipality"
+
     def test_a_member_without_a_count_leaves_the_area_null(self, raw):
         m = census.municipality_population(raw, MUNICIPALITY)
         b = self.bridge([("013", "014036", "child"), ("013", "016969", "child")])
@@ -270,7 +295,7 @@ def t07_rows(regions: list[tuple[str, str, str, list[int]]]) -> list[list]:
     out = [
         ["【原数値】令和７年国勢調査　人口等基本集計"],
         [],
-        [*head, "表章項目", *(["人口"] * len(labels))],
+        [*head, "表章項目", *(["人口"] * len(labels)), "平均年齢", "年齢中位数"],
         [*head, "項目名", *labels],
         [*head, "階層レベル"],
         [*head, "表章単位"],
@@ -285,7 +310,7 @@ def t07_rows(regions: list[tuple[str, str, str, list[int]]]) -> list[list]:
         for nat in ("0_国籍総数", "1_うち日本人"):
             for sex in ("0_総数", "1_男", "2_女"):
                 out.append([nat, sex, level, f"{code[:2]}_x", code, "2000", f"{code[:2]}_x",
-                            code, name, *values])
+                            code, name, *values, 48.5, "-"])
     return out
 
 
@@ -298,7 +323,7 @@ def ages(total: int) -> list[int]:
 
 class TestAge:
     def test_long_form_with_unknown_age_kept(self):
-        age = census.parse_t07(xlsx(t07_rows([("3", "01403", "0090_泊村", ages(100))])))
+        age, _summary = census.parse_t07(xlsx(t07_rows([("3", "01403", "0090_泊村", ages(100))])))
         assert age.height == 6 * 22
         unknown = age.filter(pl.col("age_class_raw") == "22_年齢「不詳」")
         assert set(unknown["population"]) == {3}
@@ -310,7 +335,7 @@ class TestAge:
             census.parse_t07(xlsx(t07_rows([("3", "01403", "0090_泊村", bad)])))
 
     def test_only_current_municipalities_get_lg_code(self):
-        age = census.parse_t07(xlsx(t07_rows([
+        age, _summary = census.parse_t07(xlsx(t07_rows([
             ("3", "01403", "0090_泊村", ages(100)),
             ("9", "01202", "0015_（旧：函館市）", ages(250)),
         ])))
@@ -318,8 +343,23 @@ class TestAge:
         assert set(out.filter(pl.col("area_level_raw") == "9")["lg_code"]) == {None}
         assert set(out.filter(pl.col("area_level_raw") == "3")["lg_code"]) == {"014036"}
 
+    def test_mean_and_median_age_are_carried_as_published(self):
+        """5歳階級から再計算できない公式の値なので、捨てずに別の表に持つ."""
+        _age, summary = census.parse_t07(xlsx(t07_rows([("3", "01403", "0090_泊村", ages(100))])))
+        out = census.age_summary(summary, MUNICIPALITY)
+        assert out.height == 6
+        assert set(out["mean_age"]) == {48.5}
+        assert set(out["median_age"]) == {None}     # 「-」は率では NULL
+        assert set(out["median_age_raw"]) == {"-"}
+
+    def test_dropped_columns_are_still_fingerprinted(self):
+        _start, labels, _cols = census.layout_t07(
+            census.read_xlsx_rows(xlsx(t07_rows([("3", "01403", "0090_泊村", ages(100))])))
+        )
+        assert "平均年齢" in labels and "年齢中位数" in labels
+
     def test_age_total_must_match_table_1(self, raw):
-        age = census.parse_t07(xlsx(t07_rows([("3", "01403", "0090_泊村", ages(99))])))
+        age, _summary = census.parse_t07(xlsx(t07_rows([("3", "01403", "0090_泊村", ages(99))])))
         problems = census.consistency_problems(raw, age)
         assert any("01403" in p and "第2-7表" in p for p in problems)
 

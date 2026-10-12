@@ -82,6 +82,7 @@ SORT_KEYS: dict[str, list[str]] = {
     "census_population_age": [
         "census_year", "region_key", "nationality_raw", "sex_raw", "age_class_raw",
     ],
+    "census_population_age_summary": ["census_year", "region_key", "nationality_raw", "sex_raw"],
     "census_population_numbering_area": ["census_year", "numbering_area_code"],
 }
 
@@ -550,6 +551,7 @@ PRIMARY_KEYS = {
     "census_population_age": (
         "census_year", "region_key", "nationality_raw", "sex_raw", "age_class_raw",
     ),
+    "census_population_age_summary": ("census_year", "region_key", "nationality_raw", "sex_raw"),
     "census_population_numbering_area": ("census_year", "numbering_area_code"),
     "address_lineage": "lineage_id", "address_history": "history_id",
     "address_rsdt_variant": "rsdt_variant_id",
@@ -659,14 +661,15 @@ N02_STATION_CHECKS = ["CHECK (feature_count >= 1)"]
 
 # 人口（docs/POPULATION_PREFLIGHT.md）。値が無いことと、その理由が食い違わないこと。
 CENSUS_MUNICIPALITY_CHECKS = [
-    "CHECK (value_status IN ('published', 'not_enumerated'))",
-    "CHECK ((value_status = 'not_enumerated') = (population_total IS NULL))",
+    "CHECK (value_status IN ('published', 'not_enumerated', 'missing_from_table'))",
+    "CHECK ((value_status = 'published') = (population_total IS NOT NULL))",
     "CHECK (population_total IS NULL OR population_total >= 0)",
 ]
 CENSUS_AGE_CHECKS = ["CHECK (population >= 0)"]
 # 按分しないので、値を持つのは市区町村を丸ごと含む区画だけ。
 CENSUS_NUMBERING_AREA_CHECKS = [
-    "CHECK (value_status IN ('complete', 'partial_municipality', 'member_not_enumerated'))",
+    "CHECK (value_status IN ('complete', 'partial_municipality', 'unresolved_member',"
+    " 'member_not_enumerated', 'no_municipality'))",
     "CHECK ((value_status = 'complete') = (population_total IS NOT NULL))",
 ]
 

@@ -68,9 +68,11 @@ class EstatCensusSource(BaseSource):
             )
         with stage_context(self.name, "parse"):
             raw = parse_t01(fetched["population"].path.read_bytes())
-            age = parse_t07(fetched["age"].path.read_bytes())
+            age, summary = parse_t07(fetched["age"].path.read_bytes())
             log.info("parsed census tables", regions=raw.height, age_rows=age.height)
-        return {"census_population_raw": raw, "_census_age": age}
+        return {
+            "census_population_raw": raw, "_census_age": age, "_census_age_summary": summary,
+        }
 
     def build_snapshots(self, discovery, fetched, schemas, row_counts):
         snaps = []

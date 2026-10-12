@@ -164,6 +164,15 @@ AGE_CLASSES = [
 ]
 
 
+# 第2-7表の、区分から作れない公式の値。平均年齢と年齢中位数は5歳階級からは再計算
+# できない（各歳と不詳の扱いが要る）ので、縦持ちとは別の表に持つ。
+SUMMARY_COLUMNS = {"平均年齢": "mean_age", "年齢中位数": "median_age"}
+
+# 国勢調査の対象外として、結果表に載らないと分かっている市区町村（北方領土の6村）。
+# これ以外の市区町村が表に無ければ、推測で埋めずに品質ゲートで止める。
+EXPECTED_NOT_ENUMERATED = frozenset({"01695", "01696", "01697", "01698", "01699", "01700"})
+
+
 class CensusLayoutError(ValueError):
     """発行元の表の形が、読めると確かめた形と違う。推測で読まずに止める."""
 
@@ -202,18 +211,32 @@ def layout_t01(rows: list[list[str | None]]) -> tuple[int, list[str]]:
 
 
 def layout_t07(rows: list[list[str | None]]) -> tuple[int, list[str], dict[str, int]]:
-    """第2-7表の表頭を確かめ、開始行・列名・年齢区分の列位置を返す."""
+    """第2-7表の表頭を確かめ、開始行・列名・読む列の位置を返す.
+
+    列名は読まない列（再掲・構成比）も含めて全部返す。期待スキーマの指紋に入れ、
+    発行元が列を足したり並べ替えたりすれば止めるため。
+    """
+    item_row = _find_row(rows, 8, "表章項目")
     name_row = _find_row(rows, 8, "項目名")
     header_row = _find_row(rows, 2, "地域識別コード")
     got = [_cell(rows[header_row], i) for i in range(2 + len(REGION_HEADERS))]
     if got != ["国籍総数か日本人", "男女", *REGION_HEADERS]:
         raise CensusLayoutError(f"第2-7表の地域の列が違う: {got}")
-    names = {_cell(rows[name_row], i): i for i in range(9, len(rows[name_row]))}
-    missing = [a for a in ["00_総数", *AGE_CLASSES] if a not in names]
+    labels = ["国籍総数か日本人", "男女", *REGION_HEADERS]
+    cols: dict[str, int] = {}
+    for i in range(9, max(len(rows[item_row]), len(rows[name_row]))):
+        item, name = _cell(rows[item_row], i), _cell(rows[name_row], i)
+        if item is None:
+            continue
+        labels.append(f"{item}/{name}" if name else item)
+        if item == "人口" and name in ("00_総数", *AGE_CLASSES):
+            cols[name] = i
+        elif item in SUMMARY_COLUMNS and name is None:
+            cols[item] = i
+    missing = [a for a in ["00_総数", *AGE_CLASSES, *SUMMARY_COLUMNS] if a not in cols]
     if missing:
-        raise CensusLayoutError(f"第2-7表に年齢区分が無い: {missing}")
-    labels = ["国籍総数か日本人", "男女", *REGION_HEADERS, "00_総数", *AGE_CLASSES]
-    return header_row + 1, labels, {a: names[a] for a in ["00_総数", *AGE_CLASSES]}
+        raise CensusLayoutError(f"第2-7表に読む列が無い: {missing}")
+    return header_row + 1, labels, cols
 
 
 # ---------------------------------------------------------------- 値
@@ -273,38 +296,48 @@ def parse_t01(data: bytes) -> pl.DataFrame:
     return df
 
 
-def parse_t07(data: bytes) -> pl.DataFrame:
-    """第2-7表 → 縦持ちの年齢別人口（全地域。lg_code は後で結ぶ）."""
+def parse_t07(data: bytes) -> tuple[pl.DataFrame, pl.DataFrame]:
+    """第2-7表 → 縦持ちの年齢別人口と、平均年齢・年齢中位数（全地域。lg_code は後で結ぶ）."""
     rows = read_xlsx_rows(data)
     start, _labels, cols = layout_t07(rows)
-    out = []
+    out, summary = [], []
     for row in rows[start:]:
         if not _cell(row, 2):
             continue
         reg = _region(row, 2)
         nationality, sex = _cell(row, 0), _cell(row, 1)
-        total_raw = _cell(row, cols["00_総数"])
+        key = {"region_key": region_key(reg), **reg,
+               "nationality_raw": nationality, "sex_raw": sex}
         parts = []
         for age in AGE_CLASSES:
             raw = _cell(row, cols[age])
             parts.append(parse_value(raw, "count"))
-            out.append({
-                "region_key": region_key(reg), **reg,
-                "nationality_raw": nationality, "sex_raw": sex,
-                "age_class_raw": age, "population_raw": raw,
-                "population": parts[-1],
-            })
-        total = parse_value(total_raw, "count")
+            out.append({**key, "age_class_raw": age, "population_raw": raw,
+                        "population": parts[-1]})
+        total = parse_value(_cell(row, cols["00_総数"]), "count")
         if None not in parts and total != sum(parts):
             raise CensusLayoutError(
                 f"第2-7表 {reg['area_name_raw']} {nationality} {sex}: "
                 f"年齢区分の和 {sum(parts)} ≠ 総数 {total}"
             )
-    return pl.DataFrame(out, schema={
+        rec = dict(key)
+        for item, col in SUMMARY_COLUMNS.items():
+            raw = _cell(row, cols[item])
+            rec[col] = parse_value(raw, "rate")
+            rec[f"{col}_raw"] = raw
+        summary.append(rec)
+    key_schema = {
         "region_key": pl.Utf8, **dict.fromkeys(REGION_COLUMNS, pl.Utf8),
-        "nationality_raw": pl.Utf8, "sex_raw": pl.Utf8, "age_class_raw": pl.Utf8,
-        "population_raw": pl.Utf8, "population": pl.Int64,
-    })
+        "nationality_raw": pl.Utf8, "sex_raw": pl.Utf8,
+    }
+    summary_schema = dict(key_schema)
+    for col in SUMMARY_COLUMNS.values():
+        summary_schema |= {col: pl.Float64, f"{col}_raw": pl.Utf8}
+    return (
+        pl.DataFrame(out, schema={**key_schema, "age_class_raw": pl.Utf8,
+                                  "population_raw": pl.Utf8, "population": pl.Int64}),
+        pl.DataFrame(summary, schema=summary_schema),
+    )
 
 
 # ---------------------------------------------------------------- jpac に結ぶ
@@ -336,8 +369,9 @@ def municipality_population(
 ) -> pl.DataFrame:
     """``census_population_municipality``: 現行の市区町村 1行ずつ.
 
-    国勢調査に無い市区町村（北方領土の6村）も行を持ち、値を NULL にして
-    ``value_status = 'not_enumerated'`` とする。
+    結果表に無い市区町村も行を持ち、値を NULL にする。国勢調査の対象外と分かっている
+    北方領土の6村は ``not_enumerated``、それ以外は ``missing_from_table`` で、後者は
+    ``missing_from_census`` が品質ゲートを止める。
     """
     census = _typed(
         raw.filter(pl.col("area_level_raw").is_in(MUNICIPAL_LEVELS))
@@ -351,10 +385,27 @@ def municipality_population(
         "lg_code",
         "area_level",
         *COUNT_COLUMNS,
-        pl.when(pl.col("area_level").is_null()).then(pl.lit("not_enumerated"))
-        .otherwise(pl.lit("published")).alias("value_status"),
+        pl.when(pl.col("area_level").is_not_null()).then(pl.lit("published"))
+        .when(pl.col("jis_city_code").is_in(list(EXPECTED_NOT_ENUMERATED)))
+        .then(pl.lit("not_enumerated"))
+        .otherwise(pl.lit("missing_from_table")).alias("value_status"),
         pl.lit(VALID_FROM).alias("valid_from"),
     ).sort("lg_code")
+
+
+def missing_from_census(raw: pl.DataFrame, municipality: pl.DataFrame) -> list[str]:
+    """jpac の現行市区町村のうち、結果表に無く、対象外とも分かっていないもの.
+
+    国勢調査の期日（2025-10-01）より後に新設された市区町村はここに出て、品質ゲートを
+    止める。期日の後の変更をどう扱うかは人が決める（preflight §4）。
+    """
+    present = set(
+        raw.filter(pl.col("area_level_raw").is_in(MUNICIPAL_LEVELS))["area_code_2025_raw"]
+    )
+    return sorted(
+        c for c in _current_municipalities(municipality)["jis_city_code"]
+        if c not in present and c not in EXPECTED_NOT_ENUMERATED
+    )
 
 
 def unmatched_census_codes(raw: pl.DataFrame, municipality: pl.DataFrame) -> list[str]:
@@ -451,10 +502,9 @@ def consistency_problems(raw: pl.DataFrame, age: pl.DataFrame | None = None) -> 
     return problems
 
 
-def age_population(age: pl.DataFrame, municipality: pl.DataFrame) -> pl.DataFrame:
-    """``census_population_age``: 全地域の縦持ち。現行の市区町村の行だけ ``lg_code`` を持つ."""
+def _attach_lg_code(df: pl.DataFrame, municipality: pl.DataFrame) -> pl.DataFrame:
     cur = _current_municipalities(municipality)
-    return age.join(
+    return df.join(
         cur.rename({"jis_city_code": "area_code_2025_raw"}),
         on="area_code_2025_raw", how="left",
     ).with_columns(
@@ -463,11 +513,31 @@ def age_population(age: pl.DataFrame, municipality: pl.DataFrame) -> pl.DataFram
         .then(pl.col("lg_code")).alias("lg_code"),
         pl.lit(CENSUS_YEAR).alias("census_year"),
         pl.lit(VALID_FROM).alias("valid_from"),
-    ).select(
+    )
+
+
+def age_population(age: pl.DataFrame, municipality: pl.DataFrame) -> pl.DataFrame:
+    """``census_population_age``: 全地域の縦持ち。現行の市区町村の行だけ ``lg_code`` を持つ."""
+    return _attach_lg_code(age, municipality).select(
         "census_year", "region_key", "lg_code", *REGION_COLUMNS,
         "nationality_raw", "sex_raw", "age_class_raw", "population", "population_raw",
         "valid_from",
     )
+
+
+def age_summary(summary: pl.DataFrame, municipality: pl.DataFrame) -> pl.DataFrame:
+    """``census_population_age_summary``: 平均年齢・年齢中位数（発行元の値のまま）."""
+    return _attach_lg_code(summary, municipality).select(
+        "census_year", "region_key", "lg_code", *REGION_COLUMNS,
+        "nationality_raw", "sex_raw",
+        *[c for col in SUMMARY_COLUMNS.values() for c in (col, f"{col}_raw")],
+        "valid_from",
+    )
+
+
+NUMBERING_AREA_VALUES = (
+    "population_total", "population_male", "population_female", "households_total",
+)
 
 
 def numbering_area_population(
@@ -475,12 +545,18 @@ def numbering_area_population(
     bridge_tel: pl.DataFrame,
     municipality: pl.DataFrame,
     raw: pl.DataFrame,
+    areas: list[str] | None = None,
 ) -> pl.DataFrame:
     """``census_population_numbering_area``: 番号区画ごとの人口. **按分しない.**
 
     区画に親（政令市）とその区の両方が載るときは親の行を外す（区の合計 = 親 なので、
     区の行だけで同じ範囲を表す）。残る行がすべて ``child`` で、どの市区町村にも人口が
     あるときだけ和を出す。そうでなければ NULL と理由。
+
+    区画の構成が欠けていないことは、ブリッジの作り方に頼っている。条文を市区町村に
+    解決できなければ ``build/telephone.py`` は行を落とさず T7（``unresolved``、
+    ``lg_code`` NULL）の行を出すので、その区画は ``unresolved_member`` になる。
+    ``areas`` を渡すと、ブリッジに1行も無い区画も ``no_municipality`` として行を持つ。
     """
     cur = _current_municipalities(municipality)
     lg_of = dict(zip(cur["jis_city_code"], cur["lg_code"], strict=True))
@@ -497,19 +573,24 @@ def numbering_area_population(
     b = b.join(wards_present, on=["numbering_area_code", "lg_code"], how="left").filter(
         pl.col("_covered_by_wards").is_null()
     ).join(
-        municipal.select("lg_code", "value_status", "population_total",
-                         "population_male", "population_female", "households_total"),
+        municipal.select("lg_code", "value_status", *NUMBERING_AREA_VALUES),
         on="lg_code", how="left",
     )
     agg = b.group_by("numbering_area_code").agg(
         pl.len().alias("municipality_count"),
+        pl.col("relation_type").is_in(["unresolved", "ambiguous"]).any().alias("_unresolved"),
         (pl.col("relation_type") == "child").all().alias("_all_child"),
         (pl.col("value_status") == "published").all().alias("_all_published"),
-        *[pl.col(c).sum().alias(c) for c in
-          ("population_total", "population_male", "population_female", "households_total")],
+        *[pl.col(c).sum().alias(c) for c in NUMBERING_AREA_VALUES],
     )
+    if areas is not None:
+        agg = pl.DataFrame(
+            {"numbering_area_code": sorted(set(areas) | set(agg["numbering_area_code"]))}
+        ).join(agg, on="numbering_area_code", how="left")
     status = (
-        pl.when(~pl.col("_all_child")).then(pl.lit("partial_municipality"))
+        pl.when(pl.col("municipality_count").is_null()).then(pl.lit("no_municipality"))
+        .when(pl.col("_unresolved")).then(pl.lit("unresolved_member"))
+        .when(~pl.col("_all_child")).then(pl.lit("partial_municipality"))
         .when(~pl.col("_all_published")).then(pl.lit("member_not_enumerated"))
         .otherwise(pl.lit("complete"))
     )
@@ -517,9 +598,8 @@ def numbering_area_population(
     return agg.select(
         pl.lit(CENSUS_YEAR).alias("census_year"),
         "numbering_area_code",
-        "municipality_count",
-        *[pl.when(keep).then(pl.col(c)).alias(c) for c in
-          ("population_total", "population_male", "population_female", "households_total")],
+        pl.col("municipality_count").fill_null(0),
+        *[pl.when(keep).then(pl.col(c)).alias(c) for c in NUMBERING_AREA_VALUES],
         status.alias("value_status"),
         pl.lit(VALID_FROM).alias("valid_from"),
     ).sort("numbering_area_code")

@@ -564,7 +564,8 @@ def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str,
     tables.update(
         _build_census_tables(
             outcome, tables["municipality_version"],
-            tables["bridge_municipality_telephone"], snapshot_for,
+            tables["bridge_municipality_telephone"], tables.get("telephone_area"),
+            snapshot_for,
         )
     )
 
@@ -1198,9 +1199,9 @@ def _build_lineage_tables(
 
 def _build_census_tables(
     outcome: FetchOutcome, municipality: pl.DataFrame,
-    bridge_tel: pl.DataFrame, snapshot_for,
+    bridge_tel: pl.DataFrame, telephone_area: pl.DataFrame | None, snapshot_for,
 ) -> dict[str, pl.DataFrame]:
-    """国勢調査の4表と、表の整合の検査結果（``_census_gate``、非公開）.
+    """国勢調査の5表と、表の整合の検査結果（``_census_gate``、非公開）.
 
     ペイロードが無ければ何も返さず、品質ゲートは検査を ``skip`` として記録する。
     """
@@ -1216,6 +1217,8 @@ def _build_census_tables(
             *census.consistency_problems(raw, age),
             *(f"{c}: jpac の現行市区町村に無い" for c in
               census.unmatched_census_codes(raw, municipality)),
+            *(f"{c}: 結果表に無い（国勢調査の対象外とも分かっていない）" for c in
+              census.missing_from_census(raw, municipality)),
         ]
     ]
     return {
@@ -1226,8 +1229,13 @@ def _build_census_tables(
         "census_population_age": census.age_population(age, municipality).with_columns(
             pl.lit(snap_age).alias("source_snapshot_id")
         ),
+        "census_population_age_summary": census.age_summary(
+            parsed["_census_age_summary"], municipality
+        ).with_columns(pl.lit(snap_age).alias("source_snapshot_id")),
         "census_population_numbering_area": census.numbering_area_population(
-            municipal, bridge_tel, municipality, raw
+            municipal, bridge_tel, municipality, raw,
+            areas=None if telephone_area is None
+            else telephone_area["numbering_area_code"].to_list(),
         ).with_columns(pl.lit(snap_pop).alias("source_snapshot_id")),
         "_census_gate": pl.DataFrame(problems, schema={"problem": pl.Utf8}),
     }
