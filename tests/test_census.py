@@ -147,6 +147,12 @@ class TestRead:
         with pytest.raises(census.CensusLayoutError):
             census.parse_t01(xlsx(rows))
 
+    def test_a_row_with_values_but_no_level_code_stops(self):
+        rows = t01_rows(NATIONAL)
+        rows.append([None, "01_x", "01999", None, "01_x", "01999", "謎の地域", 1])
+        with pytest.raises(census.CensusLayoutError):
+            census.parse_t01(xlsx(rows))
+
     def test_notes_are_part_of_the_layout(self):
         notes = census.table_notes(census.read_xlsx_rows(xlsx(t01_rows(NATIONAL))))
         assert any("国土地理院" in n for n in notes)
@@ -253,6 +259,15 @@ class TestNumberingArea:
                          ("001", "011029", "child"), ("001", "014036", "child")])
         out = census.numbering_area_population(m, b, MUNICIPALITY, raw).row(0, named=True)
         assert out["population_total"] == 700   # 札幌市 600 + 泊村 100。1,300 ではない
+
+    def test_a_partial_parent_is_not_replaced_by_its_wards(self, raw):
+        """親が overlap なら、区がすべて child でも親の行を外さない。条文が区ではなく
+        町名で切っていれば、区の行だけでは区画の範囲を言い尽くせない."""
+        m = census.municipality_population(raw, MUNICIPALITY)
+        b = self.bridge([("003", "011002", "overlap"), ("003", "011011", "child")])
+        out = census.numbering_area_population(m, b, MUNICIPALITY, raw).row(0, named=True)
+        assert out["value_status"] == "partial_municipality"
+        assert out["population_total"] is None
 
     def test_a_partial_parent_is_judged_by_its_wards(self, raw):
         m = census.municipality_population(raw, MUNICIPALITY)

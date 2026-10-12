@@ -263,6 +263,12 @@ def _region(row: list[str | None], offset: int) -> dict[str, str | None]:
     return {c: _cell(row, offset + i) for i, c in enumerate(REGION_COLUMNS)}
 
 
+def _assert_blank(row: list[str | None], ordinal: int) -> None:
+    """地域識別コードの無い行は、空行でなければ止める。黙って飛ばすと行が消える."""
+    if any(_cell(row, i) for i in range(len(row))):
+        raise CensusLayoutError(f"{ordinal} 行目: 地域識別コードが無いのに値がある")
+
+
 def region_key(r: dict) -> str:
     """地域の行を一意に指す鍵。階層・2000年の地域コード・2025年の地域コードの組."""
     return f"{r['area_level_raw']}:{r['area_code_2000_raw'] or ''}:{r['area_code_2025_raw']}"
@@ -275,6 +281,7 @@ def parse_t01(data: bytes) -> pl.DataFrame:
     out = []
     for ordinal, row in enumerate(rows[start:], start=start + 1):
         if not _cell(row, 0):
+            _assert_blank(row, ordinal)
             continue
         rec = {"table_id": "b01_01", "row_ordinal": ordinal, **_region(row, 0)}
         if rec["area_level_raw"] not in AREA_LEVELS:
@@ -301,8 +308,9 @@ def parse_t07(data: bytes) -> tuple[pl.DataFrame, pl.DataFrame]:
     rows = read_xlsx_rows(data)
     start, _labels, cols = layout_t07(rows)
     out, summary = [], []
-    for row in rows[start:]:
+    for ordinal, row in enumerate(rows[start:], start=start + 1):
         if not _cell(row, 2):
+            _assert_blank(row, ordinal)
             continue
         reg = _region(row, 2)
         nationality, sex = _cell(row, 0), _cell(row, 1)
@@ -549,8 +557,8 @@ def numbering_area_population(
 ) -> pl.DataFrame:
     """``census_population_numbering_area``: 番号区画ごとの人口. **按分しない.**
 
-    区画に親（政令市）とその区の両方が載るときは親の行を外す（区の合計 = 親 なので、
-    区の行だけで同じ範囲を表す）。残る行がすべて ``child`` で、どの市区町村にも人口が
+    区画に親（政令市）が丸ごと含まれ、その区も載るときは親の行を外す（区の合計 = 親
+    なので、区の行だけで同じ範囲を表す）。残る行がすべて ``child`` で、どの市区町村にも人口が
     あるときだけ和を出す。そうでなければ NULL と理由。
 
     区画の構成が欠けていないことは、ブリッジの作り方に頼っている。条文を市区町村に
@@ -570,8 +578,11 @@ def numbering_area_population(
     wards_present = b.filter(pl.col("_parent").is_not_null()).select(
         "numbering_area_code", pl.col("_parent").alias("lg_code")
     ).unique().with_columns(pl.lit(True).alias("_covered_by_wards"))
+    # 外してよいのは、親が丸ごと含まれる（child）ときだけ。親が overlap なら、市の
+    # どの部分が区画に入るかは区の行が言い尽くしているとは限らない（条文が区ではなく
+    # 町名で切ることがある）ので、親の行を残して区画を partial のままにする。
     b = b.join(wards_present, on=["numbering_area_code", "lg_code"], how="left").filter(
-        pl.col("_covered_by_wards").is_null()
+        pl.col("_covered_by_wards").is_null() | (pl.col("relation_type") != "child")
     ).join(
         municipal.select("lg_code", "value_status", *NUMBERING_AREA_VALUES),
         on="lg_code", how="left",
