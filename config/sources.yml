@@ -838,6 +838,86 @@ sources:
       - name: "境界変更の行"
         reason: "市区町村コードは変わらない。系譜の辺にならない。"
 
+  estat_census_2025:
+    provider: "総務省統計局"
+    provider_en: "Statistics Bureau of Japan"
+    required: false
+    landing_page: "https://www.e-stat.go.jp/stat-search/files?tstat=000001230925&toukei=00200521&cycle=0&tclass1=000001230926&tclass2=000001232187"
+    discovery:
+      method: file_download
+      # 結果表のファイルダウンロード（API ではない）。statInfId ごとに1ファイル。
+      # 取得元と実測は docs/POPULATION_PREFLIGHT.md §1.1。
+      url_template: "https://www.e-stat.go.jp/stat-search/file-download?statInfId={stat_inf_id}&fileKind=0"
+      published_at: "2026-09-29"
+      resources:
+        population:
+          dataset_name: estat_census_2025_population
+          stat_inf_id: "000040506423"
+          title: "第1-1表 男女別人口、世帯の種類別世帯数及び世帯人員 ほか（市区町村、2000年市区町村を含む）"
+          file_name: "b01_01.xlsx"
+          observed_sha256: "c1ff781e05af6fce6510ee9cfbeba856106c97ae780ca030a549466b0074d856"
+          observed_bytes: 809971
+        age:
+          dataset_name: estat_census_2025_age
+          stat_inf_id: "000040506431"
+          title: "第2-7表 男女、年齢（5歳階級及び3区分）、国籍総数か日本人別人口 ほか（同上）"
+          file_name: "b02_07.xlsx"
+          observed_sha256: "3d0dab20893d8fca43ef33d521a0651841de105cf5b2720582e5024469030e75"
+          observed_bytes: 8606864
+    license:
+      name: "政府統計の総合窓口(e-Stat)利用規約（政府標準利用規約 第2.0版 準拠 / CC BY 4.0 互換）"
+      url: "https://www.e-stat.go.jp/terms-of-use"
+      reviewed_on: "2026-10-12"
+      reviewed_by: "jp-address-crosswalk"
+      review_2026_10_12: >-
+        2026-10-12、メンテナが作業セッションで署名を指示した（docs/LICENSE_REVIEW_POPULATION_2026_10.md
+        §1）。結果表は e-Stat 本体のコンテンツで、e-Stat 利用規約が直接適用される。別紙の
+        適用除外（ロゴ、API、統計地理情報システム等）に統計表のファイルダウンロードは含まれない。
+        同日、規約ページの本文ハッシュを snapshot.license_text_hash_bytes() で再計算し、
+        estat_boundary のベースラインと一致することを確かめた。
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。編集・加工した場合は出典とは別に加工した旨を記載し、あたかも国（又は
+          府省等）が作成したかのような態様で公表・利用しない。
+      attribution:
+        unmodified: |
+          出典：「令和7年国勢調査 人口等基本集計」（総務省統計局、政府統計の総合窓口（e-Stat）、https://www.e-stat.go.jp/）
+        processed: |
+          「令和7年国勢調査 人口等基本集計」（総務省統計局、政府統計の総合窓口（e-Stat）、https://www.e-stat.go.jp/）を加工して作成
+      artifacts:
+        - role: primary_terms
+          name: "政府統計の総合窓口(e-Stat) 利用規約"
+          url: "https://www.e-stat.go.jp/terms-of-use"
+          text_sha256: "93c44dc2fc4de2f33789c71ca80bceac80877ee42f4b707a69d345bc3ff28fa1"
+          text_sha256_decoded: "93c44dc2fc4de2f33789c71ca80bceac80877ee42f4b707a69d345bc3ff28fa1"
+          note: >-
+            estat_boundary と同じページ・同じハッシュ。2026-10-12 に実ページから再計算して
+            一致を確かめた。
+    datasets:
+      population:
+        title: "第1-1表（原数値）"
+        encoding: xlsx
+        rows_observed: 4082
+        excluded_columns: ["面積（参考）", "人口密度"]
+        excluded_reason: >-
+          表の注記5のとおり面積は国土地理院「全国都道府県市区町村別面積調」により、人口密度は
+          その面積から算出される。国土地理院を原典に掲げるデータは採らない（2026-09-28 の
+          判断、docs/POLICY.md §3.3）。raw 層にも持たない。
+      age:
+        title: "第2-7表（原数値）"
+        encoding: xlsx
+        rows_observed: 24492
+        note: >-
+          年齢21区分と不詳、平均年齢・年齢中位数を読む。再掲と構成比は区分から作れるので
+          持たない（列名は期待スキーマの指紋に入る）。
+    excluded_datasets:
+      - name: "参考表：不詳補完値"
+        reason: "統計局による推計値。jpac は推定値を持たない（按分しない、と同じ理由）。"
+      - name: "DB（API）形式"
+        reason: "e-Stat 利用規約の別紙「API 機能の利用について」で別ルール。"
+
 http:
   timeout_connect_s: 15
   timeout_read_s: 120

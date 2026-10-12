@@ -84,6 +84,7 @@ from .sources import mlit_ksj_p11 as p11_source
 from .sources.abr import AbrSource
 from .sources.base import DiscoveredResource, Discovery
 from .sources.estat import EstatBoundarySource
+from .sources.estat_census import EstatCensusSource
 from .sources.estat_municipality_change import EstatMunicipalityChangeSource
 from .sources.japanpost import JapanPostSource
 from .sources.mic_area_code import MicAreaCodeSource
@@ -105,6 +106,8 @@ SOURCE_CLASSES = {
     "mlit_ksj_p11": p11_source.MlitKsjP11Source,
     # 市区町村の廃置分合。required: false で、無ければ署名の検査が skip になるだけ。
     "estat_municipality_change": EstatMunicipalityChangeSource,
+    # 人口（国勢調査 令和7年）。required: false で、無ければ整合の検査が skip になるだけ。
+    "estat_census_2025": EstatCensusSource,
 }
 
 
@@ -834,6 +837,7 @@ def _source_of(dataset_name: str) -> str:
     for prefix, source in [
         ("abr_", "abr"), ("japanpost_", "japanpost"), ("mlit_", "mlit"),
         ("mic_shigai", "mic_area_code"), ("mic_fixed", "mic_number_assignment"),
+        ("estat_census_2025_", "estat_census_2025"),
     ]:
         if dataset_name.startswith(prefix):
             return source

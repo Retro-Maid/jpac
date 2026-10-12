@@ -202,6 +202,24 @@ them. Terms were read verbatim and reviewed by a person — N02 and e-Stat on 20
 「廃置分合等情報」（政府統計の総合窓口（e-Stat）、https://www.e-stat.go.jp/）を加工して作成
 ```
 
+### 総務省統計局 — 令和7年国勢調査 人口等基本集計（e-Stat）
+
+- **Terms:** 政府統計の総合窓口(e-Stat)利用規約 (政府標準利用規約 第2.0版 準拠, stated to be
+  compatible with CC BY 4.0), applying directly to the result tables downloaded as files
+  (not through the API, which has separate terms). <https://www.e-stat.go.jp/terms-of-use>
+  Reviewed by a person on 2026-10-12
+  ([`docs/LICENSE_REVIEW_POPULATION_2026_10.md`](docs/LICENSE_REVIEW_POPULATION_2026_10.md)).
+- `required: false`. Tables 1-1 and 2-7 of the 原数値. What is shipped is the publisher's
+  cells as published (`census_population_raw`) and the counts attached to municipalities
+  and numbering areas (`census_population_*`) — processed data under the terms above.
+  Numbering-area figures are sums of whole municipalities only; nothing is apportioned.
+- **Not shipped:** the 面積（参考） and 人口密度 columns. The table states that 面積 comes
+  from 国土地理院's 全国都道府県市区町村別面積調, and 人口密度 is computed from it.
+
+```
+「令和7年国勢調査 人口等基本集計」（総務省統計局、政府統計の総合窓口（e-Stat）、https://www.e-stat.go.jp/）を加工して作成
+```
+
 ### Background map of the static map — OpenStreetMap
 
 The map in `site/` displays © OpenStreetMap contributors raster tiles as a background
