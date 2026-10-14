@@ -16,6 +16,7 @@ from pathlib import Path
 import typer
 
 from . import __version__
+from .build.points import POINTS_ZIP_NAME
 from .errors import JpacError
 from .logging_setup import configure, get_logger
 from .pipeline import TABLES_ZIP_NAME, Paths, rebuild_offline, release_artifacts
@@ -228,6 +229,10 @@ def export(
     writers.write_tables_zip(
         sorted(p.parquet.glob("*.parquet")), p.dist / TABLES_ZIP_NAME
     )
+    # 座標は dist/points にあり、上の tables には入らない（POLICY.md §3.4）。
+    point_files = sorted((p.dist / "points").glob("*.parquet"))
+    if point_files:
+        writers.write_tables_zip(point_files, p.dist / POINTS_ZIP_NAME)
     flat = writers.build_flat_view(tables, accepted_only=True)
     flat_all = writers.build_flat_view(tables, accepted_only=False)
     flat.write_parquet(p.dist / "jp_address_crosswalk.parquet", compression="zstd")
@@ -240,6 +245,67 @@ def export(
     # consumers are told to trust.
     writers.write_sha256sums(release_artifacts(p), p.dist / "SHA256SUMS")
     typer.echo(f"export: OK ({flat.height:,} flat rows, SHA256SUMS rewritten)")
+
+
+@app.command()
+def points(
+    root: str = ROOT_OPT,
+    verbose: bool = VERBOSE_OPT,
+) -> None:
+    """Write the station / bus stop coordinate asset from the tables already on disk.
+
+    `jpac build` writes it too. This command exists so a release that predates
+    the asset can get it without a rebuild: it reads the built tables from
+    `dist/parquet` and the N02 / P11 geometry from `data/raw`, through the same
+    functions the build uses, and touches nothing in `dist/parquet`.
+    """
+    _setup(verbose)
+    import polars as pl
+
+    from .build import points as points_build
+    from .export import writers
+    from .pipeline import _read_p11_geometry, _read_station_geometry, write_points_asset
+
+    p = _paths(root)
+
+    def table(name: str) -> pl.DataFrame | None:
+        f = p.parquet / f"{name}.parquet"
+        return pl.read_parquet(f) if f.exists() else None
+
+    def snapshot(df: pl.DataFrame) -> str | None:
+        ids = df["source_snapshot_id"].drop_nulls().unique().to_list()
+        return ids[0] if len(ids) == 1 else None
+
+    tables = {
+        n: t for n in ("n02_station", "bridge_station_municipality", "p11_bus_stop")
+        if (t := table(n)) is not None
+    }
+    found: dict[str, pl.DataFrame] = {}
+    try:
+        if "n02_station" in tables and (p.raw / "mlit_ksj_n02").exists():
+            st = tables["n02_station"]
+            found["station_point"] = points_build.build_station_points(
+                st, _read_station_geometry(p),
+                tables.get("bridge_station_municipality"), snapshot(st),
+            )
+        if "p11_bus_stop" in tables and (p.raw / "mlit_ksj_p11").exists():
+            bs = tables["p11_bus_stop"]
+            found["bus_stop_point"] = points_build.build_bus_stop_points(
+                bs, _read_p11_geometry(p), snapshot(bs),
+            )
+    except JpacError as exc:
+        _fail(exc)
+    if not found:
+        _abort(
+            "points: no N02 / P11 tables or payloads to read",
+            "run `jpac build` with the N02 and P11 payloads in data/raw",
+        )
+    out, problems = write_points_asset(p, found, tables)
+    if problems:
+        _abort("points: " + "; ".join(problems), "the asset was written but disagrees with its sources")
+    writers.write_sha256sums(release_artifacts(p), p.dist / "SHA256SUMS")
+    counts = ", ".join(f"{n} {df.height:,}" for n, df in sorted(found.items()))
+    typer.echo(f"points: OK ({counts}) -> {out.name}, SHA256SUMS rewritten")
 
 
 def restore_orphaned_baselines(directory: Path, kept: dict[str, bytes]) -> list[str]:
@@ -325,6 +391,7 @@ VERIFY_CHECKS: dict[str, tuple[str, str]] = {
     "distribution": ("verify_distribution.py", "分布とフラット表の再計算一致"),
     "artifacts": ("verify_artifacts_agree.py", "3成果物の一致と schema.sql の一致"),
     "diagrams": ("build_diagrams.py", "README の図が .mmd と同期しているか"),
+    "er": ("build_er.py", "ER 図（全テーブル・PDF）が schema.sql と同期しているか"),
     "idempotent": ("verify_idempotent.py", "2回のビルドが論理的に同一か（--against 必須）"),
 }
 DEFAULT_CHECKS = [c for c in VERIFY_CHECKS if c != "idempotent"]

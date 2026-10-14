@@ -1,0 +1,55 @@
+---
+title: jpac v2.2.0+data-2026-10-12　来歴　（実線 = 宣言された FOREIGN KEY ／ 点線 = 宣言のない結合）
+---
+erDiagram
+  match_run ||--o{ match_run_input : "match_run_id"
+  source_snapshot ||..o{ match_run_input : "source_snapshot_id"
+  source_snapshot ||..o{ snapshot_license_artifact : "source_snapshot_id"
+  source_snapshot["source_snapshot　取得した元データ"] {
+    TEXT source_snapshot_id PK
+    TEXT provider
+    TEXT dataset_name
+    TEXT source_page_url
+    TEXT download_url
+    TEXT license_name
+    TEXT license_url
+    TEXT license_text_sha256
+    TEXT source_version
+    TEXT published_at
+    TEXT edition_origin
+    TEXT downloaded_at
+    TEXT etag
+    TEXT last_modified
+    TEXT sha256
+    INTEGER file_size
+    INTEGER row_count
+    TEXT schema_fingerprint
+    TEXT parser_version
+    TEXT resolved_via
+    TEXT status
+  }
+  snapshot_license_artifact["snapshot_license_artifact　規約の照合記録"] {
+    TEXT artifact_id
+    TEXT source
+    TEXT role
+    TEXT license_name
+    TEXT license_url
+    TEXT text_sha256
+    TEXT baseline_sha256
+    TEXT reviewed_on
+    TEXT review_decision
+    TEXT note
+    TEXT source_snapshot_id  "→ source_snapshot"
+  }
+  match_run["match_run　照合の実行"] {
+    TEXT match_run_id PK
+    TEXT started_at
+    TEXT matching_rule_version
+    TEXT normalization_profile_version
+    TEXT code_version
+  }
+  match_run_input["match_run_input　実行が読んだ元データ"] {
+    TEXT match_run_id FK "→ match_run"
+    TEXT source_snapshot_id  "→ source_snapshot"
+    TEXT role
+  }

@@ -1,0 +1,122 @@
+---
+title: jpac v2.2.0+data-2026-10-12　駅・路線・バス停　（実線 = 宣言された FOREIGN KEY ／ 点線 = 宣言のない結合）
+---
+erDiagram
+  municipality |o--o{ bridge_bus_stop_municipality : "lg_code"
+  p11_bus_stop ||--o{ bridge_bus_stop_municipality : "p11_stop_id"
+  n02_railroad_line ||--o{ bridge_line_municipality : "line_name_raw + operator_name_raw"
+  municipality |o--o{ bridge_line_municipality : "lg_code"
+  n02_railroad_line ||--o{ bridge_station_line : "line_name_raw + operator_name_raw"
+  n02_station ||--o{ bridge_station_line : "n02_group_code"
+  municipality |o--o{ bridge_station_municipality : "lg_code"
+  n02_station ||--o{ bridge_station_municipality : "n02_group_code"
+  municipality |o..o{ estat_small_area : "jis_city_code（2020年の境界）"
+  n02_station["n02_station　駅（N02 駅グループ）"] {
+    TEXT n02_group_code PK
+    INTEGER feature_count
+    TEXT station_name_raw
+    TEXT line_name_raw
+    TEXT operator_name_raw
+    TEXT railway_class
+    TEXT operator_class
+    TEXT n02_station_code
+    INTEGER station_name_variants
+    INTEGER line_variants
+    INTEGER operator_variants
+    TEXT source_snapshot_id
+  }
+  n02_railroad_line["n02_railroad_line　路線（N02）"] {
+    TEXT line_name_raw PK
+    TEXT operator_name_raw PK
+    INTEGER section_count
+    TEXT railway_class
+    TEXT operator_class
+    INTEGER railway_class_variants
+    INTEGER operator_class_variants
+    TEXT source_snapshot_id
+  }
+  bridge_station_line["bridge_station_line　駅 ↔ 路線"] {
+    TEXT n02_group_code FK "→ n02_station"
+    TEXT station_name_raw
+    TEXT line_name_raw FK "→ n02_railroad_line"
+    TEXT operator_name_raw FK "→ n02_railroad_line"
+    INTEGER feature_count
+    TEXT match_method
+    TEXT source_snapshot_id
+  }
+  bridge_station_municipality["bridge_station_municipality　駅 ↔ 市区町村"] {
+    TEXT n02_group_code FK "→ n02_station"
+    TEXT station_name_raw
+    TEXT operator_name_raw
+    TEXT lg_code FK "→ municipality"
+    TEXT boundary_jis_city_code
+    TEXT relation_type
+    TEXT match_method
+    REAL confidence
+    INTEGER candidate_count
+    INTEGER is_unique_match
+    TEXT verification_status
+    TEXT placement_point
+    TEXT mismatch_note
+    TEXT source_snapshot_id
+  }
+  bridge_line_municipality["bridge_line_municipality　路線 ↔ 市区町村"] {
+    TEXT line_name_raw FK "→ n02_railroad_line"
+    TEXT operator_name_raw FK "→ n02_railroad_line"
+    TEXT lg_code FK "→ municipality"
+    TEXT boundary_jis_city_code
+    TEXT relation_type
+    TEXT match_method
+    REAL confidence
+    INTEGER sample_hits
+    INTEGER municipality_count
+    TEXT verification_status
+    TEXT mismatch_note
+    TEXT source_snapshot_id
+  }
+  p11_bus_stop["p11_bus_stop　バス停（P11）"] {
+    TEXT p11_stop_id PK
+    TEXT pref_code
+    TEXT stop_name_raw
+    TEXT operator_name_raw
+    TEXT note_raw
+    TEXT source_snapshot_id
+  }
+  bridge_bus_stop_municipality["bridge_bus_stop_municipality　バス停 ↔ 市区町村"] {
+    TEXT p11_stop_id FK "→ p11_bus_stop"
+    TEXT stop_name_raw
+    TEXT operator_name_raw
+    TEXT lg_code FK "→ municipality"
+    TEXT boundary_jis_city_code
+    TEXT relation_type
+    TEXT match_method
+    REAL confidence
+    INTEGER candidate_count
+    INTEGER is_unique_match
+    TEXT verification_status
+    TEXT mismatch_note
+    TEXT source_snapshot_id
+  }
+  estat_small_area["estat_small_area　e-Stat 小地域（形状なし）"] {
+    TEXT key_code
+    TEXT pref_code
+    TEXT city_code
+    TEXT s_area
+    TEXT pref_name_raw
+    TEXT city_name_raw
+    TEXT s_name_raw
+    TEXT hcode
+    TEXT kigo_e
+    TEXT area_max_f
+    TEXT kigo_d
+    TEXT n_ken
+    TEXT n_city
+    TEXT kigo_i
+    TEXT jis_city_code  "→ municipality"
+    TEXT reconcile_status
+    TEXT source_snapshot_id
+  }
+  municipality["municipality　市区町村（→ p.2 住所（ABR 町字）と市区町村）"] {
+    TEXT lg_code PK
+    TEXT jis_city_code
+  }

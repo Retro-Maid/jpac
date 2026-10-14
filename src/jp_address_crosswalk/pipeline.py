@@ -43,6 +43,9 @@ from .build import (
     overrides as overrides_mod,
 )
 from .build import (
+    points as points_build,
+)
+from .build import (
     railroad as railroad_build,
 )
 from .build import (
@@ -330,6 +333,9 @@ RELEASE_ARTIFACT_NAMES = (
     # テーブル別 Parquet をまとめたもの（export/writers.py の write_tables_zip）。
     # フラット表に入らないテーブルを、SQLite を解凍せずに読むための配布物。
     "jp_address_crosswalk_tables.zip",
+    # 駅とバス停の座標。本体とは別のアセットで、本体の4つは座標を持たないまま
+    # （docs/POLICY.md §3.4、build/points.py）。N02・P11 が無いビルドでは作られない。
+    points_build.POINTS_ZIP_NAME,
     "quality_report.json",
     "diff_report.json",
     "QUALITY_REPORT.md",
@@ -976,6 +982,11 @@ def _build_station_tables(
     out["bridge_station_municipality"] = station_build.build_station_bridge(
         stations_raw, station_geometry, boundary_geometry, lg_by_jis, successors
     ).with_columns(pl.lit(snap_station).alias("source_snapshot_id"))
+    # 座標は "_" で始まる名前で持つ。export の public に入らないので、dist/parquet・
+    # SQLite・差分の基準には届かない。別アセットにだけ書かれる（POLICY.md §3.4）。
+    out["_station_point"] = points_build.build_station_points(
+        stations_raw, station_geometry, out["bridge_station_municipality"], snap_station
+    )
 
     # 路線. The adapter has always parsed these two frames; until now nothing
     # consumed them (docs/POLICY.md §3.1 names 鉄道路線 as a V2 subject).
@@ -1002,7 +1013,33 @@ def _build_station_tables(
         out["bridge_bus_stop_municipality"] = busstop_build.build_bus_stop_bridge(
             stops_raw, stop_points, boundary_geometry, lg_by_jis, successors
         ).with_columns(pl.lit(snapshot_for("mlit_ksj_p11")).alias("source_snapshot_id"))
+        out["_bus_stop_point"] = points_build.build_bus_stop_points(
+            stops_raw, stop_points, snapshot_for("mlit_ksj_p11")
+        )
     return out
+
+
+def write_points_asset(
+    paths: Paths, points: dict[str, pl.DataFrame], tables: dict[str, pl.DataFrame]
+) -> tuple[Path | None, list[str]]:
+    """座標の別アセットを書く。``dist/parquet`` ではなく ``dist/points`` に置く。
+
+    ``jpac export`` と差分の基準は ``dist/parquet`` を丸ごと読むので、そこに置くと
+    座標が SQLite と本体の zip に入ってしまう。点が無いビルドでは前回の zip を消す ——
+    残すと SHA256SUMS が今回作っていないファイルを載せる。
+    """
+    out = paths.dist / points_build.POINTS_ZIP_NAME
+    point_dir = paths.dist / "points"
+    if point_dir.exists():
+        for f in point_dir.glob("*.parquet"):
+            f.unlink()
+    if not points:
+        out.unlink(missing_ok=True)
+        return None, []
+    problems = points_build.check_points(points, tables)
+    files = writers.write_parquet(points, point_dir)
+    writers.write_tables_zip(files, out)
+    return out, problems
 
 
 def _read_boundary_geometry(
@@ -1425,8 +1462,13 @@ def export(
     strict: bool = True,
 ) -> dict:
     public = {k: v for k, v in tables.items() if not k.startswith("_") and v.width}
+    points = {
+        name: tables[f"_{name}"]
+        for name in points_build.POINT_TABLES if f"_{name}" in tables
+    }
 
     table_files = writers.write_parquet(public, paths.parquet)
+    _, point_problems = write_points_asset(paths, points, public)
     writers.write_tables_zip(table_files, paths.dist / TABLES_ZIP_NAME)
     flat_all = writers.build_flat_view(public, accepted_only=False)
     flat = writers.build_flat_view(public, accepted_only=True)
@@ -1523,6 +1565,21 @@ def export(
             "limit": 0,
             "problems": census_gate["problem"].to_list(),
             "status": "pass" if census_gate.height == 0 else "fail",
+        }
+    )
+    report.thresholds.append(
+        {
+            "check": "points_match_sources",
+            "reason": "N02・P11 の図形が無いため座標のアセットは作っていない",
+            "status": "skip",
+        }
+        if not points
+        else {
+            "check": "points_match_sources",
+            "observed": len(point_problems),
+            "limit": 0,
+            "problems": point_problems,
+            "status": "pass" if not point_problems else "fail",
         }
     )
     report.thresholds.append(

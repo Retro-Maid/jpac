@@ -1,0 +1,155 @@
+---
+title: jpac v2.2.0+data-2026-10-12　人口（国勢調査）・廃置分合　（実線 = 宣言された FOREIGN KEY ／ 点線 = 宣言のない結合）
+---
+erDiagram
+  municipality ||--o{ census_population_age : "lg_code"
+  municipality ||--o{ census_population_age_summary : "lg_code"
+  municipality ||..o{ census_population_municipality : "lg_code（census_year ごと）"
+  telephone_area ||..o{ census_population_numbering_area : "numbering_area_code"
+  census_population_age_summary ||..|{ census_population_age : "region_key + 国籍 + 性別"
+  census_population_age_summary |o..o{ census_population_raw : "region_key"
+  municipality |o..o{ municipality_lineage_edge : "new_lg_code（現行コードのとき）"
+  municipality_change_raw }|..o{ municipality_lineage_edge : "source_row_ordinals（; 区切り）"
+  census_population_municipality["census_population_municipality　市区町村の人口"] {
+    INTEGER census_year PK
+    TEXT lg_code PK "→ municipality"
+    TEXT area_level
+    INTEGER population_total
+    INTEGER population_male
+    INTEGER population_female
+    INTEGER population_2020_rebased
+    INTEGER population_change_5y
+    INTEGER households_total
+    INTEGER households_general
+    INTEGER households_institutional
+    INTEGER households_2020_rebased
+    INTEGER households_change_5y
+    INTEGER household_members_total
+    INTEGER household_members_general
+    INTEGER household_members_institutional
+    TEXT value_status
+    TEXT valid_from
+    TEXT source_snapshot_id
+  }
+  census_population_age["census_population_age　年齢別人口"] {
+    INTEGER census_year PK
+    TEXT region_key PK "→ census_population_age_summary"
+    TEXT lg_code FK "→ municipality"
+    TEXT area_level_raw
+    TEXT pref_2000_raw
+    TEXT area_code_2000_raw
+    TEXT year_2000_raw
+    TEXT pref_2025_raw
+    TEXT area_code_2025_raw
+    TEXT area_name_raw
+    TEXT nationality_raw PK "→ census_population_age_summary"
+    TEXT sex_raw PK "→ census_population_age_summary"
+    TEXT age_class_raw PK
+    INTEGER population
+    TEXT population_raw
+    TEXT valid_from
+    TEXT source_snapshot_id
+  }
+  census_population_age_summary["census_population_age_summary　平均年齢・年齢中位数"] {
+    INTEGER census_year PK
+    TEXT region_key PK
+    TEXT lg_code FK "→ municipality"
+    TEXT area_level_raw
+    TEXT pref_2000_raw
+    TEXT area_code_2000_raw
+    TEXT year_2000_raw
+    TEXT pref_2025_raw
+    TEXT area_code_2025_raw
+    TEXT area_name_raw
+    TEXT nationality_raw PK
+    TEXT sex_raw PK
+    REAL mean_age
+    TEXT mean_age_raw
+    REAL median_age
+    TEXT median_age_raw
+    TEXT valid_from
+    TEXT source_snapshot_id
+  }
+  census_population_numbering_area["census_population_numbering_area　番号区画の人口"] {
+    INTEGER census_year PK
+    TEXT numbering_area_code PK "→ telephone_area"
+    INTEGER municipality_count
+    INTEGER population_total
+    INTEGER population_male
+    INTEGER population_female
+    INTEGER households_total
+    TEXT value_status
+    TEXT valid_from
+    TEXT source_snapshot_id
+  }
+  census_population_raw["census_population_raw　人口 原表"] {
+    TEXT table_id PK
+    INTEGER row_ordinal PK
+    TEXT area_level_raw
+    TEXT pref_2000_raw
+    TEXT area_code_2000_raw
+    TEXT year_2000_raw
+    TEXT pref_2025_raw
+    TEXT area_code_2025_raw
+    TEXT area_name_raw
+    TEXT population_total_raw
+    TEXT population_male_raw
+    TEXT population_female_raw
+    TEXT population_2020_rebased_raw
+    TEXT population_change_5y_raw
+    TEXT population_change_rate_5y_raw
+    TEXT sex_ratio_raw
+    TEXT households_total_raw
+    TEXT households_general_raw
+    TEXT households_institutional_raw
+    TEXT households_2020_rebased_raw
+    TEXT households_change_5y_raw
+    TEXT households_change_rate_5y_raw
+    TEXT household_members_total_raw
+    TEXT household_members_general_raw
+    TEXT household_members_institutional_raw
+    TEXT region_key  "→ census_population_age_summary"
+    TEXT source_snapshot_id
+  }
+  municipality_lineage_edge["municipality_lineage_edge　廃置分合 旧→新"] {
+    TEXT effective_date
+    TEXT old_jis_code
+    TEXT new_jis_code
+    TEXT event_type
+    TEXT area_qualifier_raw
+    TEXT parse_rule_id
+    TEXT source_row_ordinals  "→ municipality_change_raw"
+    INTEGER candidate_count
+    TEXT old_lg_code
+    TEXT new_lg_code  "→ municipality"
+    INTEGER is_unique_match
+    TEXT edge_id PK
+    TEXT source_snapshot_id
+  }
+  municipality_change_raw["municipality_change_raw　廃置分合 原表"] {
+    INTEGER row_ordinal PK
+    TEXT event_pattern_raw
+    TEXT subprefecture_county_raw
+    TEXT subprefecture_county_kana_raw
+    TEXT area_code_raw
+    TEXT pref_raw
+    TEXT parent_raw
+    TEXT parent_kana_raw
+    TEXT municipality_raw
+    TEXT municipality_kana_raw
+    TEXT effective_date_raw
+    TEXT reason_raw
+    TEXT notice_date_raw
+    TEXT notice_number_raw
+    TEXT row_sha256
+    TEXT hs_flag
+    TEXT parse_status
+    TEXT unresolved_reason
+    TEXT source_snapshot_id
+  }
+  municipality["municipality　市区町村（→ p.2 住所（ABR 町字）と市区町村）"] {
+    TEXT lg_code PK
+  }
+  telephone_area["telephone_area　番号区画（→ p.4 国土交通省 位置参照・市外局番）"] {
+    TEXT numbering_area_code PK
+  }

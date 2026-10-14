@@ -1,0 +1,175 @@
+---
+title: jpac v2.2.0+data-2026-10-12　住所（ABR 町字）と市区町村　（実線 = 宣言された FOREIGN KEY ／ 点線 = 宣言のない結合）
+---
+erDiagram
+  municipality ||--o{ address : "lg_code"
+  address_entity ||--o{ address_code : "address_id"
+  address_entity ||--o{ address_history : "address_id"
+  municipality ||--o{ address_key_conflict : "lg_code"
+  address_entity ||--o{ address_lineage : "new_address_id → address_id"
+  address_entity ||--o{ address_lineage : "old_address_id → address_id"
+  municipality ||--o{ address_rsdt_variant : "lg_code"
+  address_entity ||..|| address : "address_id（同じ ID）"
+  address ||..|{ address_rsdt_variant : "lg_code + machiaza_id"
+  municipality ||..|{ municipality_version : "lg_code（現行は is_current = 1）"
+  address["address　町字（ABR）"] {
+    TEXT address_id PK "→ address_entity"
+    TEXT lg_code FK "→ municipality"
+    TEXT jis_city_code
+    TEXT machiaza_id
+    TEXT machiaza_type
+    TEXT pref
+    TEXT county
+    TEXT city
+    TEXT ward
+    TEXT oaza_cho
+    TEXT chome
+    TEXT chome_number
+    TEXT koaza
+    TEXT machiaza_dist
+    TEXT oaza_cho_kana
+    TEXT chome_kana
+    TEXT koaza_kana
+    TEXT oaza_cho_roma
+    TEXT koaza_roma
+    TEXT rsdt_addr_flg
+    TEXT rsdt_addr_mtd_code
+    TEXT oaza_cho_aka_flg
+    TEXT koaza_aka_code
+    TEXT status_flg
+    TEXT wake_num_flg
+    TEXT src_code
+    TEXT remarks
+    TEXT full_name_raw
+    TEXT full_name_normalized
+    TEXT normalization_profile
+    INTEGER rsdt_variant_count
+    TEXT valid_from
+    TEXT valid_to
+    TEXT observed_from
+    TEXT observed_to
+    TEXT source_snapshot_id
+  }
+  address_entity["address_entity　町字の実体・ID 台帳"] {
+    TEXT address_id PK
+    TEXT genesis_lg_code
+    TEXT genesis_machiaza_id
+    TEXT entity_status
+    TEXT identity_match_rule
+    TEXT first_observed_snapshot_id
+    TEXT last_observed_snapshot_id
+    TEXT created_at
+    TEXT retired_at
+    TEXT retire_reason
+  }
+  address_code["address_code　町字の各種コード"] {
+    TEXT address_id FK "→ address_entity"
+    TEXT code_type
+    TEXT code_value
+    TEXT valid_from
+    TEXT valid_to
+    TEXT observed_from
+    TEXT observed_to
+    TEXT source_snapshot_id
+  }
+  address_history["address_history　町字の属性変更"] {
+    TEXT history_id PK
+    TEXT address_id FK "→ address_entity"
+    TEXT field_name
+    TEXT old_value
+    TEXT new_value
+    TEXT valid_from
+    TEXT observed_at
+    TEXT source_snapshot_id
+  }
+  address_lineage["address_lineage　町字の分割・統合"] {
+    TEXT lineage_id PK
+    TEXT old_address_id FK "→ address_entity"
+    TEXT new_address_id FK "→ address_entity"
+    TEXT relation_type
+    TEXT effective_date
+    TEXT observed_at
+    TEXT evidence
+    TEXT evidence_source
+    TEXT source_snapshot_id
+  }
+  address_rsdt_variant["address_rsdt_variant　住居表示の版"] {
+    TEXT rsdt_variant_id PK
+    TEXT lg_code FK "→ address, municipality"
+    TEXT machiaza_id  "→ address"
+    TEXT rsdt_addr_flg
+    TEXT rsdt_addr_mtd_code
+    TEXT efct_date
+    TEXT ablt_date
+  }
+  address_key_conflict["address_key_conflict　鍵が衝突した行（保留）"] {
+    TEXT lg_code FK "→ municipality"
+    TEXT machiaza_id
+    TEXT machiaza_type
+    TEXT pref
+    TEXT pref_kana
+    TEXT pref_roma
+    TEXT county
+    TEXT county_kana
+    TEXT county_roma
+    TEXT city
+    TEXT city_kana
+    TEXT city_roma
+    TEXT ward
+    TEXT ward_kana
+    TEXT ward_roma
+    TEXT oaza_cho
+    TEXT oaza_cho_kana
+    TEXT oaza_cho_roma
+    TEXT chome
+    TEXT chome_kana
+    TEXT chome_number
+    TEXT koaza
+    TEXT koaza_kana
+    TEXT koaza_roma
+    TEXT machiaza_dist
+    TEXT rsdt_addr_flg
+    TEXT rsdt_addr_mtd_code
+    TEXT oaza_cho_aka_flg
+    TEXT koaza_aka_code
+    TEXT oaza_cho_gsi_uncmn
+    TEXT koaza_gsi_uncmn
+    TEXT status_flg
+    TEXT wake_num_flg
+    TEXT efct_date
+    TEXT ablt_date
+    TEXT src_code
+    TEXT post_code
+    TEXT remarks
+    TEXT jis_city_code
+    TEXT full_name_raw
+    TEXT full_name_normalized
+  }
+  municipality["municipality　市区町村"] {
+    TEXT lg_code PK
+    TEXT jis_city_code
+    TEXT first_observed_snapshot_id
+  }
+  municipality_version["municipality_version　市区町村の版（名称）"] {
+    TEXT municipality_version_id PK
+    TEXT lg_code  "→ municipality"
+    TEXT jis_city_code
+    TEXT pref
+    TEXT county
+    TEXT city
+    TEXT ward
+    TEXT pref_kana
+    TEXT county_kana
+    TEXT city_kana
+    TEXT ward_kana
+    TEXT pref_roma
+    TEXT county_roma
+    TEXT city_roma
+    TEXT ward_roma
+    TEXT valid_from
+    TEXT valid_to
+    TEXT observed_from
+    TEXT observed_to
+    INTEGER is_current
+    TEXT source_snapshot_id
+  }
