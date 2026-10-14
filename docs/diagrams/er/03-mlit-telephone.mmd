@@ -1,0 +1,195 @@
+---
+title: jpac v2.2.0+data-2026-10-12　国土交通省 位置参照・市外局番　（実線 = 宣言された FOREIGN KEY ／ 点線 = 宣言のない結合）
+---
+erDiagram
+  match_run ||--o{ bridge_address_mlit : "match_run_id"
+  mlit_town |o--o{ bridge_address_mlit : "mlit_record_id"
+  municipality |o--o{ bridge_address_mlit : "lg_code"
+  address_entity |o--o{ bridge_address_mlit : "address_id"
+  match_run ||--o{ bridge_address_telephone : "match_run_id"
+  telephone_area |o--o{ bridge_address_telephone : "numbering_area_code"
+  municipality |o--o{ bridge_address_telephone : "lg_code"
+  address_entity |o--o{ bridge_address_telephone : "address_id"
+  match_run ||--o{ bridge_municipality_telephone : "match_run_id"
+  telephone_area |o--o{ bridge_municipality_telephone : "numbering_area_code"
+  municipality |o--o{ bridge_municipality_telephone : "lg_code"
+  address_entity |o--o{ bridge_municipality_telephone : "address_id"
+  telephone_area ||--o{ telephone_area_coverage : "numbering_area_code"
+  telephone_area ||--o{ telephone_number_block : "numbering_area_code"
+  mlit_town ||..|{ mlit_town_version : "mlit_record_id（現行は is_current = 1）"
+  telephone_area ||..|{ telephone_area_version : "numbering_area_code（現行は is_current = 1）"
+  mlit_town["mlit_town　国交省 大字・町丁目"] {
+    TEXT mlit_record_id PK
+    TEXT mlit_code
+    TEXT jis_city_code
+    TEXT first_observed_snapshot_id
+  }
+  mlit_town_version["mlit_town_version　国交省 大字・町丁目の版（代表点）"] {
+    TEXT mlit_town_version_id PK
+    TEXT mlit_record_id  "→ mlit_town"
+    TEXT mlit_code
+    TEXT jis_city_code
+    TEXT pref_code
+    TEXT pref_name
+    TEXT city_name
+    TEXT town_name_raw
+    TEXT town_name_normalized
+    REAL latitude
+    REAL longitude
+    TEXT source_material_code
+    TEXT aza_class_code
+    TEXT fiscal_year
+    TEXT isj_version
+    TEXT observed_from
+    TEXT observed_to
+    INTEGER is_current
+    TEXT source_snapshot_id
+  }
+  bridge_address_mlit["bridge_address_mlit　町字 ↔ 国交省"] {
+    TEXT bridge_id PK
+    TEXT address_id FK "→ address_entity"
+    TEXT lg_code FK "→ municipality"
+    TEXT mlit_record_id FK "→ mlit_town"
+    TEXT direction
+    TEXT relation_type
+    TEXT match_method
+    TEXT matching_rule_id
+    REAL confidence
+    TEXT candidate_group_id
+    INTEGER candidate_count
+    INTEGER candidate_count_is_complete
+    INTEGER is_unique_match
+    TEXT verification_status
+    INTEGER override_stale
+    TEXT derivation
+    TEXT coverage_type
+    TEXT normalization_profile
+    TEXT mismatch_note
+    TEXT valid_from
+    TEXT valid_to
+    TEXT observed_from
+    TEXT observed_to
+    INTEGER is_current
+    TEXT match_run_id FK "→ match_run"
+    TEXT source_snapshot_id
+    TEXT matching_rule_version
+    TEXT normalization_profile_version
+    TEXT created_at
+    TEXT updated_at
+  }
+  telephone_area["telephone_area　番号区画"] {
+    TEXT numbering_area_code PK
+    TEXT first_observed_snapshot_id
+  }
+  telephone_area_version["telephone_area_version　番号区画の版（市外局番）"] {
+    TEXT telephone_area_version_id PK
+    TEXT numbering_area_code  "→ telephone_area"
+    TEXT area_code
+    TEXT area_code_raw
+    TEXT area_text_raw
+    TEXT local_digit_pattern
+    TEXT current_as_of
+    TEXT observed_from
+    TEXT observed_to
+    INTEGER is_current
+    TEXT source_snapshot_id
+  }
+  telephone_area_coverage["telephone_area_coverage　番号区画の収容句"] {
+    TEXT numbering_area_code FK "→ telephone_area"
+    TEXT clause_raw
+    TEXT pref_name
+    TEXT county_name
+    TEXT municipality_name
+    TEXT sub_municipal_text
+    TEXT qualifier
+    TEXT coverage_type
+    TEXT exception_text
+    TEXT parse_rule
+    TEXT coverage_id PK
+    TEXT source_snapshot_id
+  }
+  telephone_number_block["telephone_number_block　市内局番"] {
+    TEXT numbering_area_code FK "→ telephone_area"
+    TEXT number
+    TEXT area_code
+    TEXT local_code
+    TEXT carrier
+    TEXT usage_status
+    TEXT remarks
+    TEXT current_as_of
+    TEXT block_id PK
+    TEXT source_snapshot_id
+  }
+  bridge_address_telephone["bridge_address_telephone　町字 ↔ 番号区画"] {
+    TEXT bridge_id PK
+    TEXT address_id FK "→ address_entity"
+    TEXT lg_code FK "→ municipality"
+    TEXT numbering_area_code FK "→ telephone_area"
+    TEXT direction
+    TEXT relation_type
+    TEXT match_method
+    TEXT matching_rule_id
+    REAL confidence
+    TEXT candidate_group_id
+    INTEGER candidate_count
+    INTEGER candidate_count_is_complete
+    INTEGER is_unique_match
+    TEXT verification_status
+    INTEGER override_stale
+    TEXT derivation
+    TEXT coverage_type
+    TEXT normalization_profile
+    TEXT mismatch_note
+    TEXT valid_from
+    TEXT valid_to
+    TEXT observed_from
+    TEXT observed_to
+    INTEGER is_current
+    TEXT match_run_id FK "→ match_run"
+    TEXT source_snapshot_id
+    TEXT matching_rule_version
+    TEXT normalization_profile_version
+    TEXT created_at
+    TEXT updated_at
+  }
+  bridge_municipality_telephone["bridge_municipality_telephone　市区町村 ↔ 番号区画"] {
+    TEXT bridge_id PK
+    TEXT address_id FK "→ address_entity"
+    TEXT lg_code FK "→ municipality"
+    TEXT numbering_area_code FK "→ telephone_area"
+    TEXT direction
+    TEXT relation_type
+    TEXT match_method
+    TEXT matching_rule_id
+    REAL confidence
+    TEXT candidate_group_id
+    INTEGER candidate_count
+    INTEGER candidate_count_is_complete
+    INTEGER is_unique_match
+    TEXT verification_status
+    INTEGER override_stale
+    TEXT derivation
+    TEXT coverage_type
+    TEXT normalization_profile
+    TEXT mismatch_note
+    TEXT valid_from
+    TEXT valid_to
+    TEXT observed_from
+    TEXT observed_to
+    INTEGER is_current
+    TEXT match_run_id FK "→ match_run"
+    TEXT source_snapshot_id
+    TEXT matching_rule_version
+    TEXT normalization_profile_version
+    TEXT created_at
+    TEXT updated_at
+  }
+  address_entity["address_entity　町字の実体・ID 台帳（→ p.2 住所（ABR 町字）と市区町村）"] {
+    TEXT address_id PK
+  }
+  match_run["match_run　照合の実行（→ p.7 来歴）"] {
+    TEXT match_run_id PK
+  }
+  municipality["municipality　市区町村（→ p.2 住所（ABR 町字）と市区町村）"] {
+    TEXT lg_code PK
+  }

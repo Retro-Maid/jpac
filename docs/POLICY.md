@@ -262,6 +262,50 @@ added on top. No source is registered until the licence review is signed
 - **`required: false`.** A release must not depend on this source, as with the
   V2 sources in §3.1.
 
+## 3.4 Coordinate asset: station and bus stop points (added 2026-10-15)
+
+§3.1 ("No release artifact carries geometry") and the two "not a release
+artifact" lines in §3.2 are **left exactly as written**. They still hold for the
+core artifacts — the SQLite file, the flat Parquet and CSV, and the per-table
+zip — and this section lifts them for one separate asset only.
+
+| | |
+|---|---|
+| **Asset** | `jp_address_crosswalk_points.zip` (Parquet: `station_point`, `bus_stop_point`) |
+| **Subjects** | 駅の代表点 (N02 2025年版)、バス停の点 (P11 令和4年度版) |
+| **Origins** | **None.** Both sources are already release sources under §3.1 |
+| **Datum** | JGD2011 経緯度 (EPSG:6668), asserted from each source's `.prj` |
+
+- **Why a separate asset and not a column.** Adding coordinates to the core tables
+  would change what every existing consumer downloads and what §3.1 promised them.
+  A separate file leaves the core artifacts byte-for-byte the kind of thing they
+  were, and a consumer who does not want coordinates never receives one. It is
+  written to `dist/points`, never `dist/parquet`, so `jpac export` and the diff
+  baseline cannot pick it up.
+- **Station = representative point, bus stop = published point.** N02 publishes a
+  station as a line (GM_Curve) and no point, so the station's point is the one
+  `bridge_station_municipality` actually used to place it (`placement_point`),
+  from `build/points.py`. The map in `site/` uses the same function, so a pin, a
+  shipped coordinate and a municipality attribution cannot disagree. P11 publishes
+  a point per stop, so it is shipped as published: not computed, not rounded.
+- **One row per station / stop, none dropped (§5).** A missing geometry is a row
+  with NULL coordinates, never an absent row.
+- **Still never a 駅舎・出入口 or 停留所標識の位置**, as §3.2 already says for the
+  map.
+- **Boundary-derived coordinates stay forbidden.** No municipality or small-area
+  centroid is emitted; §3.1's "not re-derived into coordinates" is unchanged.
+- **Granularity is unchanged.** The asset has no `lg_code` or `address_id`; the
+  municipality comes from the bridges, which keep every candidate (§4).
+- **N02's 原典資料 was accepted by the maintainer on 2026-10-15.** N02's metadata
+  lists 数値地図25000 and 電子地形図（タイル） among its originals, with no 測量法
+  承認番号 — the same pattern on which P05 was refused on 2026-09-28. This was
+  raised on 2026-10-14; on 2026-10-15 the maintainer was asked about it
+  explicitly and approved shipping the station points with it. The P05 decision
+  is not reopened by this: it covers N02's station points only.
+- **Optional, like its sources.** A build without the N02 or P11 payloads
+  produces no asset (and removes a stale one), and the `points_match_sources`
+  gate is `skip`.
+
 ## 4. Ambiguity policy (hard)
 
 > Leaving data unresolved is acceptable. Inventing a wrong 1:1 mapping is a defect.

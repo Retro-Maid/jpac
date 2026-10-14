@@ -64,7 +64,7 @@ import polars as pl
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "src"))
 
-from jp_address_crosswalk.build.spatial import line_centroid, point_on_line  # noqa: E402
+from jp_address_crosswalk.build.points import representative_point  # noqa: E402
 from jp_address_crosswalk.payload import (  # noqa: E402
     SHP_POLYLINE,
     read_dbf_member,
@@ -119,7 +119,9 @@ say(f"駅グループ {len(geometry):,}  測地系 {datums.pop()}")
 station = rd("n02_station")
 bridge = rd("bridge_station_municipality")
 lg_by_station: dict[str, list[str]] = {}
-for gid, lg in bridge.select("n02_group_code", "lg_code").iter_rows():
+placement: dict[str, str] = {}
+for gid, lg, how in bridge.select("n02_group_code", "lg_code", "placement_point").iter_rows():
+    placement[gid] = how
     if lg:
         lg_by_station.setdefault(gid, []).append(lg)
 
@@ -128,7 +130,8 @@ missing_point = 0
 for r in station.select("n02_group_code", "station_name_raw", "operator_name_raw").iter_rows(named=True):
     gid = r["n02_group_code"]
     parts = geometry.get(gid, [])
-    pt = line_centroid(parts) or point_on_line(parts)
+    # 配布する座標のアセット（station_point）と同じ関数・同じ丸め（build/points.py）。
+    pt, _ = representative_point(parts, placement.get(gid))
     if pt is None:
         missing_point += 1
         continue
@@ -136,8 +139,8 @@ for r in station.select("n02_group_code", "station_name_raw", "operator_name_raw
         "id": gid,
         "n": r["station_name_raw"],
         "o": r["operator_name_raw"],
-        "x": round(pt[0], 6),
-        "y": round(pt[1], 6),
+        "x": pt[0],
+        "y": pt[1],
         "lg": sorted(lg_by_station.get(gid, [])),
     })
 stations.sort(key=lambda s: s["id"])

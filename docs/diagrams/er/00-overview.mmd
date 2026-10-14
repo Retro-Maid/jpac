@@ -1,0 +1,124 @@
+---
+title: jpac v2.2.0+data-2026-10-12　全体図（SQLite 44 テーブル + 座標アセット 2）　矢印は「参照する側 → される側」　実線 = 宣言された FOREIGN KEY ／ 点線 = 宣言のない結合　列は各ページ（ブリッジ7本 → match_run の線は省略）
+---
+flowchart LR
+  subgraph 01_address["p.2 住所（ABR 町字）と市区町村"]
+    address["address<br/>町字（ABR）"]
+    address_entity["address_entity<br/>町字の実体・ID 台帳"]
+    address_code["address_code<br/>町字の各種コード"]
+    address_history["address_history<br/>町字の属性変更"]
+    address_lineage["address_lineage<br/>町字の分割・統合"]
+    address_rsdt_variant["address_rsdt_variant<br/>住居表示の版"]
+    address_key_conflict["address_key_conflict<br/>鍵が衝突した行（保留）"]
+    municipality["municipality<br/>市区町村"]
+    municipality_version["municipality_version<br/>市区町村の版（名称）"]
+  end
+  subgraph 02_postal["p.3 郵便番号"]
+    postal_code_entity["postal_code_entity<br/>郵便番号"]
+    postal_record["postal_record<br/>郵便レコード"]
+    postal_record_version["postal_record_version<br/>郵便レコードの版"]
+    bridge_address_postal_code["bridge_address_postal_code<br/>町字 ↔ 郵便番号"]
+    bridge_address_postal["bridge_address_postal<br/>町字 ↔ 郵便レコード"]
+    bridge_municipality_postal_code["bridge_municipality_postal_code<br/>市区町村 ↔ 郵便番号"]
+    bridge_municipality_postal["bridge_municipality_postal<br/>市区町村 ↔ 郵便特殊レコード"]
+  end
+  subgraph 03_mlit_telephone["p.4 国土交通省 位置参照・市外局番"]
+    mlit_town["mlit_town<br/>国交省 大字・町丁目"]
+    mlit_town_version["mlit_town_version<br/>国交省 大字・町丁目の版（代表点）"]
+    bridge_address_mlit["bridge_address_mlit<br/>町字 ↔ 国交省"]
+    telephone_area["telephone_area<br/>番号区画"]
+    telephone_area_version["telephone_area_version<br/>番号区画の版（市外局番）"]
+    telephone_area_coverage["telephone_area_coverage<br/>番号区画の収容句"]
+    telephone_number_block["telephone_number_block<br/>市内局番"]
+    bridge_address_telephone["bridge_address_telephone<br/>町字 ↔ 番号区画"]
+    bridge_municipality_telephone["bridge_municipality_telephone<br/>市区町村 ↔ 番号区画"]
+  end
+  subgraph 04_rail_bus["p.5 駅・路線・バス停"]
+    n02_station["n02_station<br/>駅（N02 駅グループ）"]
+    n02_railroad_line["n02_railroad_line<br/>路線（N02）"]
+    bridge_station_line["bridge_station_line<br/>駅 ↔ 路線"]
+    bridge_station_municipality["bridge_station_municipality<br/>駅 ↔ 市区町村"]
+    bridge_line_municipality["bridge_line_municipality<br/>路線 ↔ 市区町村"]
+    p11_bus_stop["p11_bus_stop<br/>バス停（P11）"]
+    bridge_bus_stop_municipality["bridge_bus_stop_municipality<br/>バス停 ↔ 市区町村"]
+    estat_small_area["estat_small_area<br/>e-Stat 小地域（形状なし）"]
+  end
+  subgraph 05_census_lineage["p.6 人口（国勢調査）・廃置分合"]
+    census_population_municipality["census_population_municipality<br/>市区町村の人口"]
+    census_population_age["census_population_age<br/>年齢別人口"]
+    census_population_age_summary["census_population_age_summary<br/>平均年齢・年齢中位数"]
+    census_population_numbering_area["census_population_numbering_area<br/>番号区画の人口"]
+    census_population_raw["census_population_raw<br/>人口 原表"]
+    municipality_lineage_edge["municipality_lineage_edge<br/>廃置分合 旧→新"]
+    municipality_change_raw["municipality_change_raw<br/>廃置分合 原表"]
+  end
+  subgraph 06_provenance["p.7 来歴"]
+    source_snapshot["source_snapshot<br/>取得した元データ"]
+    snapshot_license_artifact["snapshot_license_artifact<br/>規約の照合記録"]
+    match_run["match_run<br/>照合の実行"]
+    match_run_input["match_run_input<br/>実行が読んだ元データ"]
+  end
+  subgraph 07_points["p.8 座標（別アセット jp_address_crosswalk_points.zip。SQLite には無い）"]
+    station_point["station_point<br/>駅の代表点（座標アセット）"]
+    bus_stop_point["bus_stop_point<br/>バス停の点（座標アセット）"]
+  end
+  address --> municipality
+  address_code --> address_entity
+  address_history --> address_entity
+  address_key_conflict --> municipality
+  address_lineage --> address_entity
+  address_rsdt_variant --> municipality
+  bridge_address_mlit --> mlit_town
+  bridge_address_mlit --> municipality
+  bridge_address_mlit --> address_entity
+  bridge_address_postal --> postal_record
+  bridge_address_postal --> municipality
+  bridge_address_postal --> address_entity
+  bridge_address_postal_code --> postal_code_entity
+  bridge_address_postal_code --> municipality
+  bridge_address_postal_code --> address_entity
+  bridge_address_telephone --> telephone_area
+  bridge_address_telephone --> municipality
+  bridge_address_telephone --> address_entity
+  bridge_bus_stop_municipality --> municipality
+  bridge_bus_stop_municipality --> p11_bus_stop
+  bridge_line_municipality --> n02_railroad_line
+  bridge_line_municipality --> municipality
+  bridge_municipality_postal --> postal_record
+  bridge_municipality_postal --> municipality
+  bridge_municipality_postal --> address_entity
+  bridge_municipality_postal_code --> postal_code_entity
+  bridge_municipality_postal_code --> municipality
+  bridge_municipality_postal_code --> address_entity
+  bridge_municipality_telephone --> telephone_area
+  bridge_municipality_telephone --> municipality
+  bridge_municipality_telephone --> address_entity
+  bridge_station_line --> n02_railroad_line
+  bridge_station_line --> n02_station
+  bridge_station_municipality --> municipality
+  bridge_station_municipality --> n02_station
+  census_population_age --> municipality
+  census_population_age_summary --> municipality
+  match_run_input --> match_run
+  postal_record --> postal_code_entity
+  telephone_area_coverage --> telephone_area
+  telephone_number_block --> telephone_area
+  address -.-> address_entity
+  address_rsdt_variant -.-> address
+  municipality_version -.-> municipality
+  postal_record_version -.-> postal_record
+  mlit_town_version -.-> mlit_town
+  telephone_area_version -.-> telephone_area
+  census_population_municipality -.-> municipality
+  census_population_numbering_area -.-> telephone_area
+  census_population_age -.-> census_population_age_summary
+  census_population_raw -.-> census_population_age_summary
+  municipality_lineage_edge -.-> municipality
+  municipality_lineage_edge -.-> municipality_change_raw
+  estat_small_area -.-> municipality
+  match_run_input -.-> source_snapshot
+  snapshot_license_artifact -.-> source_snapshot
+  station_point -.-> n02_station
+  bus_stop_point -.-> p11_bus_stop
+  station_point -.-> source_snapshot
+  bus_stop_point -.-> source_snapshot

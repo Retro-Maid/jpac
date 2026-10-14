@@ -1,0 +1,203 @@
+---
+title: jpac v2.2.0+data-2026-10-12　郵便番号　（実線 = 宣言された FOREIGN KEY ／ 点線 = 宣言のない結合）
+---
+erDiagram
+  match_run ||--o{ bridge_address_postal : "match_run_id"
+  postal_record |o--o{ bridge_address_postal : "postal_record_id"
+  municipality |o--o{ bridge_address_postal : "lg_code"
+  address_entity |o--o{ bridge_address_postal : "address_id"
+  match_run ||--o{ bridge_address_postal_code : "match_run_id"
+  postal_code_entity |o--o{ bridge_address_postal_code : "postal_code"
+  municipality |o--o{ bridge_address_postal_code : "lg_code"
+  address_entity |o--o{ bridge_address_postal_code : "address_id"
+  match_run ||--o{ bridge_municipality_postal : "match_run_id"
+  postal_record |o--o{ bridge_municipality_postal : "postal_record_id"
+  municipality |o--o{ bridge_municipality_postal : "lg_code"
+  address_entity |o--o{ bridge_municipality_postal : "address_id"
+  match_run ||--o{ bridge_municipality_postal_code : "match_run_id"
+  postal_code_entity |o--o{ bridge_municipality_postal_code : "postal_code"
+  municipality |o--o{ bridge_municipality_postal_code : "lg_code"
+  address_entity |o--o{ bridge_municipality_postal_code : "address_id"
+  postal_code_entity ||--o{ postal_record : "postal_code"
+  postal_record ||..|{ postal_record_version : "postal_record_id（現行は is_current = 1）"
+  postal_code_entity["postal_code_entity　郵便番号"] {
+    TEXT postal_code PK
+    INTEGER record_count
+    TEXT observed_from
+    TEXT observed_to
+    TEXT source_snapshot_id
+  }
+  postal_record["postal_record　郵便レコード"] {
+    TEXT postal_record_id PK
+    TEXT postal_code FK "→ postal_code_entity"
+    TEXT jis_city_code
+    TEXT first_observed_snapshot_id
+  }
+  postal_record_version["postal_record_version　郵便レコードの版"] {
+    TEXT postal_record_version_id PK
+    TEXT postal_record_id  "→ postal_record"
+    TEXT postal_code
+    TEXT jis_city_code
+    TEXT old_postal_code_raw
+    TEXT old_postal_code
+    TEXT pref_kana
+    TEXT city_kana
+    TEXT town_kana
+    TEXT pref
+    TEXT city
+    TEXT town
+    TEXT town_raw
+    TEXT town_normalized
+    TEXT parenthetical_raw
+    TEXT parenthetical_class
+    TEXT flag_multi_code
+    TEXT flag_koaza_banchi
+    TEXT flag_has_chome
+    TEXT flag_multi_town
+    TEXT update_flag
+    TEXT change_reason
+    TEXT record_kind
+    TEXT valid_from
+    TEXT valid_to
+    TEXT observed_from
+    TEXT observed_to
+    INTEGER is_current
+    TEXT source_snapshot_id
+  }
+  bridge_address_postal_code["bridge_address_postal_code　町字 ↔ 郵便番号"] {
+    TEXT bridge_id PK
+    TEXT address_id FK "→ address_entity"
+    TEXT lg_code FK "→ municipality"
+    TEXT postal_code FK "→ postal_code_entity"
+    TEXT direction
+    TEXT relation_type
+    TEXT match_method
+    TEXT matching_rule_id
+    REAL confidence
+    TEXT candidate_group_id
+    INTEGER candidate_count
+    INTEGER candidate_count_is_complete
+    INTEGER is_unique_match
+    TEXT verification_status
+    INTEGER override_stale
+    TEXT derivation
+    TEXT coverage_type
+    TEXT normalization_profile
+    TEXT mismatch_note
+    TEXT valid_from
+    TEXT valid_to
+    TEXT observed_from
+    TEXT observed_to
+    INTEGER is_current
+    TEXT match_run_id FK "→ match_run"
+    TEXT source_snapshot_id
+    TEXT matching_rule_version
+    TEXT normalization_profile_version
+    TEXT created_at
+    TEXT updated_at
+  }
+  bridge_address_postal["bridge_address_postal　町字 ↔ 郵便レコード"] {
+    TEXT bridge_id PK
+    TEXT address_id FK "→ address_entity"
+    TEXT lg_code FK "→ municipality"
+    TEXT postal_record_id FK "→ postal_record"
+    TEXT direction
+    TEXT relation_type
+    TEXT match_method
+    TEXT matching_rule_id
+    REAL confidence
+    TEXT candidate_group_id
+    INTEGER candidate_count
+    INTEGER candidate_count_is_complete
+    INTEGER is_unique_match
+    TEXT verification_status
+    INTEGER override_stale
+    TEXT derivation
+    TEXT coverage_type
+    TEXT normalization_profile
+    TEXT mismatch_note
+    TEXT valid_from
+    TEXT valid_to
+    TEXT observed_from
+    TEXT observed_to
+    INTEGER is_current
+    TEXT match_run_id FK "→ match_run"
+    TEXT source_snapshot_id
+    TEXT matching_rule_version
+    TEXT normalization_profile_version
+    TEXT created_at
+    TEXT updated_at
+  }
+  bridge_municipality_postal_code["bridge_municipality_postal_code　市区町村 ↔ 郵便番号"] {
+    TEXT bridge_id PK
+    TEXT address_id FK "→ address_entity"
+    TEXT lg_code FK "→ municipality"
+    TEXT postal_code FK "→ postal_code_entity"
+    TEXT direction
+    TEXT relation_type
+    TEXT match_method
+    TEXT matching_rule_id
+    REAL confidence
+    TEXT candidate_group_id
+    INTEGER candidate_count
+    INTEGER candidate_count_is_complete
+    INTEGER is_unique_match
+    TEXT verification_status
+    INTEGER override_stale
+    TEXT derivation
+    TEXT coverage_type
+    TEXT normalization_profile
+    TEXT mismatch_note
+    TEXT valid_from
+    TEXT valid_to
+    TEXT observed_from
+    TEXT observed_to
+    INTEGER is_current
+    TEXT match_run_id FK "→ match_run"
+    TEXT source_snapshot_id
+    TEXT matching_rule_version
+    TEXT normalization_profile_version
+    TEXT created_at
+    TEXT updated_at
+  }
+  bridge_municipality_postal["bridge_municipality_postal　市区町村 ↔ 郵便特殊レコード"] {
+    TEXT bridge_id PK
+    TEXT address_id FK "→ address_entity"
+    TEXT lg_code FK "→ municipality"
+    TEXT postal_record_id FK "→ postal_record"
+    TEXT direction
+    TEXT relation_type
+    TEXT match_method
+    TEXT matching_rule_id
+    REAL confidence
+    TEXT candidate_group_id
+    INTEGER candidate_count
+    INTEGER candidate_count_is_complete
+    INTEGER is_unique_match
+    TEXT verification_status
+    INTEGER override_stale
+    TEXT derivation
+    TEXT coverage_type
+    TEXT normalization_profile
+    TEXT mismatch_note
+    TEXT valid_from
+    TEXT valid_to
+    TEXT observed_from
+    TEXT observed_to
+    INTEGER is_current
+    TEXT match_run_id FK "→ match_run"
+    TEXT source_snapshot_id
+    TEXT matching_rule_version
+    TEXT normalization_profile_version
+    TEXT created_at
+    TEXT updated_at
+  }
+  address_entity["address_entity　町字の実体・ID 台帳（→ p.2 住所（ABR 町字）と市区町村）"] {
+    TEXT address_id PK
+  }
+  match_run["match_run　照合の実行（→ p.7 来歴）"] {
+    TEXT match_run_id PK
+  }
+  municipality["municipality　市区町村（→ p.2 住所（ABR 町字）と市区町村）"] {
+    TEXT lg_code PK
+  }

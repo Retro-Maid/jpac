@@ -105,7 +105,7 @@ Three of the four publishers now adopt the same instrument — **公共データ
 - MIC datasets are **not** assumed to share one licence; each is checked individually and
   each snapshot stores its own licence fields.
 
-## V2 sources (unreleased, optional)
+## V2 sources (optional)
 
 All three are `required: false` in `config/sources.yml`: a release does not depend on
 them. Terms were read verbatim and reviewed by a person — N02 and e-Stat on 2026-09-14
@@ -125,12 +125,15 @@ them. Terms were read verbatim and reviewed by a person — N02 and e-Stat on 20
       https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-N02-2025.html をもとに jp-address-crosswalk 作成
 ```
 
-- **Where the station points go.** A release ships no station coordinates:
+- **Where the station points go.** The core artifacts ship no station coordinates:
   `bridge_station_municipality` carries `lg_code` and nothing spatial
-  (`docs/POLICY.md` §3.1). The static map in `site/` shows one **representative point
-  per station group**, computed from N02's own polyline for that station
-  (`docs/POLICY.md` §3.2). Like the MLIT coordinates above it must never be described
-  as a 駅舎 or 出入口 location, and the page says so where it shows one.
+  (`docs/POLICY.md` §3.1). One **representative point per station group**, computed
+  from N02's own polyline for that station, is shipped only in the separate asset
+  `jp_address_crosswalk_points.zip` (`station_point`, `docs/POLICY.md` §3.4) and shown
+  on the static map in `site/` (§3.2). It is a derived point, not one N02 publishes.
+  Like the MLIT coordinates above it must never be described as a 駅舎 or 出入口
+  location; anyone redistributing the asset carries that restriction and the N02
+  attribution above with it.
 
 ### 国土交通省 — 国土数値情報 バス停留所（P11）令和4年度版
 
@@ -157,10 +160,13 @@ them. Terms were read verbatim and reviewed by a person — N02 and e-Stat on 20
       https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P11-v3_0.html をもとに jp-address-crosswalk 作成
 ```
 
-- **Where the stop points go.** A release ships no bus-stop coordinates:
+- **Where the stop points go.** The core artifacts ship no bus-stop coordinates:
   `bridge_bus_stop_municipality` carries `lg_code` and nothing spatial
-  (`docs/POLICY.md` §3.1). The points are read at build time to place each stop in a
-  polygon and are not emitted, re-derived, or published.
+  (`docs/POLICY.md` §3.1). The publisher's point for each stop is shipped unmodified,
+  only in the separate asset `jp_address_crosswalk_points.zip` (`bus_stop_point`,
+  `docs/POLICY.md` §3.4), and shown on the static map in `site/` (§3.2). It must
+  never be described as a 停留所標識の位置; anyone redistributing the asset carries
+  that restriction and the P11 attribution above with it.
 - **Excluded on licence grounds: N07 バスルート.** Every edition is 非商用, with no open
   edition, so it is not fetched, parsed or shipped.
 

@@ -1,0 +1,34 @@
+---
+title: jpac v2.2.0+data-2026-10-12　座標（別アセット jp_address_crosswalk_points.zip。SQLite には無い）　（実線 = 宣言された FOREIGN KEY ／ 点線 = 宣言のない結合）
+---
+erDiagram
+  n02_station ||..|| station_point : "n02_group_code（1対1）"
+  p11_bus_stop ||..|| bus_stop_point : "p11_stop_id（1対1）"
+  source_snapshot ||..o{ station_point : "source_snapshot_id"
+  source_snapshot ||..o{ bus_stop_point : "source_snapshot_id"
+  station_point["station_point　駅の代表点（座標アセット）"] {
+    TEXT n02_group_code PK "→ n02_station"
+    TEXT station_name_raw
+    TEXT operator_name_raw
+    REAL longitude
+    REAL latitude
+    TEXT placement_point
+    TEXT source_snapshot_id  "→ source_snapshot"
+  }
+  bus_stop_point["bus_stop_point　バス停の点（座標アセット）"] {
+    TEXT p11_stop_id PK "→ p11_bus_stop"
+    TEXT stop_name_raw
+    TEXT operator_name_raw
+    REAL longitude
+    REAL latitude
+    TEXT source_snapshot_id  "→ source_snapshot"
+  }
+  n02_station["n02_station　駅（N02 駅グループ）（→ p.5 駅・路線・バス停）"] {
+    TEXT n02_group_code PK
+  }
+  p11_bus_stop["p11_bus_stop　バス停（P11）（→ p.5 駅・路線・バス停）"] {
+    TEXT p11_stop_id PK
+  }
+  source_snapshot["source_snapshot　取得した元データ（→ p.7 来歴）"] {
+    TEXT source_snapshot_id PK
+  }
