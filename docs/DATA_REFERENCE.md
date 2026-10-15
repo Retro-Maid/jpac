@@ -128,11 +128,11 @@ GitHub Releases の `v2.3.0+data-2026-10-15` に添付されている12ファイ
 |---|---|
 | 住所ごとに郵便番号・国土交通省コードを並べた1枚の表がほしい | `jp_address_crosswalk.parquet`（または `.csv.gz`） |
 | テーブル間の関係を SQL でたどりたい、棄却済みも含む全量（`address_crosswalk_all`）を見たい | `jp_address_crosswalk.sqlite.gz` を展開して使う |
-| 人口・駅・路線・バス停・廃置分合など、フラット表に入らないテーブルを SQLite なしで読みたい／DWH に全テーブルを取り込みたい | `jp_address_crosswalk_tables.zip` |
-| 駅・バス停を地図に載せたい（経緯度がほしい） | `jp_address_crosswalk_points.zip`（`n02_group_code` / `p11_stop_id` で本体の表に結ぶ） |
+| 人口・駅・路線・バス停・学校・廃置分合など、フラット表に入らないテーブルを SQLite なしで読みたい／DWH に全テーブルを取り込みたい | `jp_address_crosswalk_tables.zip` |
+| 駅・バス停・学校を地図に載せたい（経緯度がほしい） | `jp_address_crosswalk_points.zip`（`n02_group_code` / `p11_stop_id` / `school_code` で本体の表に結ぶ） |
 
 - **フラット表（Parquet / CSV）に入るのは、住所・郵便番号・国土交通省・市外局番の4系統だけ**です。駅・路線・
-  バス停・小地域・人口・廃置分合のテーブルは入りません。
+  バス停・小地域・人口・廃置分合・学校のテーブルは入りません。
 - フラット表は「現在有効で、人手で棄却されていない対応」だけです（SQLite の `address_crosswalk` と同じ）。
   棄却済みや過去の版も含む `address_crosswalk_all` は SQLite にしかありません。ただし v2.3.0 では棄却も退役も
   まだ発生していないため、両ビューの行数は同じ（727,110 行）です。
@@ -320,12 +320,16 @@ GitHub Releases の `v2.3.0+data-2026-10-15` に添付されている12ファイ
 | 人口 | [`census_population_raw`](#census_population_raw) | 4,082 | 第1-1表の1行（全国・都道府県・2000年境域の行を含む 4,082行） |
 | 廃置分合 | [`municipality_change_raw`](#municipality_change_raw) | 3,739 | e-Stat「廃置分合等情報」CSV（1970-04-20〜2024-01-01 施行分、境界変更を除く）の1行 |
 | 廃置分合 | [`municipality_lineage_edge`](#municipality_lineage_edge) | 2,528 | 廃置分合の旧コード → 新コードの辺1本（施行日ごと） |
+| 学校 | [`mext_school`](#mext_school) | 59,738 | 学校1校（文部科学省 学校コード1つ。廃止した学校を含む） |
+| 学校 | [`mext_school_succession`](#mext_school_succession) | 1,797 | 廃止した学校1校 × 移行後の学校1校 |
+| 学校 | [`bridge_school_address`](#bridge_school_address) | 59,952 | 学校1校 × 町字（または市区町村）の候補1件 |
 | 来歴 | [`source_snapshot`](#source_snapshot) | 126 | 取り込んだ元データのファイル1本（または複数ファイルの束） |
 | 来歴 | [`snapshot_license_artifact`](#snapshot_license_artifact) | 24 | 元データ1種類に関わる規約文書1つ（規約本文、詳細ページ、ダウンロード時の同意事項など） |
 | 来歴 | [`match_run`](#match_run) | 1 | 照合の実行1回 |
 | 来歴 | [`match_run_input`](#match_run_input) | 122 | 照合の実行1回 × 読んだ元データ1つ |
 | 座標（別アセット） | [`station_point`](#station_point座標アセット) | 9,046 | 駅1つの代表点（`jp_address_crosswalk_points.zip`。SQLite には無い） |
 | 座標（別アセット） | [`bus_stop_point`](#bus_stop_point座標アセット) | 278,515 | バス停1行の点（同上。発行元の値のまま） |
+| 座標（別アセット） | [`school_point`](#school_point座標アセット) | 56,807 | 学校1校 × キャンパス1つの点（同上。発行元の値のまま） |
 
 テーブルの形には次の決まりがあります。
 
@@ -417,14 +421,24 @@ GitHub Releases の `v2.3.0+data-2026-10-15` に添付されている12ファイ
 | `municipality_lineage_edge.old_lg_code` | `municipality.lg_code` | N : 1（または 0） | — | 旧コードが今も現行なのは 287 本（存続・名称変更など） |
 | `municipality_lineage_edge.source_row_ordinals` | `municipality_change_raw.row_ordinal` | N : M | — | `;` 区切りの行番号の並び（全辺で2つ以上）。文字列を分割して結ぶ |
 
+**学校**
+
+| 左 | 右 | 多重度 | 宣言 | 注意 |
+|---|---|---|---|---|
+| `bridge_school_address.school_code` | `mext_school.school_code` | N : 1 | ○ | 59,738 校に 59,952 行（町字の候補が複数の学校は候補ごとに1行、最大2行） |
+| `bridge_school_address.address_id` | `address_entity.address_id` | N : 1（NULL あり） | ○ | 町字まで決まった行だけ（56,824 校）。現行の `address` にもすべてある |
+| `bridge_school_address.lg_code` | `municipality.lg_code` | N : 1（NULL あり） | ○ | 市区町村も決まらない行は NULL |
+| `mext_school_succession.school_code` / `successor_school_code` | `mext_school.school_code` | N : 1 | — | 移行後の学校コードのうち 4 件は一覧に無い（`successor_listed = 0`） |
+| `school_point.school_code`（座標アセット） | `mext_school.school_code` | N : 1 | — | キャンパスごとに1行。別ファイルなので宣言できない。`points_match_sources` で一覧にあるコードか検査 |
+
 **来歴**
 
 | 左 | 右 | 多重度 | 宣言 | 注意 |
 |---|---|---|---|---|
 | 全ブリッジ7本の `match_run_id` | `match_run.match_run_id` | N : 1 | ○ | v2.3.0 は1件 |
 | `match_run_input.match_run_id` | `match_run.match_run_id` | N : 1 | ○ | |
-| `match_run_input.source_snapshot_id` | `source_snapshot.source_snapshot_id` | N : 1 | — | 118 行すべて存在 |
-| `snapshot_license_artifact.source_snapshot_id` | `source_snapshot.source_snapshot_id` | N : 1 | — | 20 行すべて存在 |
+| `match_run_input.source_snapshot_id` | `source_snapshot.source_snapshot_id` | N : 1 | — | 122 行すべて存在 |
+| `snapshot_license_artifact.source_snapshot_id` | `source_snapshot.source_snapshot_id` | N : 1 | — | 24 行すべて存在 |
 | 各表の `source_snapshot_id` / `first_observed_snapshot_id` / `last_observed_snapshot_id` | `source_snapshot.source_snapshot_id` | N : 1 | — | 宣言しないのは意図的（過去のビルドから引き継いだ行が、今回の `source_snapshot` に無い元データを指しうるため）。v2.3.0 では全値が存在する |
 
 ### 6.2 結合するときの約束
