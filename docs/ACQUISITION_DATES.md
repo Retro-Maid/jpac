@@ -25,11 +25,12 @@ spec §45）。だから「この payload をいつ取得したか」をビル�
 | `estat_municipality_change`（e-Stat 廃置分合等情報 CSV 3本） | **2026-09-27** | `LICENSE_REVIEW_LINEAGE_2026_09.md` §4.1（同日に取得したクエリ URL と SHA-256） |
 | `estat_census_2025`（令和7年国勢調査 人口等基本集計 第1-1表・第2-7表） | **2026-10-12** | `POPULATION_PREFLIGHT.md` §1.1（同日に取得した statInfId と SHA-256） |
 | `mext_school_code`（文部科学省 学校コード 令和7年5月1日時点・確定版 CSV 3本） | **2026-10-15** | `LICENSE_REVIEW_SCHOOL_2026_10.md` §4（同日に取得した URL と SHA-256） |
+| `mlit_ksj_p29`（国土数値情報 学校 P29 2023年度版 全国） | **2026-10-15** | `LICENSE_REVIEW_SCHOOL_2026_10.md` §6（同日に取得した URL と SHA-256） |
 
 - **attested_by**: `retro.maid.itworker@gmail.com`
 - **attested_on**: 2026-09-23（`estat_municipality_change` の行のみ 2026-09-27、`estat_census_2025`
   の行のみ 2026-10-12。どちらもメンテナが同日の作業セッションで署名を指示し、その指示に
-  基づいて記入した。`mext_school_code` の行のみ 2026-10-15。メンテナが同日の作業セッションで
+  基づいて記入した。`mext_school_code` と `mlit_ksj_p29` の行のみ 2026-10-15。メンテナが同日の作業セッションで
   取り込みを承認し、その承認に基づいて記入した）
 
 ## 根拠を2つ置いている理由

@@ -6,6 +6,8 @@ erDiagram
   p11_bus_stop ||..|| bus_stop_point : "p11_stop_id（1対1）"
   source_snapshot ||..o{ station_point : "source_snapshot_id"
   source_snapshot ||..o{ bus_stop_point : "source_snapshot_id"
+  mext_school ||..o{ school_point : "school_code（キャンパスごと）"
+  source_snapshot ||..o{ school_point : "source_snapshot_id"
   station_point["station_point　駅の代表点（座標アセット）"] {
     TEXT n02_group_code PK "→ n02_station"
     TEXT station_name_raw
@@ -22,6 +24,20 @@ erDiagram
     REAL longitude
     REAL latitude
     TEXT source_snapshot_id  "→ source_snapshot"
+  }
+  school_point["school_point　学校の点（座標アセット、P29）"] {
+    TEXT school_code PK "→ mext_school"
+    TEXT campus_code PK
+    TEXT school_name_raw
+    TEXT campus_note_raw
+    TEXT p29_admin_code
+    TEXT closed_code_raw
+    REAL longitude
+    REAL latitude
+    TEXT source_snapshot_id  "→ source_snapshot"
+  }
+  mext_school["mext_school　学校（文部科学省 学校コード）（→ p.9 学校（文部科学省 学校コード））"] {
+    TEXT school_code PK
   }
   n02_station["n02_station　駅（N02 駅グループ）（→ p.5 駅・路線・バス停）"] {
     TEXT n02_group_code PK

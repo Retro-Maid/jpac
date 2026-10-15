@@ -271,7 +271,7 @@ zip — and this section lifts them for one separate asset only.
 
 | | |
 |---|---|
-| **Asset** | `jp_address_crosswalk_points.zip` (Parquet: `station_point`, `bus_stop_point`) |
+| **Asset** | `jp_address_crosswalk_points.zip` (Parquet: `station_point`, `bus_stop_point`, and since 2026-10-15 `school_point` — §3.5) |
 | **Subjects** | 駅の代表点 (N02 2025年版)、バス停の点 (P11 令和4年度版) |
 | **Origins** | **None.** Both sources are already release sources under §3.1 |
 | **Datum** | JGD2011 経緯度 (EPSG:6668), asserted from each source's `.prj` |
@@ -318,12 +318,11 @@ maintainer on 2026-10-15).
 | **Subject** | 学校 (学校コード一覧、令和7年5月1日時点・確定版) |
 | **Origin** | **文部科学省 — a new origin.** Added to §3's list by the maintainer's approval on 2026-10-15, fetched directly from `mext.go.jp` |
 | **Granularity** | 町字 (`address_id`) where the address text settles one, otherwise 市区町村 |
-| **Tables** | `mext_school`, `mext_school_succession`, `bridge_school_address` |
+| **Tables** | `mext_school`, `mext_school_succession`, `bridge_school_address`; and `school_point` in the coordinate asset (§3.4) |
 
-- **Not 国土数値情報 P29.** P29 was refused (2026-09-28, re-checked 2026-10-14)
-  because it cites a 測量法 approval and third-party originals. The 学校コード list
-  cites neither and has no coordinates; it is joined by its address text, so no
-  survey product is touched.
+- **The list and the 町字 come from 学校コード, not from P29.** The 学校コード
+  list cites no 測量法 approval and no third-party originals, and it is joined by
+  its address text.
 - **Matched by text, not by position, and conservatively.** The municipality is
   the longest name match within the school's own prefecture; the 町字 is the
   longest name match that is followed directly by a 番地. Without that boundary
@@ -335,8 +334,21 @@ maintainer on 2026-10-15).
   町字 matched and the school's postal code is one of that 町字's postal codes
   (`bridge_address_postal_code`). A differing code is recorded in `postal_check`
   and left for review — most are 事業所個別番号 of universities, not errors.
-- **No coordinates.** The list has none, and none are derived. A map may place a
-  school at its 町字's MLIT point only if it says so; that point is not the school.
+- **Coordinates come from 国土数値情報 P29 (2023年度版), in the coordinate asset
+  only.** This reverses, for P29 alone, the refusal of 2026-09-28. P29's page lists
+  地理院地図（標準地図） among its 原典資料 with 「測量法に基づく国土地理院長承認
+  （使用）R 3JHs 917」; the maintainer was told this on 2026-10-15 and chose to
+  adopt it. Its licence is 「オープンデータ（CC_BY_4.0）」, which is not one of the
+  exceptions in §1.3 of the 国土数値情報 terms, so PDL 1.0 applies; §1.2 of those
+  terms asks for a GSI approval only for the 国土調査 results it lists. P05 and the
+  other refused layers stay refused.
+  - `school_point` carries P29's published point per (学校コード, キャンパスコード),
+    neither computed nor rounded, joined to `mext_school` by `school_code`. A school
+    with several campuses has several rows.
+  - P29 is the 2023 list; schools opened since (mostly 認定こども園) have no point,
+    and P29's own 5-digit 行政区域コード is kept as `p29_admin_code`, not mapped to
+    `lg_code`. The 町字 still comes from the address text, never from the point.
+  - No P29 attribute enters the core artifacts.
 - **Abolished schools are kept (§5)**, with 移行後の学校コード as
   `mext_school_succession` (one school can move to several). A successor that is
   not in the list keeps its row, flagged `successor_listed = 0`.

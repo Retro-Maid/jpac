@@ -1,6 +1,6 @@
-"""駅とバス停の座標 —— 本体とは別のリリースアセット (docs/POLICY.md §3.4).
+"""駅・バス停・学校の座標 —— 本体とは別のリリースアセット (docs/POLICY.md §3.4・§3.5).
 
-本体の成果物（SQLite・Parquet・CSV・テーブル別 zip）は座標を持たない。ここで作る2表は
+本体の成果物（SQLite・Parquet・CSV・テーブル別 zip）は座標を持たない。ここで作る3表は
 ``jp_address_crosswalk_points.zip`` にだけ入り、``dist/parquet`` には書かない。
 ``jpac export`` と差分の基準（data/previous）が読むのはそちらなので、置き場所を分ける
 ことが「本体は変わらない」を保証する仕組みそのものである。
@@ -11,6 +11,9 @@
   3か所が同じ関数を通るので、ピンと表と判定が食い違わない。
 * **バス停は公表された点そのもの。** P11 が停留所ごとに点を公表しているので、計算も
   丸めもしない。丸めは公表値を書き換えることになる。
+* **学校は P29 の点そのもの。** 国土数値情報 P29（2023年度版）が学校コード・キャンパス
+  ごとに公表している点を、計算も丸めもせずに出す。学校の一覧（``mext_school``）とは学校
+  コードで結ぶ。キャンパスごとに1行なので、1校が複数行になることがある（POLICY.md §3.5）。
 * **元の表と1対1。** 図形が無い駅・バス停も行を残し、座標を NULL にする
   （POLICY.md §5）。「点が無い」と「その駅が無い」は別の主張である。
 * **境界から作った座標は出さない。** 市区町村や小地域の重心はここに無い
@@ -117,9 +120,57 @@ def build_bus_stop_points(
     return pl.DataFrame(rows, schema=BUS_STOP_POINT_SCHEMA).sort("p11_stop_id")
 
 
+SCHOOL_POINT_SCHEMA = {
+    "school_code": pl.Utf8,
+    # 00 キャンパスの区別なし ／ 01 本校 ／ 02〜 それ以降のキャンパス（P29 のコード表）
+    "campus_code": pl.Utf8,
+    "school_name_raw": pl.Utf8,
+    "campus_note_raw": pl.Utf8,
+    # P29 作成時点（2023年度）の5桁の行政区域コード。jpac の lg_code ではない。
+    "p29_admin_code": pl.Utf8,
+    # 0 調査なし ／ 1 開校中 ／ 2 休校中（9 はコード表に無いが発行元の値のまま）
+    "closed_code_raw": pl.Utf8,
+    "longitude": pl.Float64,
+    "latitude": pl.Float64,
+    "source_snapshot_id": pl.Utf8,
+}
+
+
+def build_school_points(
+    p29: pl.DataFrame,
+    geometry: list[tuple[float, float] | None],
+    snapshot_id: str | None,
+) -> pl.DataFrame:
+    """P29 の1行（学校 × キャンパス）につき1行。点は公表値をそのまま。
+
+    ``geometry`` は P29 のシェープファイルの点を DBF と同じ順に並べたもの。
+    行数が違えば、属性と点がずれて別の学校の位置になるので止める。
+    """
+    if len(geometry) != p29.height:
+        raise ValueError(
+            f"P29 の点 {len(geometry)} 個と属性 {p29.height} 行が対にならない"
+        )
+    rows = []
+    for r in p29.iter_rows(named=True):
+        pt = geometry[r["p29_row"]]
+        rows.append({
+            "school_code": r["school_code"],
+            "campus_code": r["campus_code"],
+            "school_name_raw": r["school_name_raw"],
+            "campus_note_raw": r["campus_note_raw"] or None,
+            "p29_admin_code": r["p29_admin_code"],
+            "closed_code_raw": r["closed_code_raw"],
+            "longitude": pt[0] if pt else None,
+            "latitude": pt[1] if pt else None,
+            "source_snapshot_id": snapshot_id,
+        })
+    return pl.DataFrame(rows, schema=SCHOOL_POINT_SCHEMA).sort(["school_code", "campus_code"])
+
+
 POINT_TABLES = {
     "station_point": STATION_POINT_SCHEMA,
     "bus_stop_point": BUS_STOP_POINT_SCHEMA,
+    "school_point": SCHOOL_POINT_SCHEMA,
 }
 
 
@@ -145,6 +196,24 @@ def check_points(points: dict[str, pl.DataFrame], tables: dict[str, pl.DataFrame
         ).height
         if bad:
             problems.append(f"{name}: 日本の範囲外の座標が {bad} 行")
+    if "school_point" in points:
+        pts = points["school_point"]
+        keys = pts.select("school_code", "campus_code").unique().height
+        if keys != pts.height:
+            problems.append(f"school_point: (school_code, campus_code) が {pts.height - keys} 行重複")
+        bad = pts.filter(
+            pl.col("longitude").is_not_null()
+            & ~(pl.col("longitude").is_between(122, 154) & pl.col("latitude").is_between(20, 46))
+        ).height
+        if bad:
+            problems.append(f"school_point: 日本の範囲外の座標が {bad} 行")
+        schools = tables.get("mext_school")
+        if schools is not None:
+            unknown = pts.filter(
+                ~pl.col("school_code").is_in(schools["school_code"].implode())
+            )["school_code"].n_unique()
+            if unknown:
+                problems.append(f"school_point: 学校コードの一覧に無い学校が {unknown} 校")
     bridge = tables.get("bridge_station_municipality")
     if "station_point" in points and bridge is not None:
         used = bridge.filter(pl.col("placement_point").is_in([PLACEMENT_CENTROID, PLACEMENT_ON_LINE]))

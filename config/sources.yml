@@ -1003,6 +1003,85 @@ sources:
       - name: "Excel 版"
         reason: "CSV と同じ内容。CSV を使う。"
 
+  mlit_ksj_p29:
+    provider: "国土交通省 国土政策局 国土情報課"
+    provider_en: "MLIT"
+    required: false
+    landing_page: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P29-2023.html"
+    discovery:
+      method: static_url
+      observed_url: "https://nlftp.mlit.go.jp/ksj/gml/data/P29/P29-23/P29-23_GML.zip"
+      observed_sha256: "74387e04bdf0b3cc6b0b5a978ce3f1295e5ee3b66114f87f61b4a9d999502ac4"
+      observed_bytes: 5443235
+      edition: "2023"
+      version_source: >-
+        詳細ページの版（データ基準年度 2023年度・令和5年度、2024年6月更新）。利用許諾条件は
+        版ごとに異なり、2013年度版は「非商用」（year_note）。
+    license:
+      name: "公共データ利用規約（第1.0版） (PDL 1.0)"
+      url: "https://nlftp.mlit.go.jp/ksj/other/agreement.html"
+      reviewed_on: "2026-10-15"
+      reviewed_by: "jp-address-crosswalk"
+      review_2026_10_15: >-
+        2026-10-15、メンテナが作業セッションで採用を選んだ（docs/LICENSE_REVIEW_SCHOOL_2026_10.md
+        §6）。詳細ページの原典資料に地理院地図（標準地図）と「測量法に基づく国土地理院長承認
+        （使用）R 3JHs 917」があり、2026-09-28 にはこれを理由に中止していた。その記載を伝えた
+        うえでの選択である。利用許諾条件は 2023年度版が「オープンデータ（CC_BY_4.0）」で、
+        規約 §1.3 の適用除外（「一部制限」「商用可」「非商用」「記載なし」）に当たらず、
+        PDL 1.0 が適用される。規約 §1.2 が国土地理院の承認を求めているのは国土調査の成果で、
+        P29 は挙がっていない。点だけを別アセットで配り、本体には入れない（POLICY.md §3.5）。
+      year_scoped: true
+      year_note: >-
+        2023年度・2021年度版は「オープンデータ（CC_BY_4.0）」、2013年度版は「非商用」。
+        取得は2023年度版の全国ファイルに限る。
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。加工物には利用したコンテンツの名称及び加工した旨を併記し、あたかも国が
+          作成したかのような態様で公表・利用しない。
+      attribution:
+        unmodified: |
+          出典：国土交通省国土数値情報ダウンロードサイト
+                https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P29-2023.html
+        processed: |
+          「国土数値情報（学校データ）」（国土交通省）
+                https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P29-2023.html をもとに jp-address-crosswalk 作成
+      artifacts:
+        - role: primary_terms
+          name: "国土数値情報ダウンロードサイト 利用規約 (2026-03-23 施行)"
+          url: "https://nlftp.mlit.go.jp/ksj/other/agreement.html"
+          text_sha256: "4c44671c4183abdad0fa8f117b98fd7594fc0990048e4d410917076284837e3a"
+          text_sha256_decoded: "4c44671c4183abdad0fa8f117b98fd7594fc0990048e4d410917076284837e3a"
+          note: >-
+            mlit・mlit_ksj_n02・mlit_ksj_p11 と同じページ・同じハッシュ。2026-10-15 に実ページから
+            snapshot.license_text_hash_bytes() で再計算し、一致を確かめた。
+        - role: detail_page
+          name: "国土数値情報 学校データ 2023年度版 詳細ページ（利用許諾条件と原典資料の出所）"
+          url: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P29-2023.html"
+          text_sha256: "e6dda47382bb34da7e78ad3aec25f182e49c9e93dbd638579599d59ebfeb5fd9"
+          text_sha256_decoded: "e6dda47382bb34da7e78ad3aec25f182e49c9e93dbd638579599d59ebfeb5fd9"
+          note: >-
+            版ごとの利用許諾条件と、原典資料（地理院地図と承認番号 R 3JHs 917）はこのページにある。
+            2026-10-15 に取得し（206,371 bytes、UTF-8、BOM あり）、snapshot.license_text_hash_bytes()
+            で計算した。
+    datasets:
+      p29_school:
+        title: "学校 (2023年度版)"
+        member: "P29-23_GML/P29-23.shp / .dbf"
+        encoding: utf-8
+        datum: "JGD2011"
+        geometry: point
+        features: 56807
+        note: >-
+          学校コード（P29_002）とキャンパスコード（P29_008）で一意。点は座標アセットの
+          school_point にだけ入り、属性は本体に入れない（学校の一覧は mext_school_code）。
+    excluded_datasets:
+      - name: "2013年度版 (P29-13)"
+        reason: "利用許諾条件が「非商用」。再配布できない。"
+      - name: "2021年度版 (P29-21)"
+        reason: "2023年度版で置き換わっている。版を混在させない。"
+
 http:
   timeout_connect_s: 15
   timeout_read_s: 120

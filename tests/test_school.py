@@ -189,3 +189,43 @@ class TestShippedChecks:
         empty = bridge.head(0)
         writers.write_sqlite({"bridge_school_address": bridge}, empty, empty,
                              tmp_path / "school.sqlite")
+
+
+# ------------------------------------------------------------------ P29 points
+
+def _p29(*rows: tuple[str, str]) -> pl.DataFrame:
+    return pl.DataFrame(
+        [{"school_code": c, "campus_code": k, "school_name_raw": "校", "campus_note_raw": "",
+          "p29_admin_code": "11201", "closed_code_raw": "1"} for c, k in rows]
+    ).with_row_index("p29_row")
+
+
+class TestSchoolPoints:
+    def test_each_campus_keeps_its_own_published_point(self) -> None:
+        from jp_address_crosswalk.build import points
+
+        p29 = _p29(("B111210000013", "01"), ("B111210000013", "02"))
+        pts = points.build_school_points(p29, [(139.5, 35.9), (139.6, 35.8)], "snap_p29")
+        assert pts.rows() == [
+            ("B111210000013", "01", "校", None, "11201", "1", 139.5, 35.9, "snap_p29"),
+            ("B111210000013", "02", "校", None, "11201", "1", 139.6, 35.8, "snap_p29"),
+        ]
+
+    def test_points_and_attributes_must_pair_up(self) -> None:
+        """数がずれたら、別の学校の位置を付けることになるので止める."""
+        from jp_address_crosswalk.build import points
+
+        with pytest.raises(ValueError):
+            points.build_school_points(_p29(("B111210000013", "00")), [], "snap_p29")
+
+    def test_check_reports_unknown_schools_and_out_of_range_points(self) -> None:
+        from jp_address_crosswalk.build import points
+
+        pts = points.build_school_points(
+            _p29(("B111210000013", "00"), ("C111210000012", "00")),
+            [(139.5, 35.9), (10.0, 35.9)], "snap_p29",
+        )
+        known = pl.DataFrame({"school_code": ["B111210000013"]})
+        problems = points.check_points({"school_point": pts}, {"mext_school": known})
+        assert any("範囲外" in p for p in problems)
+        assert any("一覧に無い" in p for p in problems)

@@ -87,6 +87,7 @@ from .snapshot import (
     utcnow,
 )
 from .sources import mlit_ksj_p11 as p11_source
+from .sources import mlit_ksj_p29 as p29_source
 from .sources.abr import AbrSource
 from .sources.base import DiscoveredResource, Discovery
 from .sources.estat import EstatBoundarySource
@@ -117,6 +118,8 @@ SOURCE_CLASSES = {
     "estat_census_2025": EstatCensusSource,
     # 学校（文部科学省 学校コード）。required: false で、無ければ一覧の検査が skip になるだけ。
     "mext_school_code": MextSchoolCodeSource,
+    # 学校の点（国土数値情報 P29 2023年度版）。座標アセットにだけ入る（POLICY.md §3.5）。
+    "mlit_ksj_p29": p29_source.MlitKsjP29Source,
 }
 
 
@@ -594,6 +597,14 @@ def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str,
     # Optional like the V2 sources: without the payload nothing is added and the
     # list's consistency gate is reported as not run.
     tables.update(_build_school_tables(outcome, tables, snapshot_for))
+    # 学校の点は座標アセットにだけ入る（"_" で始まる名前。POLICY.md §3.4・§3.5）。
+    p29 = outcome.parsed.get("mlit_ksj_p29", {}).get("p29_school")
+    if p29 is not None:
+        with stage_context("school", "geometry"):
+            school_geometry = _read_p29_geometry(paths)
+        tables["_school_point"] = points_build.build_school_points(
+            p29, school_geometry, snapshot_for("mlit_ksj_p29")
+        )
 
     # --- Provenance
     tables["source_snapshot"] = pl.DataFrame(
@@ -865,6 +876,7 @@ def _source_of(dataset_name: str) -> str:
     """
     for prefix, source in [
         ("mlit_ksj_n02_", "mlit_ksj_n02"), ("mlit_ksj_p11_", "mlit_ksj_p11"),
+        ("mlit_ksj_p29_", "mlit_ksj_p29"),
         ("estat_boundary_", "estat_boundary"),
         ("estat_municipality_change_", "estat_municipality_change"),
         ("estat_census_2025_", "estat_census_2025"),
@@ -1029,6 +1041,15 @@ def _build_station_tables(
             stops_raw, stop_points, snapshot_for("mlit_ksj_p11")
         )
     return out
+
+
+def _read_p29_geometry(paths: Paths) -> list[tuple[float, float] | None]:
+    """P29 の点。DBF と同じ順（添字で属性と対にする）。測地系は JGD2011 を確かめてある。"""
+    src_dir = paths.raw / "mlit_ksj_p29"
+    files = sorted(p for p in src_dir.glob("*.zip"))
+    if len(files) != 1:
+        raise ValidationFailed("P29 のペイロードは1ファイルのはず", found=[f.name for f in files])
+    return p29_source.read_points(files[0])
 
 
 def write_points_asset(

@@ -1,5 +1,5 @@
 ---
-title: jpac 2.2.0+data-2026-10-15　全体図（SQLite 47 テーブル + 座標アセット 2）　矢印は「参照する側 → される側」　実線 = 宣言された FOREIGN KEY ／ 点線 = 宣言のない結合　列は各ページ（ブリッジ7本 → match_run の線は省略）
+title: jpac 2.2.0+data-2026-10-15　全体図（SQLite 47 テーブル + 座標アセット 3）　矢印は「参照する側 → される側」　実線 = 宣言された FOREIGN KEY ／ 点線 = 宣言のない結合　列は各ページ（ブリッジ7本 → match_run の線は省略）
 ---
 flowchart LR
   subgraph 01_address["p.2 住所（ABR 町字）と市区町村"]
@@ -61,6 +61,7 @@ flowchart LR
   subgraph 07_points["p.8 座標（別アセット jp_address_crosswalk_points.zip。SQLite には無い）"]
     station_point["station_point<br/>駅の代表点（座標アセット）"]
     bus_stop_point["bus_stop_point<br/>バス停の点（座標アセット）"]
+    school_point["school_point<br/>学校の点（座標アセット、P29）"]
   end
   subgraph 08_school["p.9 学校（文部科学省 学校コード）"]
     mext_school["mext_school<br/>学校（文部科学省 学校コード）"]
@@ -131,3 +132,5 @@ flowchart LR
   station_point -.-> source_snapshot
   bus_stop_point -.-> source_snapshot
   mext_school_succession -.-> mext_school
+  school_point -.-> mext_school
+  school_point -.-> source_snapshot

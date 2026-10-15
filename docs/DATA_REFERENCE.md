@@ -1529,10 +1529,11 @@ WHERE b.verification_status = 'auto';
 **次のリリースで追加する3表です。** `v2.2.0` には入っていません。数値は令和7年5月1日時点（確定版）の一覧を
 `v2.2.0` と同じ住所データに照合した実測です。
 
+学校の点は座標アセットの [`school_point`](#school_point座標アセット)（国土数値情報 P29 2023年度版）にあります。
+
 学校コードは文部科学省が全国の学校に1つずつ振った13桁のコードで、学校種（2桁）・都道府県番号（2桁）・
 設置区分（1桁）・学校番号（7桁）・検査数字（1桁）からなります。一覧は**座標を持たず**、所在地を文字列で
-持っています。jpac はその文字列を町字に照合して結びます（位置は使いません）。国土数値情報の学校データ（P29）
-は使っていません。
+持っています。jpac はその文字列を町字に照合して結びます（位置は使いません）。
 
 #### `mext_school`
 
@@ -1613,6 +1614,38 @@ WHERE b.verification_status = 'auto';
 
 今ある学校 55,862 校で数えると、町字に1つに決まった学校が 94.85%、町字の候補が複数 0.34%、市区町村どまり
 4.77%、市区町村も決まらない 0.04% です。
+
+#### `school_point`（座標アセット）
+
+- **入っているファイル:** `jp_address_crosswalk_points.zip` の `school_point.parquet`（次のリリースで追加）。**SQLite・テーブル別 zip には無い**
+- **1行が表すもの:** 国土数値情報 学校データ（P29 2023年度版）の1点 = 学校1校 × キャンパス1つ
+- **主キー:** `(school_code, campus_code)`
+- **行数:** 56,807（56,318校。キャンパスが複数ある学校は 258校）。座標が NULL の行 0
+- **用途:** 学校を地図に載せる。P29 が公表している点を**計算も丸めもせずに**出している。町字（`bridge_school_address`）は所在地の文字列から決めたもので、この点からは決めていない
+- **測地系:** JGD2011 の経緯度（EPSG:6668）。範囲は経度 122.943…〜145.750…、緯度 24.061…〜45.513…（実測）
+- **注意:** P29 は令和5年（2023年）5月1日時点の一覧から作られている。今ある学校（令和7年の一覧）55,862校のうち点があるのは 54,776校（98.1%）で、無いのは2023年以降にできた学校が中心（認定こども園 729校など）。P29 の原典資料には地理院地図（測量法に基づく国土地理院長承認（使用）R 3JHs 917）が含まれる
+
+| 列名 | 型（Parquet / Snowflake 推奨） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
+|---|---|---:|---|---|
+| `school_code` | large_string / `VARCHAR` | 0 | 学校コード → `mext_school.school_code`（56,807 点の学校コードはすべて令和7年の一覧にある。廃止になった学校もある） | 例 `A101110000012` |
+| `campus_code` | large_string / `VARCHAR` | 0 | キャンパスコード。`00` キャンパスの区別なし ／ `01` 本校 ／ `02` 以降 それ以外のキャンパス | `00` 56,021、`01` 297、`02` 258、`03` 105、`04` 50 ほか |
+| `school_name_raw` | large_string / `VARCHAR` | 0 | P29 の名称（`mext_school.school_name_raw` と違うことがある） | 例 `北海道教育大学附属函館幼稚園` |
+| `campus_note_raw` | large_string / `VARCHAR` | 56,109 | 学校名備考（キャンパスの名称等）。無ければ NULL | 例 `原峠分室`、`女子部` |
+| `p29_admin_code` | large_string / `VARCHAR` | 0 | P29 作成時点の行政区域コード5桁。jpac の `lg_code`（6桁）ではない | 例 `01202` |
+| `closed_code_raw` | large_string / `VARCHAR` | 0 | 休校区分。`0` 調査なし ／ `1` 開校中 ／ `2` 休校中。`9` はコード表に無いが発行元の値のまま | `1` 28,932、`0` 27,673、`9` 202 |
+| `longitude` | double / `FLOAT` | 0 | 経度（発行元の値のまま） | 例 `140.7481043400378` |
+| `latitude` | double / `FLOAT` | 0 | 緯度（発行元の値のまま） | 例 `41.82050309831556` |
+| `source_snapshot_id` | large_string / `VARCHAR` | 0 | 元データ（P29 の全国ファイル） | 全行 `snap_mlit_ksj_p29_P29-23_GML_…` |
+
+```sql
+-- 例（DuckDB）: 今ある小学校の点と、所在地から決めた町字
+SELECT s.school_code, s.school_name_raw, p.campus_code, p.longitude, p.latitude, b.address_id
+FROM 'tables/mext_school.parquet' s
+JOIN 'points/school_point.parquet' p USING (school_code)
+LEFT JOIN 'tables/bridge_school_address.parquet' b
+       ON b.school_code = s.school_code AND b.relation_type = 'located_in'
+WHERE s.is_active AND s.school_type_code = 'B1';
+```
 
 ### 7.10 来歴
 
