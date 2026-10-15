@@ -89,9 +89,9 @@
 |---|---|---|
 | `jp_address_crosswalk.parquet` | 1枚にまとめた表（727,110行 × 43列） | polars / pandas / DuckDB |
 | `jp_address_crosswalk.csv.gz` | 1枚にまとめた表 | 汎用・アーカイブ |
-| `jp_address_crosswalk.sqlite.gz` | テーブル44本 + ビュー3本 + 索引33本（**gzip 426 MB。解凍して使います**） | SQL で関係をたどる |
-| `jp_address_crosswalk_tables.zip` | テーブル別 Parquet 44本。中身は SQLite のテーブルと同じ | 人口・駅などを SQLite なしで読む |
-| `jp_address_crosswalk_points.zip` | **座標アセット。** 駅の代表点 9,046 と バス停の点 278,515（Parquet 2本、約 6 MB）。本体には入っていない | 駅・バス停を地図に載せる |
+| `jp_address_crosswalk.sqlite.gz` | テーブル47本 + ビュー3本 + 索引36本（**gzip 433 MB。解凍して使います**） | SQL で関係をたどる |
+| `jp_address_crosswalk_tables.zip` | テーブル別 Parquet 47本。中身は SQLite のテーブルと同じ | 人口・駅などを SQLite なしで読む |
+| `jp_address_crosswalk_points.zip` | **座標アセット。** 駅の代表点 9,046、バス停の点 278,515、学校の点 56,807（Parquet 3本、約 7 MB）。本体には入っていない | 駅・バス停・学校を地図に載せる |
 | `QUALITY_REPORT.md` | そのビルドの全統計とチェック結果 | 数値の裏取り |
 | `DIFF_REPORT.md` | 前回リリースからの変化 | 更新時の影響確認 |
 | `NOTICE.md` / `SOURCES.yml` | 出典表示と、使用した各ファイルの URL・SHA-256・規約 | 再配布・引用時 |
@@ -104,7 +104,7 @@
 約5倍縮むので、上限に当たるのは非圧縮で約 10 GB になったときです。`SHA256SUMS` のハッシュは
 **圧縮後のファイル**に対するもので、`csv.gz` と同じ扱いです。
 
-**版。** タグはコード版とデータ版を併記します（`v2.2.0+data-2026-10-12`）。同じコードでも
+**版。** タグはコード版とデータ版を併記します（`v2.3.0+data-2026-10-15`）。同じコードでも
 元データの版が違えば中身は変わるため、利用時は**タグ全体**を記録してください。データ版は
 **元データを取得した日のうち最も新しいもの**で、ビルド日ではありません（v1.2.0 まではその
 記録が無く、ビルド日にフォールバックしていました）。取得日の署名は
@@ -128,7 +128,7 @@ import pandas as pd
 # CSV から読む場合は dtype=str が必須。指定しないと 0640941 が 640941 になります
 x_pd = pd.read_csv("jp_address_crosswalk.csv.gz", dtype=str)
 
-# テーブル別 Parquet（44本）は zip 1つにまとめてあります。zip は無圧縮なので展開は一瞬です
+# テーブル別 Parquet（47本）は zip 1つにまとめてあります。zip は無圧縮なので展開は一瞬です
 import zipfile
 zipfile.ZipFile("jp_address_crosswalk_tables.zip").extractall("tables")
 pop = pl.read_parquet("tables/census_population_municipality.parquet")
@@ -136,6 +136,7 @@ pop = pl.read_parquet("tables/census_population_municipality.parquet")
 # 駅・バス停の座標は別の zip です（経緯度、JGD2011）。キーで本体の表に結びます
 zipfile.ZipFile("jp_address_crosswalk_points.zip").extractall("points")
 st = pl.read_parquet("points/station_point.parquet")      # n02_group_code で n02_station に 1対1
+sc = pl.read_parquet("points/school_point.parquet")       # school_code で mext_school に結ぶ（キャンパスごと）
 ```
 
 ```bash
@@ -198,7 +199,7 @@ confident = x.filter(pl.col("postal_status") == "auto")   # 674,578行
 
 ![ABR 町字マスターを正準とし、ブリッジで各系統に接続するデータ全体像](docs/diagrams/01-data-overview.svg)
 
-<sub>図の出典: [`docs/diagrams/01-data-overview.mmd`](docs/diagrams/01-data-overview.mmd)。住所・郵便・国土交通省・市外局番の4系統の考え方を示す図で、件数は v1 時点のものです。全44テーブルは [ER 図](#er-図とスキーマ)を見てください。</sub>
+<sub>図の出典: [`docs/diagrams/01-data-overview.mmd`](docs/diagrams/01-data-overview.mmd)。住所・郵便・国土交通省・市外局番の4系統の考え方を示す図で、件数は v1 時点のものです。全47テーブルは [ER 図](#er-図とスキーマ)を見てください。</sub>
 
 - **基準となる住所** — デジタル庁の町字マスター。住所の名前と範囲は常にこれを基準にします。
 - **各制度の記録** — 郵便番号、国土交通省コード、市外局番など。元のまま保存し、対応を取り
@@ -328,9 +329,9 @@ CHECK (verification_status <> 'auto' OR (
 ## フラット表の列
 
 Parquet と CSV.gz、SQLite のビュー `address_crosswalk` は、いずれも同じ43列の1枚の表です。
-ほとんどの用途はこの表だけで済みます。数値は `v2.2.0+data-2026-10-12`（727,110行）の実測値
-です。この43列は v2.0.0 でブリッジの列名が変わったときも1列も変わっておらず、v2.1.0 の
-追加（人口・廃置分合）もこの表には入りません（ファイルは v2.0.1 とバイト単位で同じです）。
+ほとんどの用途はこの表だけで済みます。数値は `v2.3.0+data-2026-10-15`（727,110行）の実測値
+です。この43列は v2.0.0 でブリッジの列名が変わったときも1列も変わっておらず、v2.1.0 以降の
+追加（人口・廃置分合・座標・学校）もこの表には入りません（ファイルは v2.0.1 とバイト単位で同じです）。
 
 1行は **1つの住所 × 対応する郵便番号 × 対応する国土交通省レコード** の組み合わせです。
 住所726,170件に対して727,110行あるのは、対応が複数ある住所がその数だけ行に展開される
@@ -425,13 +426,13 @@ Parquet と SQLite は型を保持しますが、CSV を数値として読み込
 
 ## テーブル一覧
 
-> 件数は `v2.2.0+data-2026-10-12` の実測値です（品質チェック195項目すべて合格）。最新値は
-> リリースに同梱される `QUALITY_REPORT.md` にあります。データ版 `+data-2026-10-12` は
-> 元データを取得した日（最も新しいもの。今回は国勢調査）です。住所・郵便番号・国土交通省・
+> 件数は `v2.3.0+data-2026-10-15` の実測値です（品質チェック202項目すべて合格）。最新値は
+> リリースに同梱される `QUALITY_REPORT.md` にあります。データ版 `+data-2026-10-15` は
+> 元データを取得した日（最も新しいもの。今回は学校の2つ）です。住所・郵便番号・国土交通省・
 > 市外局番・駅の元データは v2.0.1 と同じファイルです。
 
 約72万件の住所を中心に、12万件の郵便番号、19万件の国土交通省コード、582件の番号区画、
-9千件の駅を繋いでいます。市区町村は1,918で、その人口と、コードの廃置分合の履歴も持ちます。
+9千件の駅、6万校の学校を繋いでいます。市区町村は1,918で、その人口と、コードの廃置分合の履歴も持ちます。
 各テーブルの列・型・キーは [`docs/DATA_REFERENCE.md`](docs/DATA_REFERENCE.md)。
 
 | 区分 | テーブル | 件数 | 中身 |
@@ -457,9 +458,11 @@ Parquet と SQLite は型を保持しますが、CSV を数値として読み込
 | | `p11_bus_stop` | 278,515 | バス停留所。名称・事業者・都道府県 |
 | | `estat_small_area` | 232,019 | e-Stat 国勢調査 小地域の属性。**形状は含みません** |
 | [人口](#人口) | `census_population_*` 5本 | 下記 | 市区町村・年齢・番号区画ごとの人口と、発行元の表の原文 |
-| ブリッジ | `bridge_*` 11本 | 下表 | 対応とその根拠 |
-| 来歴 | `source_snapshot` | 122 | 取得したファイル1本 = 1行。URL・SHA-256・規約・行数 |
-| | `match_run` / `match_run_input` | 1 / 118 | 照合の実行と、その入力 |
+| [学校](#学校) | `mext_school` | 59,738 | 学校1校1行（廃止した学校を含む）。文部科学省 学校コード |
+| | `mext_school_succession` | 1,797 | 廃止した学校 → 移行後の学校 |
+| ブリッジ | `bridge_*` 12本 | 下表 | 対応とその根拠 |
+| 来歴 | `source_snapshot` | 126 | 取得したファイル1本 = 1行。URL・SHA-256・規約・行数 |
+| | `match_run` / `match_run_input` | 1 / 122 | 照合の実行と、その入力 |
 | | `snapshot_license_artifact` | | 規約本文の記録 |
 
 `address_history` / `address_lineage` / `address_key_conflict` が0件なのは欠損ではなく、
@@ -487,6 +490,7 @@ payload から作られています）。v2.0.0 以降、この3本はリリー�
 | 駅 ↔ 路線 | `bridge_station_line` | 10,153 | | |
 | 路線 ↔ 市区町村 | `bridge_line_municipality` | 3,381 | | |
 | バス停 ↔ 市区町村 | `bridge_bus_stop_municipality` | 278,801 | | 278,114 |
+| 学校 ↔ 町字・市区町村 | `bridge_school_address` | 59,952 | 町字まで 94.85%（今ある学校 55,862校） | 54,153 |
 
 市区町村 ↔ 郵便番号が2本あるのは、v2.0.0 で表を2つに分けたからです（`P2` は郵便番号を
 直接指し、`P3` は日本郵便のレコードを指すので、同じ列に入れると join の前に規則で分岐する
@@ -544,7 +548,7 @@ payload から作られています）。v2.0.0 以降、この3本はリリー�
 
 ### 座標アセット（駅とバス停）
 
-駅とバス停の経緯度は、本体（SQLite・Parquet・CSV・テーブル別 zip）には入れず、別ファイル
+駅・バス停（v2.3.0 からは学校も）の経緯度は、本体（SQLite・Parquet・CSV・テーブル別 zip）には入れず、別ファイル
 `jp_address_crosswalk_points.zip` で配ります。本体を使っている人の手元は何も変わらず、
 座標が要る人だけがこの zip を取ります（[`docs/POLICY.md`](docs/POLICY.md) §3.4）。
 
@@ -552,10 +556,11 @@ payload から作られています）。v2.0.0 以降、この3本はリリー�
 |---|---:|---|---|
 | `station_point` | 9,046 | `n02_group_code`（`n02_station` と1対1） | **代表点。** N02 は駅を線で公開していて点を持たないので、駅の線から計算した重心です。`bridge_station_municipality` が市区町村の判定に使った点と同じで、`placement_point` にその規則（`centroid` / `point_on_line`）が入ります。6桁に丸めています |
 | `bus_stop_point` | 278,515 | `p11_stop_id`（`p11_bus_stop` と1対1） | **発行元の点そのもの。** P11 が公表している点を、計算も丸めもせずに出しています |
+| `school_point` | 56,807 | `(school_code, campus_code)`（`mext_school` に学校コードで結ぶ） | **発行元の点そのもの**（国土数値情報 P29 2023年度版）。学校 × キャンパスごと。詳しくは [学校](#学校) |
 
 - 測地系は JGD2011 の経緯度（EPSG:6668）。`longitude` と `latitude` は `REAL`（Parquet では double）。
 - 元の表のすべての行に1行あります。図形が無い駅・バス停は座標を NULL にして行を残します
-  （v2.2.0 の元データでは 0 件）。
+  （v2.3.0 の元データでは 0 件）。
 - 市区町村はこの表には無く、これまでどおりブリッジ（`bridge_station_municipality` /
   `bridge_bus_stop_municipality`）から引きます。境界上の駅・バス停は候補が2つのままです。
 - 駅の点は**駅舎や出入口の位置ではありません**。バス停の点も**停留所標識の位置とは限りません**。
@@ -652,8 +657,8 @@ WHERE  old_lg_code = '221317';
 
 ## 学校
 
-> **次のリリースで追加します。** `v2.2.0` には入っていません。数値は令和7年5月1日時点（確定版）の
-> 一覧を `v2.2.0` と同じ住所データに照合した実測です。
+> **v2.3.0 で追加しました。** 数値は令和7年5月1日時点（確定版）の一覧を照合した `v2.3.0+data-2026-10-15`
+> の実測です。
 
 文部科学省の「学校コード」一覧（幼稚園・認定こども園から大学・専修学校まで、廃止した学校を
 含む 59,738校）を、**所在地の文字列で町字（`address_id`）に結びます**。駅やバス停と違い、町字
@@ -775,9 +780,9 @@ sqlite3 jp_address_crosswalk.sqlite < docs/queries/01_postal_to_address.sql
 
 ## ER 図とスキーマ
 
-![全44テーブルを領域ごとにまとめた ER 図の概観](docs/diagrams/er/00-overview.svg)
+![全47テーブルを領域ごとにまとめた ER 図の概観](docs/diagrams/er/00-overview.svg)
 
-全47テーブル（学校の3表は次のリリースで追加）と座標アセットの3表を領域ごとにまとめた概観です。矢印は参照する側 → 参照される側で、実線は宣言
+全47テーブルと座標アセットの3表を領域ごとにまとめた概観です。矢印は参照する側 → 参照される側で、実線は宣言
 された `FOREIGN KEY`、破線は宣言していない論理的な結合（実体と `*_version`、人口の `lg_code`
 など）です。全列を載せた版は **[`docs/diagrams/er/jpac-er.pdf`](docs/diagrams/er/jpac-er.pdf)**
 （9ページ、しおりつき。拡大して読む用。8ページ目が座標アセット、9ページ目が学校）。どちらも
@@ -901,8 +906,8 @@ id     = "jpa1" + digest を base32 で 16 文字に
 | 総務省統計局 | 令和2年国勢調査 小地域（町丁・字等別）境界データ | V2・任意：駅と地図の市区町村判定 | 国勢調査ごと（5年） |
 | 総務省統計局 | 令和7年国勢調査 人口等基本集計（第1-1表・第2-7表） | 任意：人口 | 国勢調査ごと（5年） |
 | 総務省統計局 | 廃置分合等情報（e-Stat） | 任意：市区町村コードの旧→新 | 廃置分合の都度 |
-| 文部科学省 | 学校コード（令和7年5月1日時点・確定版） | 任意：学校（次のリリースで追加） | 年1回（5月1日時点） |
-| 国土交通省 | 国土数値情報 学校データ（P29）2023年度版 | 任意：学校の点（座標アセット。次のリリースで追加） | 不定期 |
+| 文部科学省 | 学校コード（令和7年5月1日時点・確定版） | 任意：学校 | 年1回（5月1日時点） |
+| 国土交通省 | 国土数値情報 学校データ（P29）2023年度版 | 任意：学校の点（座標アセット） | 不定期 |
 
 「任意」の元データは、`data/raw/` にあるときだけ対応するテーブルが出力されます。日本郵便の
 月次差分ファイル（追加・廃止）は受け入れて来歴に記録していますが、テーブルには取り込んで
@@ -1024,7 +1029,7 @@ jpac verify          # 出来上がったデータを元データと突き合わ
 | [`docs/MESH_MUNICIPALITY_LOOKUP.md`](docs/MESH_MUNICIPALITY_LOOKUP.md) | 静的マップの要件・データ形式・検証・軽量化 |
 | [`docs/POPULATION_PREFLIGHT.md`](docs/POPULATION_PREFLIGHT.md) | 人口（国勢調査 令和7年）の設計と実測 |
 | [`docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md`](docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md) | 市区町村の廃置分合を公式データで裏づける設計と実測 |
-| [`docs/FACILITY_PREFLIGHT.md`](docs/FACILITY_PREFLIGHT.md) | 学校・役場等を国土数値情報（P29・P05）で市区町村に結ぶための下調べ（中止。学校は文部科学省 学校コードで入れる） |
+| [`docs/FACILITY_PREFLIGHT.md`](docs/FACILITY_PREFLIGHT.md) | 学校・役場等を国土数値情報（P29・P05）で市区町村に結ぶための下調べ（中止。学校は文部科学省 学校コードで入れ、P29 は 2026-10-15 に座標だけ採用） |
 | [`docs/N03_BOUNDARY_DESIGN.md`](docs/N03_BOUNDARY_DESIGN.md) | 国土数値情報 N03（行政区域）の設計と、配布を見送っている理由 |
 | [`docs/GEO_EXPANSION_RESEARCH.md`](docs/GEO_EXPANSION_RESEARCH.md) | 地理情報の拡張候補の調査 |
 | [`docs/LICENSE_REVIEW_2026_09.md`](docs/LICENSE_REVIEW_2026_09.md) | V2 の元データの規約を逐語で読んだ記録 |
@@ -1032,7 +1037,7 @@ jpac verify          # 出来上がったデータを元データと突き合わ
 | [`docs/LICENSE_REVIEW_LINEAGE_2026_09.md`](docs/LICENSE_REVIEW_LINEAGE_2026_09.md) | 廃置分合の規約の審査（e-Stat は 2026-09-27 署名。団体コード表は未署名） |
 | [`docs/LICENSE_REVIEW_POPULATION_2026_10.md`](docs/LICENSE_REVIEW_POPULATION_2026_10.md) | 人口の規約の審査（2026-10-12 署名） |
 | [`docs/LICENSE_REVIEW_FACILITY_2026_09.md`](docs/LICENSE_REVIEW_FACILITY_2026_09.md) | 学校・役場等の規約の審査（未署名） |
-| [`docs/LICENSE_REVIEW_SCHOOL_2026_10.md`](docs/LICENSE_REVIEW_SCHOOL_2026_10.md) | 文部科学省 学校コードの規約の審査（2026-10-15 承認） |
+| [`docs/LICENSE_REVIEW_SCHOOL_2026_10.md`](docs/LICENSE_REVIEW_SCHOOL_2026_10.md) | 文部科学省 学校コードと P29（§6）の規約の審査（2026-10-15 承認） |
 
 ### 変更履歴の要点
 
@@ -1045,6 +1050,7 @@ jpac verify          # 出来上がったデータを元データと突き合わ
 | v2.0.0 | 37 | ブリッジの端点を `target_id` から型付きの列へ。`bridge_municipality_postal` を2つに分割 |
 | v2.1.0 | 44 | 人口（国勢調査 令和7年）と市区町村の廃置分合。テーブル別 Parquet の zip。互換ビュー `*_v1` を削除 |
 | v2.2.0 | 44 | 駅・バス停の座標を別ファイル `jp_address_crosswalk_points.zip` で配布（本体は不変）。データリファレンス・ER 図・サンプルクエリ |
+| v2.3.0 | 47 | 学校（文部科学省 学校コード → 町字。`mext_school` / `mext_school_succession` / `bridge_school_address`）。学校の点（P29）を座標アセットに追加 |
 
 各版の詳細は [GitHub Releases](https://github.com/Retro-Maid/jpac/releases) のリリースノートと
 `DIFF_REPORT.md`。

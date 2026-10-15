@@ -1,10 +1,10 @@
-# jpac データリファレンス（v2.2.0）
+# jpac データリファレンス（v2.3.0）
 
 jp-address-crosswalk（jpac）のリリースデータを、作った人ではない人が読み解き、データ基盤（Snowflake など）に
 取り込んで使うための資料です。この1冊で、ファイルの中身、型、キー、テーブル同士のつなぎ方が分かるように
 書いてあります。リポジトリ内のほかの文書へのリンクは「詳しくは」の案内であり、読まなくても使えます。
 
-- 対象: リリース `v2.2.0+data-2026-10-12`（GitHub Releases で配布）
+- 対象: リリース `v2.3.0+data-2026-10-15`（GitHub Releases で配布）
 - 数値は特に断りがない限り、このリリースの SQLite（`jp_address_crosswalk.sqlite`）を実際に数えた値です。
   版が変われば変わります。
 - 本書の SQL はすべて、このリリースの SQLite に対して実行して動くことを確かめています。
@@ -50,9 +50,9 @@ jpac は、日本の「住所」に関する複数の公的なコード体系を
 | 番号区画・市外局番・市内局番 | 総務省 | 対応先 |
 | 駅・路線（N02）、バス停留所（P11） | 国土交通省 国土数値情報 | 市区町村に対応づけ |
 | 人口・世帯（令和7年国勢調査）、廃置分合等情報、小地域境界 | 総務省統計局（e-Stat） | 市区町村に対応づけ |
-| 学校コード（次のリリースで追加） | 文部科学省 | 町字・市区町村に対応づけ |
+| 学校コード | 文部科学省 | 町字・市区町村に対応づけ |
 
-1枚の表ではなく、**44 テーブル・3 ビュー・33 索引**からなる関係データベースです。中心に ABR の町字があり、
+1枚の表ではなく、**47 テーブル・3 ビュー・36 索引**からなる関係データベースです。中心に ABR の町字があり、
 そこから各体系へ「ブリッジ」と呼ぶ対応表が伸びています。対応そのものと一緒に、その根拠（どの規則で、
 どれくらい確かか、候補はいくつあったか）も持っています。
 
@@ -60,13 +60,13 @@ jpac は、日本の「住所」に関する複数の公的なコード体系を
 
 | 項目 | 値 |
 |---|---|
-| リリースタグ | `v2.2.0+data-2026-10-12` |
-| コード版 | `2.2.0`（`match_run.code_version`） |
-| データ版 | `data-2026-10-12`。元データを取得した日のうち最も新しい日で、ビルド日ではありません |
+| リリースタグ | `v2.3.0+data-2026-10-15` |
+| コード版 | `2.3.0`（`match_run.code_version`） |
+| データ版 | `data-2026-10-15`。元データを取得した日のうち最も新しい日で、ビルド日ではありません |
 | 照合規則の版 | `2.0.0`（各ブリッジ行の `matching_rule_version`） |
 | 正規化プロファイルの版 | `1.0.0`（各ブリッジ行の `normalization_profile_version`） |
 
-利用時は**タグ全体**（`v2.2.0+data-2026-10-12`）を記録してください。同じコードでも元データの版が違えば
+利用時は**タグ全体**（`v2.3.0+data-2026-10-15`）を記録してください。同じコードでも元データの版が違えば
 中身が変わります。
 
 ### 1.3 粒度の上限
@@ -76,13 +76,13 @@ jpac は、日本の「住所」に関する複数の公的なコード体系を
 | 住所 ↔ 郵便番号 ／ 国土交通省コード | **町字**（例「西新宿一丁目」）まで。番地・号は持ちません |
 | 住所 ↔ 市外局番 | **市区町村**まで。町字単位の対応は総務省が公表していないため、町字単位の行はすべて「未解決」です |
 | 駅・路線・バス停 | **市区町村**まで。町字（`address_id`）には結びません |
-| 学校（次のリリースで追加） | 所在地の文字列が決める**町字**まで。決まらなければ市区町村まで。座標は持ちません |
+| 学校 | 所在地の文字列が決める**町字**まで。決まらなければ市区町村まで。座標は座標アセットにだけあります |
 | 人口 | **市区町村**まで（番号区画は、市区町村を丸ごと含む区画だけ） |
 | 廃置分合 | 市区町村コードの旧→新 |
 
 座標について: 本体（SQLite・Parquet・CSV・テーブル別 zip）に入っている座標は国土交通省の
 `mlit_town_version.latitude` / `longitude` だけで、これは **大字・町丁目全体の代表点**です。建物の位置では
-ありません。駅とバス停の座標は本体に入れず、別ファイルの**座標アセット**
+ありません。駅・バス停・学校の座標は本体に入れず、別ファイルの**座標アセット**
 `jp_address_crosswalk_points.zip` で配ります（[7.6 の末尾](#station_point座標アセット)）。境界の形状はどちらにも
 入っていません（意図的な方針です）。
 
@@ -104,23 +104,23 @@ jpac は、日本の「住所」に関する複数の公的なコード体系を
 
 ## 2. 配布ファイル
 
-GitHub Releases の `v2.2.0+data-2026-10-12` に添付されている12ファイルがすべてです（リポジトリを clone
+GitHub Releases の `v2.3.0+data-2026-10-15` に添付されている12ファイルがすべてです（リポジトリを clone
 しても入りません）。
 
 | ファイル | 形式 | サイズ（バイト） | 中身 |
 |---|---|---:|---|
 | `jp_address_crosswalk.parquet` | Parquet（zstd 圧縮） | 35,178,248 | フラット表 727,110 行 × 43 列。SQLite のビュー `address_crosswalk` と同じ内容 |
 | `jp_address_crosswalk.csv.gz` | CSV（gzip） | 41,286,940 | 上と同じフラット表 |
-| `jp_address_crosswalk.sqlite.gz` | SQLite（gzip） | 426,464,155 | 44 テーブル + 3 ビュー + 33 索引。展開後 2,243,358,720 バイト |
-| `jp_address_crosswalk_tables.zip` | zip（無圧縮）に Parquet 44 本 | 177,755,553 | テーブル別 Parquet。`<テーブル名>.parquet` が 44 本。中身は SQLite の各テーブルと同じ行・列 |
-| `jp_address_crosswalk_points.zip` | zip（無圧縮）に Parquet 2 本 | 5,875,814 | **座標アセット**（v2.2.0 で追加）。`station_point.parquet`（駅の代表点 9,046 行）と `bus_stop_point.parquet`（バス停の点 278,515 行）。SQLite・テーブル別 zip には入っていない |
-| `QUALITY_REPORT.md` / `quality_report.json` | Markdown / JSON | 36,467 / 128,404 | そのビルドの統計と品質チェックの結果 |
+| `jp_address_crosswalk.sqlite.gz` | SQLite（gzip） | 432,566,146 | 47 テーブル + 3 ビュー + 36 索引。展開後 2,271,760,384 バイト |
+| `jp_address_crosswalk_tables.zip` | zip（無圧縮）に Parquet 47 本 | 180,618,671 | テーブル別 Parquet。`<テーブル名>.parquet` が 47 本。中身は SQLite の各テーブルと同じ行・列 |
+| `jp_address_crosswalk_points.zip` | zip（無圧縮）に Parquet 3 本 | 7,275,360 | **座標アセット**（v2.2.0 で追加、学校は v2.3.0 で追加）。`station_point.parquet`（駅の代表点 9,046 行）、`bus_stop_point.parquet`（バス停の点 278,515 行）、`school_point.parquet`（学校の点 56,807 行）。SQLite・テーブル別 zip には入っていない |
+| `QUALITY_REPORT.md` / `quality_report.json` | Markdown / JSON | 37,903 / 133,257 | そのビルドの統計と品質チェックの結果 |
 | `DIFF_REPORT.md` / `diff_report.json` | Markdown / JSON | 1,661 / 1,946 | 前回リリースからの変化 |
-| `SOURCES.yml` | YAML | 138,794 | 使った元データ1ファイルごとの URL・SHA-256・規約・行数 |
-| `NOTICE.md` | Markdown | 33,318 | 出典表示（再配布するときに必要。[9章](#9-出典とライセンス)） |
+| `SOURCES.yml` | YAML | 143,033 | 使った元データ1ファイルごとの URL・SHA-256・規約・行数 |
+| `NOTICE.md` | Markdown | 35,051 | 出典表示（再配布するときに必要。[9章](#9-出典とライセンス)） |
 | `SHA256SUMS` | テキスト | 970 | 上の11ファイルの SHA-256。`sha256sum -c SHA256SUMS` で検証できます。`.sqlite.gz` は**圧縮後**のハッシュです |
 
-座標アセットは v2.2.0 から添付しています。v2.1.0 以前のリリースにはありません。
+座標アセットは v2.2.0 から添付しています。v2.1.0 以前のリリースにはありません。`school_point` は v2.3.0 からです。
 
 ### 2.1 どれを使うか
 
@@ -134,7 +134,7 @@ GitHub Releases の `v2.2.0+data-2026-10-12` に添付されている12ファイ
 - **フラット表（Parquet / CSV）に入るのは、住所・郵便番号・国土交通省・市外局番の4系統だけ**です。駅・路線・
   バス停・小地域・人口・廃置分合のテーブルは入りません。
 - フラット表は「現在有効で、人手で棄却されていない対応」だけです（SQLite の `address_crosswalk` と同じ）。
-  棄却済みや過去の版も含む `address_crosswalk_all` は SQLite にしかありません。ただし v2.2.0 では棄却も退役も
+  棄却済みや過去の版も含む `address_crosswalk_all` は SQLite にしかありません。ただし v2.3.0 では棄却も退役も
   まだ発生していないため、両ビューの行数は同じ（727,110 行）です。
 - Snowflake に全テーブルを取り込むなら、テーブル別 Parquet が最も扱いやすい形です（型が保たれ、1ファイル =
   1テーブル）。
@@ -237,7 +237,7 @@ GitHub Releases の `v2.2.0+data-2026-10-12` に添付されている12ファイ
 
 | 識別子 | 形式・例 | 何を指すか | 発番元 | 安定性 |
 |---|---|---|---|---|
-| `address_id` | `jpa1` + 16文字（計20文字）。例 `jpa1dy9jn5hy738r9wnb` | 町字1件（jpac の住所の永続 ID） | jpac | 同じ町字である限りリリースをまたいで変わらず、別の町字に使い回されることもありません。初めて観測したときの `lg_code` と `machiaza_id` から作り、台帳で引き継ぎます（町字 ID の訂正や改称では変わらない）。ただし**町字の分割・統合では新しい ID が振られ**、署名済みの承継記録が無い廃置分合で市区町村コードが変わった町字も、古い ID が退役して新しい ID になります。旧 ID から新 ID へは `address_lineage` でたどります（v2.2.0 では 0 行）。値に意味はありません（市区町村を読み取らないでください） |
+| `address_id` | `jpa1` + 16文字（計20文字）。例 `jpa1dy9jn5hy738r9wnb` | 町字1件（jpac の住所の永続 ID） | jpac | 同じ町字である限りリリースをまたいで変わらず、別の町字に使い回されることもありません。初めて観測したときの `lg_code` と `machiaza_id` から作り、台帳で引き継ぎます（町字 ID の訂正や改称では変わらない）。ただし**町字の分割・統合では新しい ID が振られ**、署名済みの承継記録が無い廃置分合で市区町村コードが変わった町字も、古い ID が退役して新しい ID になります。旧 ID から新 ID へは `address_lineage` でたどります（v2.3.0 では 0 行）。値に意味はありません（市区町村を読み取らないでください） |
 | `lg_code` | 6桁（5桁 + 検査数字）。例 `131041`（新宿区） | 市区町村（政令市の親・区、特別区を含む） | デジタル庁 ABR（全国地方公共団体コード） | 公的コード。廃置分合で変わることがあります |
 | `jis_city_code` | 5桁。例 `13104` | 同上（検査数字なし） | 同上 | `lg_code` の先頭5桁と常に一致します。日本郵便・国土交通省・e-Stat は5桁で持つため、それらとの結合に使います |
 | `machiaza_id` | 7桁。例 `0023001` | ABR の町字 ID | デジタル庁 ABR | **全国では一意ではありません**。一意なのは `(lg_code, machiaza_id)` の組です |
@@ -262,7 +262,7 @@ GitHub Releases の `v2.2.0+data-2026-10-12` に添付されている12ファイ
 | `coverage_id` / `block_id` | `cov_…` ／ `blk_{市外局番}_{市内局番}` | 番号区画の収容句1件 ／ 市内局番1件 | jpac | `coverage_id` は句の内容から作る ID で、総務省が文を変えると別の ID になります。`block_id` は番号そのものから作ります |
 | `rsdt_variant_id` | `rv_{lg_code}_{machiaza_id}_…` | 住居表示の版1件 | jpac | 行を識別する ID |
 | `source_snapshot_id` | `snap_…` または `snapset_…` | 取得した元データ1ファイル（`snapset_` は複数ファイルの束） | jpac | 来歴。7.10 を参照 |
-| `match_run_id` | `run_` + 20桁の16進 | 照合の実行1回 | jpac | v2.2.0 では1件だけ |
+| `match_run_id` | `run_` + 20桁の16進 | 照合の実行1回 | jpac | v2.3.0 では1件だけ |
 
 **リリースをまたいで保存してよいキー**は、`address_id`（上の退役の規則つき）、公的なコード（`lg_code`、`jis_city_code`、`(lg_code, machiaza_id)`、`postal_code`、`mlit_code`、`numbering_area_code`、`area_code`）、版の中での `n02_group_code` と `(line_name_raw, operator_name_raw)` です。`bridge_id`・`*_version_id`・`postal_record_id`・`mlit_record_id`・`p11_stop_id` など jpac が行から作る ID は、元データが変われば変わるものとして扱ってください。
 
@@ -273,10 +273,10 @@ GitHub Releases の `v2.2.0+data-2026-10-12` に添付されている12ファイ
 
 ## 5. テーブル構成の全体像
 
-![jpac v2.2.0 の全体図。44テーブルと座標アセットの2表を領域ごとに並べ、参照の向きを矢印で示す](diagrams/er/00-overview.svg)
+![jpac v2.3.0 の全体図。47テーブルと座標アセットの3表を領域ごとに並べ、参照の向きを矢印で示す](diagrams/er/00-overview.svg)
 
-全列を載せた ER 図は [`docs/diagrams/er/jpac-er.pdf`](diagrams/er/jpac-er.pdf)（8ページ: 全体図と、領域ごとの
-7ページ。最後のページが座標アセット）です。図の**実線は宣言された `FOREIGN KEY`、点線は宣言のない論理的な結合**です。
+全列を載せた ER 図は [`docs/diagrams/er/jpac-er.pdf`](diagrams/er/jpac-er.pdf)（9ページ: 全体図と、領域ごとの
+8ページ。8ページ目が座標アセット、9ページ目が学校）です。図の**実線は宣言された `FOREIGN KEY`、点線は宣言のない論理的な結合**です。
 
 | 領域 | テーブル | 行数 | 1行が表すもの |
 |---|---|---:|---|
@@ -320,10 +320,10 @@ GitHub Releases の `v2.2.0+data-2026-10-12` に添付されている12ファイ
 | 人口 | [`census_population_raw`](#census_population_raw) | 4,082 | 第1-1表の1行（全国・都道府県・2000年境域の行を含む 4,082行） |
 | 廃置分合 | [`municipality_change_raw`](#municipality_change_raw) | 3,739 | e-Stat「廃置分合等情報」CSV（1970-04-20〜2024-01-01 施行分、境界変更を除く）の1行 |
 | 廃置分合 | [`municipality_lineage_edge`](#municipality_lineage_edge) | 2,528 | 廃置分合の旧コード → 新コードの辺1本（施行日ごと） |
-| 来歴 | [`source_snapshot`](#source_snapshot) | 122 | 取り込んだ元データのファイル1本（または複数ファイルの束） |
-| 来歴 | [`snapshot_license_artifact`](#snapshot_license_artifact) | 20 | 元データ1種類に関わる規約文書1つ（規約本文、詳細ページ、ダウンロード時の同意事項など） |
+| 来歴 | [`source_snapshot`](#source_snapshot) | 126 | 取り込んだ元データのファイル1本（または複数ファイルの束） |
+| 来歴 | [`snapshot_license_artifact`](#snapshot_license_artifact) | 24 | 元データ1種類に関わる規約文書1つ（規約本文、詳細ページ、ダウンロード時の同意事項など） |
 | 来歴 | [`match_run`](#match_run) | 1 | 照合の実行1回 |
-| 来歴 | [`match_run_input`](#match_run_input) | 118 | 照合の実行1回 × 読んだ元データ1つ |
+| 来歴 | [`match_run_input`](#match_run_input) | 122 | 照合の実行1回 × 読んだ元データ1つ |
 | 座標（別アセット） | [`station_point`](#station_point座標アセット) | 9,046 | 駅1つの代表点（`jp_address_crosswalk_points.zip`。SQLite には無い） |
 | 座標（別アセット） | [`bus_stop_point`](#bus_stop_point座標アセット) | 278,515 | バス停1行の点（同上。発行元の値のまま） |
 
@@ -331,7 +331,7 @@ GitHub Releases の `v2.2.0+data-2026-10-12` に添付されている12ファイ
 
 - **実体と版。** `municipality` / `postal_record` / `mlit_town` / `telephone_area` は ID だけを持つ薄い表で、
   名前などの属性は `*_version` 表にあります。属性が変わったら上書きせず版を足し、古い版は `is_current = 0`
-  になります。v2.2.0 ではどの実体もまだ版が1つしかなく、全行が `is_current = 1` です。
+  になります。v2.3.0 ではどの実体もまだ版が1つしかなく、全行が `is_current = 1` です。
 - **ブリッジ。** 対応関係そのものと根拠を持つ表です。名前が `bridge_` で始まります。
 - **raw 表。** `*_raw` で終わる表・列は、発行元のファイルの行やセルを文字列のまま保持したものです。
 
@@ -343,16 +343,16 @@ GitHub Releases の `v2.2.0+data-2026-10-12` に添付されている12ファイ
 
 「宣言」は SQLite に `FOREIGN KEY` が宣言されているか（○）、宣言のない論理的な結合か（—）です。宣言された外部キーは
 ビルド時に `PRAGMA foreign_key_check` で全件検査されています（利用者の接続で強制したいときは
-`PRAGMA foreign_keys = ON`。SQLite の既定は OFF です）。多重度は「左 : 右」で、数値は v2.2.0 の実測です。
+`PRAGMA foreign_keys = ON`。SQLite の既定は OFF です）。多重度は「左 : 右」で、数値は v2.3.0 の実測です。
 
 **住所と市区町村**
 
 | 左（参照する側） | 右（参照される側） | 多重度 | 宣言 | 注意 |
 |---|---|---|---|---|
-| `address.address_id` | `address_entity.address_id` | 1 : 1 | — | 同じ ID。v2.2.0 では両方 726,170 行。退役した住所は `address_entity` にだけ残る |
+| `address.address_id` | `address_entity.address_id` | 1 : 1 | — | 同じ ID。v2.3.0 では両方 726,170 行。退役した住所は `address_entity` にだけ残る |
 | `address.lg_code` | `municipality.lg_code` | N : 1 | ○ | 政令市の住所は区のコード。親（市全体）のコードを持つ住所は 0 件 |
 | `address_rsdt_variant.(lg_code, machiaza_id)` | `address.(lg_code, machiaza_id)` | 1〜2 : 1 | — | 1,248 件の住所が2行を持つ（`address.rsdt_variant_count = 2`）。`address_rsdt_variant.lg_code` → `municipality` は宣言 FK |
-| `address_code.address_id` | `address_entity.address_id` | N : 1 | ○ | v2.2.0 は1住所あたり3行（`abr_lg_code` / `abr_machiaza_id` / `jis_city_code`） |
+| `address_code.address_id` | `address_entity.address_id` | N : 1 | ○ | v2.3.0 は1住所あたり3行（`abr_lg_code` / `abr_machiaza_id` / `jis_city_code`） |
 | `address_history.address_id` | `address_entity.address_id` | N : 1 | ○ | 0 行 |
 | `address_lineage.old_address_id` / `new_address_id` | `address_entity.address_id` | N : 1 | ○ | 0 行 |
 | `address_key_conflict.lg_code` | `municipality.lg_code` | N : 1 | ○ | 0 行 |
@@ -421,16 +421,16 @@ GitHub Releases の `v2.2.0+data-2026-10-12` に添付されている12ファイ
 
 | 左 | 右 | 多重度 | 宣言 | 注意 |
 |---|---|---|---|---|
-| 全ブリッジ7本の `match_run_id` | `match_run.match_run_id` | N : 1 | ○ | v2.2.0 は1件 |
+| 全ブリッジ7本の `match_run_id` | `match_run.match_run_id` | N : 1 | ○ | v2.3.0 は1件 |
 | `match_run_input.match_run_id` | `match_run.match_run_id` | N : 1 | ○ | |
 | `match_run_input.source_snapshot_id` | `source_snapshot.source_snapshot_id` | N : 1 | — | 118 行すべて存在 |
 | `snapshot_license_artifact.source_snapshot_id` | `source_snapshot.source_snapshot_id` | N : 1 | — | 20 行すべて存在 |
-| 各表の `source_snapshot_id` / `first_observed_snapshot_id` / `last_observed_snapshot_id` | `source_snapshot.source_snapshot_id` | N : 1 | — | 宣言しないのは意図的（過去のビルドから引き継いだ行が、今回の `source_snapshot` に無い元データを指しうるため）。v2.2.0 では全値が存在する |
+| 各表の `source_snapshot_id` / `first_observed_snapshot_id` / `last_observed_snapshot_id` | `source_snapshot.source_snapshot_id` | N : 1 | — | 宣言しないのは意図的（過去のビルドから引き継いだ行が、今回の `source_snapshot` に無い元データを指しうるため）。v2.3.0 では全値が存在する |
 
 ### 6.2 結合するときの約束
 
 1. **`*_version` 表は `is_current = 1` で絞る。** `municipality_version`、`postal_record_version`、`mlit_town_version`、
-   `telephone_area_version` は版を積む表です。v2.2.0 では全行が現行ですが、将来の版で古い版が残ると、絞らない
+   `telephone_area_version` は版を積む表です。v2.3.0 では全行が現行ですが、将来の版で古い版が残ると、絞らない
    結合は行が増えます。
 2. **ブリッジは「現行で、棄却されていない」行を使う。** `is_current = 1 AND verification_status <> 'manually_rejected'`。
    フラット表とビュー `address_crosswalk` はこの条件で作られています。さらに自動確定だけにしたいときは
@@ -501,7 +501,7 @@ WHERE  a.lg_code = '131041'
 各表について、1行が表すもの・主キー・行数・用途と、全列の定義を載せます。
 
 - 型は「SQLite の宣言型 / Parquet（テーブル別 zip）の Arrow 型」です。Snowflake の型は [3.2](#32-型の対応表sqlite--parquet--snowflake-推奨) を参照。
-- 「NULL 行数」と「値」は v2.2.0 の実測です。値の種類が少ない列は全種類を件数付きで（多い順、8種まで）、多い列は例を示します。
+- 「NULL 行数」と「値」は v2.3.0 の実測です。値の種類が少ない列は全種類を件数付きで（多い順、8種まで）、多い列は例を示します。
 - 「発行元のコード値」とある列は、発行元のファイルの値をそのまま持っています。コードの各値の意味が発行元の資料にしか無く、本書の元にした文書に記載が無いものは「未記載」としています。
 - 「（説明なし：元データの列をそのまま保持）」は、元データの列を加工せずに持っている列です。
 
@@ -549,7 +549,7 @@ WHERE  a.lg_code = '131041'
 | `rsdt_variant_count` | INTEGER / uint32 | 0 | この町字が ABR 町字マスターに何行あるか（住居表示フラグ違いの重複）。1 か 2 | `1` 724,922、`2` 1,248 |
 | `valid_from` | TEXT / large_string | 1,248 | ABR の施行日（`efct_date`）。元の行どうしで値が食い違う場合は NULL | 例 `1947-04-17`、`1970-01-01`、`2022-01-31` |
 | `valid_to` | TEXT / large_string | 726,169 | ABR の廃止日（`ablt_date`）。廃止されていなければ NULL | `2026-09-04` 1 |
-| `observed_from` | TEXT / large_string | 0 | jpac がこの行を観測した最初の日 | 全行 `2026-10-12` |
+| `observed_from` | TEXT / large_string | 0 | jpac がこの行を観測した最初の日 | 全行 `2026-10-15` |
 | `observed_to` | TEXT / large_string | 726,170 | jpac がこの行を最後に観測した日。現在も観測中なら NULL | 全行 NULL |
 | `source_snapshot_id` | TEXT / large_string | 0 | この行の出どころとなった元データ（`source_snapshot.source_snapshot_id`）。外部キーは宣言されていない | 全行 `snap_abr_town_master_57d18651b50…` |
 
@@ -569,7 +569,7 @@ WHERE  a.lg_code = '131041'
 | `identity_match_rule` | TEXT / large_string | 0 | 今回のビルドで ID を決めた規則。`I1` キー一致で継続、`I2` 町字 ID の訂正、`I3` 署名済みの市区町村コード変更、`I4` 改称、`I5` 新規発番、`I6` 退役済みキーの再出現（新規発番して要確認） | 全行 `I1` |
 | `first_observed_snapshot_id` | TEXT / large_string | 0 | 最初に観測した元データ | 全行 `snap_abr_town_master_57d18651b50…` |
 | `last_observed_snapshot_id` | TEXT / large_string | 0 | 最後に観測した元データ | 全行 `snap_abr_town_master_57d18651b50…` |
-| `created_at` | TEXT / large_string | 0 | 台帳に載った日 | 全行 `2026-10-12` |
+| `created_at` | TEXT / large_string | 0 | 台帳に載った日 | 全行 `2026-10-15` |
 | `retired_at` | TEXT / large_string | 726,170 | 退役日（ABR の廃止日が分かるとき）。有効なら NULL | 全行 NULL |
 | `retire_reason` | TEXT / large_string | 726,170 | 退役の理由（`absent_from_source` など）。有効なら NULL | 全行 NULL |
 
@@ -613,7 +613,7 @@ WHERE  a.lg_code = '131041'
 - **1行が表すもの:** 住所の属性が1つ変わった記録1件
 - **主キー:** `history_id`
 - **行数:** 0
-- **用途:** 町字名などの変化を追う。元データがまだ一度も更新されていないため v2.2.0 では 0 行（欠損ではない）
+- **用途:** 町字名などの変化を追う。元データがまだ一度も更新されていないため v2.3.0 では 0 行（欠損ではない）
 
 | 列名 | 型（SQLite / Parquet） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
 |---|---|---:|---|---|
@@ -631,7 +631,7 @@ WHERE  a.lg_code = '131041'
 - **1行が表すもの:** 町字の分割・統合・改称・コード訂正・退役などの出来事1件（旧 ID → 新 ID）
 - **主キー:** `lineage_id`
 - **行数:** 0
-- **用途:** 古い `address_id` が今どれになったかを引く。v2.2.0 では 0 行（元データが未更新のため）
+- **用途:** 古い `address_id` が今どれになったかを引く。v2.3.0 では 0 行（元データが未更新のため）
 
 | 列名 | 型（SQLite / Parquet） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
 |---|---|---:|---|---|
@@ -650,7 +650,7 @@ WHERE  a.lg_code = '131041'
 - **1行が表すもの:** ABR 町字マスターでキー `(lg_code, machiaza_id)` が重複し、住居表示以外の列まで食い違っていた元の行1件
 - **主キー:** 宣言なし
 - **行数:** 0
-- **用途:** 保留中の衝突の記録。行があるとリリースは止まる仕組みで、v2.2.0 では 0 行。列は ABR 町字マスターの列をそのまま持つ
+- **用途:** 保留中の衝突の記録。行があるとリリースは止まる仕組みで、v2.3.0 では 0 行。列は ABR 町字マスターの列をそのまま持つ
 
 | 列名 | 型（SQLite / Parquet） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
 |---|---|---:|---|---|
@@ -714,7 +714,7 @@ WHERE  a.lg_code = '131041'
 - **1行が表すもの:** 市区町村1件の名前などの版1つ
 - **主キー:** `municipality_version_id`
 - **行数:** 1,918
-- **用途:** 市区町村名・読み・ローマ字を引く。必ず `is_current = 1` で絞る（v2.2.0 は全行 1）
+- **用途:** 市区町村名・読み・ローマ字を引く。必ず `is_current = 1` で絞る（v2.3.0 は全行 1）
 
 | 列名 | 型（SQLite / Parquet） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
 |---|---|---:|---|---|
@@ -753,7 +753,7 @@ WHERE  a.lg_code = '131041'
 |---|---|---:|---|---|
 | `postal_code` | TEXT / large_string | 0 | 郵便番号7桁（CHECK で長さ7） | 例 `0010000`、`0010010`、`0010011` |
 | `record_count` | INTEGER / uint32 | 0 | この郵便番号を持つ日本郵便 `ken_all` の行数 | `1` 119,341、`2` 845、`3` 176、`4` 78、`5` 48、`6` 41、`7` 27、`8` 24 ほか 28 種 |
-| `observed_from` | TEXT / large_string | 0 | 観測し始めた日 | 全行 `2026-10-12` |
+| `observed_from` | TEXT / large_string | 0 | 観測し始めた日 | 全行 `2026-10-15` |
 | `observed_to` | TEXT / large_string | 120,682 | 観測しなくなった日。現行なら NULL | 全行 NULL |
 | `source_snapshot_id` | TEXT / large_string | 0 | この行の出どころとなった元データ（`source_snapshot.source_snapshot_id`）。外部キーは宣言されていない | 全行 `snap_japanpost_ken_all_3fd8f44bf…` |
 
@@ -956,16 +956,16 @@ WHERE  a.lg_code = '131041'
 | `lg_code` | TEXT / large_string | 市区町村側の端点 → `municipality.lg_code`（宣言 FK）。市区町村系3本で使う。**住所系4本では常に NULL**（住所の市区町村は `address.lg_code` から取る） |
 | （端点列） | TEXT / large_string | 相手側の端点。表ごとに名前が違う（`postal_code` / `postal_record_id` / `mlit_record_id` / `numbering_area_code`）。それぞれの実体表への宣言 FK。`relation_type = 'unresolved'` の行で、相手が見つからなかった側が NULL |
 | `direction` | TEXT / large_string | どちら側から照合した行か（`address_to_mlit`、`postal_to_address` など）。前半が探した側で、探した側は常に NULL でない |
-| `relation_type` | TEXT / large_string | 対応の付き方。`exact` 同じ範囲（コードと名前で確認）／ `equivalent` 公式のコード対応が同じと述べる ／ `parent` 主語側が相手を含む ／ `child` 主語側が相手に含まれる ／ `overlap` 重なる ／ `ambiguous` 候補が複数で決められない ／ `unresolved` 相手が見つからない。CHECK は `contains` / `candidate` も許すが v2.2.0 では 0 行 |
+| `relation_type` | TEXT / large_string | 対応の付き方。`exact` 同じ範囲（コードと名前で確認）／ `equivalent` 公式のコード対応が同じと述べる ／ `parent` 主語側が相手を含む ／ `child` 主語側が相手に含まれる ／ `overlap` 重なる ／ `ambiguous` 候補が複数で決められない ／ `unresolved` 相手が見つからない。CHECK は `contains` / `candidate` も許すが v2.3.0 では 0 行 |
 | `match_method` | TEXT / large_string | 対応の見つけ方。`direct_code` 発行元のコード対応 ／ `composite` コードと名前の両方が一致 ／ `normalized_name` 正規化した名前の一致 ／ `parent_child` 発行元が示す親子関係 ／ `official_area_rule` 公式の文（対象地域の文など）から導出 ／ `manual_override` 人手の上書き ／ `unresolved` 該当なし |
 | `matching_rule_id` | TEXT / large_string | 適用された照合規則（P1、M1、T1 など。各表の規則一覧を参照） |
 | `confidence` | REAL / double | 規則ごとに決まる確からしさ（0〜1）。**確率ではない**。1.00 コード明示 + 別項目で裏付け ／ 0.99 公式のコード対応 ／ 0.97 名前が双方向で一意に一致 ／ 0.95 市区町村名の ヶ/ケ を畳んで一意 ／ 0.90 構造的な親子関係・根拠つきの別名 ／ 0.70 一部だけの重なり等 ／ 0.50 候補どまり ／ 0.0 未解決 |
 | `candidate_group_id` | TEXT / large_string | 同じ候補群に属する行に共通の ID（`grp_…`）。`candidate_count` が2以上のときだけ入り、1以下なら NULL（CHECK で強制） |
 | `candidate_count` | INTEGER / int64 | 候補の数。候補群の全件から数えた値（表示用に切り詰めた数ではない）。未解決は 0 |
-| `candidate_count_is_complete` | INTEGER / bool | `candidate_count` が全候補から数えた値なら 1（v2.2.0 は全行 1） |
+| `candidate_count_is_complete` | INTEGER / bool | `candidate_count` が全候補から数えた値なら 1（v2.3.0 は全行 1） |
 | `is_unique_match` | INTEGER / bool | 候補が1件に定まったら 1 |
-| `verification_status` | TEXT / large_string | `auto` 自動確定 ／ `review_required` 要確認 ／ `manually_verified` 人手で確認済み ／ `manually_rejected` 人手で棄却（v2.2.0 は `auto` と `review_required` だけ）。`auto` は「候補1件・一意・全件数え済み・confidence 0.98以上・上書きが古くない・relation_type が exact か equivalent」をすべて満たす行だけで、CHECK 制約で強制される |
-| `override_stale` | INTEGER / bool | 人手の上書きが、元データの更新で前提を失っていれば 1（v2.2.0 は全行 0） |
+| `verification_status` | TEXT / large_string | `auto` 自動確定 ／ `review_required` 要確認 ／ `manually_verified` 人手で確認済み ／ `manually_rejected` 人手で棄却（v2.3.0 は `auto` と `review_required` だけ）。`auto` は「候補1件・一意・全件数え済み・confidence 0.98以上・上書きが古くない・relation_type が exact か equivalent」をすべて満たす行だけで、CHECK 制約で強制される |
+| `override_stale` | INTEGER / bool | 人手の上書きが、元データの更新で前提を失っていれば 1（v2.3.0 は全行 0） |
 | `derivation` | TEXT / large_string | 導出の経路。`bridge_municipality_telephone` でのみ値がある（`expanded_from_county` 郡から町村に展開 ／ `designated_city_wards` 政令市を区にも展開 ／ `attested_source_name_alias` 署名済みの別名で解決）。他は NULL |
 | `coverage_type` | TEXT / large_string | 市外局番の収容範囲。`full` 市区町村全体 ／ `partial` 一部 ／ `municipality_only` 町字単位では公表されていない（`bridge_address_telephone` の全行）。郵便・国交省のブリッジでは NULL |
 | `normalization_profile` | TEXT / large_string | 名前の照合に使った正規化の方式（`conservative`） |
@@ -974,7 +974,7 @@ WHERE  a.lg_code = '131041'
 | `valid_to` | TEXT / large_string | 対応の有効期間の終了。終了していなければ NULL |
 | `observed_from` | TEXT / large_string | この行を観測し始めた日 |
 | `observed_to` | TEXT / large_string | 観測しなくなった日。現行なら NULL |
-| `is_current` | INTEGER / bool | 現行の行なら 1（v2.2.0 は全行 1）。フラット表とビュー `address_crosswalk` は 1 の行だけを使う |
+| `is_current` | INTEGER / bool | 現行の行なら 1（v2.3.0 は全行 1）。フラット表とビュー `address_crosswalk` は 1 の行だけを使う |
 | `match_run_id` | TEXT / large_string | この行を作った照合の実行 → `match_run.match_run_id`（宣言 FK） |
 | `source_snapshot_id` | TEXT / large_string | この行の出どころとなった元データ（`source_snapshot.source_snapshot_id`）。外部キーは宣言されていない。複数の元データが関わる行の全入力は `match_run_input` で引く |
 | `matching_rule_version` | TEXT / large_string | 照合規則の版（`2.0.0`） |
@@ -1094,7 +1094,7 @@ CHECK 制約（7本共通）: `confidence` は 0〜1、`candidate_count >= 0`、
 - **行数:** 2,153
 - **主語 → 端点:** `lg_code` → `numbering_area_code`。指す先は `telephone_area`（番号区画）
 - **用途:** 市区町村 ↔ 市外局番の**本来の**対応。1つの市区町村が複数の番号区画にまたがることがある
-- **規則:** T1 句が市区町村を限定なしで挙げる、T1b ヶ/ケ を畳んで一意に解決、T1d 総務省の表記が古い市名を署名済みの別名で解決（丹波篠山市）、T3 「〜を除く。」「〜に限る。」で一部だけ（`coverage_type = 'partial'`、除外の原文は `mismatch_note` と `telephone_area_coverage`）、T4 郡内の町村を限定して挙げる、T5 郡全体を町村に展開、T6 市区町村名が一意に決まらない（候補を全部残す）。v2.2.0 の T6 は「東京都23区」の句（番号区画 `219`、市外局番 `03`）の23行だけで、23区それぞれが候補（`candidate_count = 23`、`ambiguous`）になっている（規則 T1c の行は 0 行）。政令市が丸ごと挙がる場合は親のコードと区のコードの両方に行がある（`derivation = 'designated_city_wards'`）。
+- **規則:** T1 句が市区町村を限定なしで挙げる、T1b ヶ/ケ を畳んで一意に解決、T1d 総務省の表記が古い市名を署名済みの別名で解決（丹波篠山市）、T3 「〜を除く。」「〜に限る。」で一部だけ（`coverage_type = 'partial'`、除外の原文は `mismatch_note` と `telephone_area_coverage`）、T4 郡内の町村を限定して挙げる、T5 郡全体を町村に展開、T6 市区町村名が一意に決まらない（候補を全部残す）。v2.3.0 の T6 は「東京都23区」の句（番号区画 `219`、市外局番 `03`）の23行だけで、23区それぞれが候補（`candidate_count = 23`、`ambiguous`）になっている（規則 T1c の行は 0 行）。政令市が丸ごと挙がる場合は親のコードと区のコードの両方に行がある（`derivation = 'designated_city_wards'`）。
 
 規則ごとの内訳（実測）:
 
@@ -1187,7 +1187,7 @@ CHECK 制約（7本共通）: `confidence` は 0〜1、`candidate_count >= 0`、
 | `candidate_count` | INTEGER / int64 | 0 | 候補の市区町村の数（承継で読み替えた後の数）。未解決は 0 | `1` 9,027、`2` 30、`0` 4 |
 | `is_unique_match` | INTEGER / int64 | 0 | 候補が1つなら 1。**Parquet では bool ではなく int64** | `1` 9,027、`0` 34 |
 | `verification_status` | TEXT / large_string | 0 | `auto` 1件に決まった ／ `review_required` 候補が複数か未解決 | `auto` 9,027、`review_required` 34 |
-| `placement_point` | TEXT / large_string | 0 | どの点で判定したか。`centroid` 駅の線分の重心 ／ `point_on_line` 重心が境界に入らないとき線上の点（v2.2.0 では 0 行）／ `none` どの点も入らない（未解決） | `centroid` 9,057、`none` 4 |
+| `placement_point` | TEXT / large_string | 0 | どの点で判定したか。`centroid` 駅の線分の重心 ／ `point_on_line` 重心が境界に入らないとき線上の点（v2.3.0 では 0 行）／ `none` どの点も入らない（未解決） | `centroid` 9,057、`none` 4 |
 | `mismatch_note` | TEXT / large_string | 9,027 | 未解決・候補複数・承継の分割などの理由（日本語）。1件に決まった行は NULL | `境界データ側のコード 22135 は jpac の現行市…` 14、`境界データ側のコード 22135 は jpac の現行市…` 14、`どのポリゴンにも含まれない。最寄りへの割り当てはしない（…` 4、`複数の市区町村に含まれる。候補を残す（POLICY.md…` 2 |
 | `source_snapshot_id` | TEXT / large_string | 0 | この行の出どころとなった元データ（`source_snapshot.source_snapshot_id`）。外部キーは宣言されていない | 全行 `snap_mlit_ksj_n02_n02_2025_1276a…` |
 
@@ -1204,13 +1204,13 @@ CHECK 制約（7本共通）: `confidence` は 0〜1、`candidate_count >= 0`、
 | `operator_name_raw` | TEXT / large_string | 0 | 運営会社名 | 例 `東京都`、`東京地下鉄`、`千葉都市モノレール` |
 | `lg_code` | TEXT / large_string | 0 | 通る市区町村 → `municipality.lg_code`（宣言 FK）。政令市は区のコード | 例 `011011`、`011029`、`011037` |
 | `boundary_jis_city_code` | TEXT / large_string | 0 | 当たった境界の5桁コード（2020年） | 例 `12203`、`13101`、`13102` |
-| `relation_type` | TEXT / large_string | 0 | `overlap`（路線が市区町村と重なる）／ `unresolved`（v2.2.0 では 0 行） | 全行 `overlap` |
+| `relation_type` | TEXT / large_string | 0 | `overlap`（路線が市区町村と重なる）／ `unresolved`（v2.3.0 では 0 行） | 全行 `overlap` |
 | `match_method` | TEXT / large_string | 0 | `spatial_sampling` ／ `spatial_sampling_via_lineage`（旧コードを承継記録で読み替え）／ `unresolved` | `spatial_sampling` 3,364、`spatial_sampling_via_lineage` 17 |
 | `confidence` | REAL / double | 0 | 1.0（未解決なら 0.0） | 全行 `1.0` |
 | `sample_hits` | INTEGER / int64 | 0 | その市区町村に入った標本点の数（根拠の量。長さや割合ではない） | 例 `88`、`240`、`60` |
 | `municipality_count` | INTEGER / int64 | 0 | その路線が通る市区町村の数（路線ごとに同じ値が繰り返される） | `3` 255、`2` 226、`4` 224、`7` 203、`5` 200、`8` 168、`6` 168、`9` 162 ほか 29 種 |
-| `verification_status` | TEXT / large_string | 0 | `auto`（v2.2.0 は全行） | 全行 `auto` |
-| `mismatch_note` | TEXT / large_string | 3,381 | 未解決などの理由。v2.2.0 は全行 NULL | 全行 NULL |
+| `verification_status` | TEXT / large_string | 0 | `auto`（v2.3.0 は全行） | 全行 `auto` |
+| `mismatch_note` | TEXT / large_string | 3,381 | 未解決などの理由。v2.3.0 は全行 NULL | 全行 NULL |
 | `source_snapshot_id` | TEXT / large_string | 0 | この行の出どころとなった元データ（`source_snapshot.source_snapshot_id`）。外部キーは宣言されていない | 全行 `snap_mlit_ksj_n02_n02_2025_1276a…` |
 
 #### `p11_bus_stop`
@@ -1276,7 +1276,7 @@ CHECK 制約（7本共通）: `confidence` は 0〜1、`candidate_count >= 0`、
 | `n_city` | TEXT / large_string | 0 | 抜け地の本来の市区町村コード3桁。無ければ空文字列 | 例 `363`、`381`、`365`（空文字列 231,690 行） |
 | `kigo_i` | TEXT / large_string | 0 | `I` 島 ／ 空文字列 | 空文字列 228,232、`I` 3,787 |
 | `jis_city_code` | TEXT / large_string | 0 | `pref_code` + `city_code`（5桁、2020年時点のコード）。`municipality.jis_city_code` と結ぶ（宣言なし） | 例 `01101`、`01102`、`01103` |
-| `reconcile_status` | TEXT / large_string | 0 | 2020年のコードが現行のどれに当たるか。`matched` 現行の市区町村にある ／ `superseded` 承継記録で1つの現行コードに移った旧コード（浜松市の旧区）／ `split_no_single_successor` 承継先が1つに決まらない旧コード（旧浜松市北区 `22135`）／ `unassigned_area` 所属未定地（市区町村名が空）／ `estat_only` 説明できない（v2.2.0 では 0 行） | `matched` 231,263、`superseded` 686、`split_no_single_successor` 68、`unassigned_area` 2 |
+| `reconcile_status` | TEXT / large_string | 0 | 2020年のコードが現行のどれに当たるか。`matched` 現行の市区町村にある ／ `superseded` 承継記録で1つの現行コードに移った旧コード（浜松市の旧区）／ `split_no_single_successor` 承継先が1つに決まらない旧コード（旧浜松市北区 `22135`）／ `unassigned_area` 所属未定地（市区町村名が空）／ `estat_only` 説明できない（v2.3.0 では 0 行） | `matched` 231,263、`superseded` 686、`split_no_single_successor` 68、`unassigned_area` 2 |
 | `source_snapshot_id` | TEXT / large_string | 0 | この行の出どころとなった元データ（`source_snapshot.source_snapshot_id`）。外部キーは宣言されていない（47都道府県の束 `snapset_…`） | 全行 `snapset_7a1f11819bea85c8f25d` |
 
 #### `station_point`（座標アセット）
@@ -1354,7 +1354,7 @@ WHERE b.verification_status = 'auto';
 | `household_members_total` | INTEGER / int64 | 6 | 世帯人員 総数 | 例 `1961996`、`255523`、`285318` |
 | `household_members_general` | INTEGER / int64 | 6 | 世帯人員 一般世帯 | 例 `1900917`、`247131`、`278067` |
 | `household_members_institutional` | INTEGER / int64 | 6 | 世帯人員 施設等の世帯（「-」は 0） | 例 `61079`、`8392`、`7251` |
-| `value_status` | TEXT / large_string | 0 | `published` 公表値あり ／ `not_enumerated` 国勢調査の対象外（北方領土の6村。値は NULL）／ `missing_from_table` 結果表に無い（あればビルドが止まる。v2.2.0 では 0 行） | `published` 1,912、`not_enumerated` 6 |
+| `value_status` | TEXT / large_string | 0 | `published` 公表値あり ／ `not_enumerated` 国勢調査の対象外（北方領土の6村。値は NULL）／ `missing_from_table` 結果表に無い（あればビルドが止まる。v2.3.0 では 0 行） | `published` 1,912、`not_enumerated` 6 |
 | `valid_from` | TEXT / large_string | 0 | 調査の期日（2025-10-01） | 全行 `2025-10-01` |
 | `source_snapshot_id` | TEXT / large_string | 0 | この行の出どころとなった元データ（`source_snapshot.source_snapshot_id`）。外部キーは宣言されていない | 全行 `snap_estat_census_2025_populatio…` |
 
@@ -1429,7 +1429,7 @@ WHERE b.verification_status = 'auto';
 | `population_male` | INTEGER / int64 | 281 | 人口 男 | 例 `1002008`、`84519`、`4904` |
 | `population_female` | INTEGER / int64 | 281 | 人口 女 | 例 `1143098`、`84432`、`5677` |
 | `households_total` | INTEGER / int64 | 281 | 世帯数 総数 | 例 `1081032`、`80341`、`5443` |
-| `value_status` | TEXT / large_string | 0 | `complete` 区画 = 市区町村の和 ／ `partial_municipality` 一部だけ含む市区町村がある（NULL）／ `unresolved_member` 市区町村に解決できない句がある（NULL）／ `member_not_enumerated` 対象外の市区町村を含む ／ `no_municipality` 市区町村の行が無い（後2つは v2.2.0 で 0 行） | `complete` 301、`partial_municipality` 280、`unresolved_member` 1 |
+| `value_status` | TEXT / large_string | 0 | `complete` 区画 = 市区町村の和 ／ `partial_municipality` 一部だけ含む市区町村がある（NULL）／ `unresolved_member` 市区町村に解決できない句がある（NULL）／ `member_not_enumerated` 対象外の市区町村を含む ／ `no_municipality` 市区町村の行が無い（後2つは v2.3.0 で 0 行） | `complete` 301、`partial_municipality` 280、`unresolved_member` 1 |
 | `valid_from` | TEXT / large_string | 0 | 調査の期日（2025-10-01） | 全行 `2025-10-01` |
 | `source_snapshot_id` | TEXT / large_string | 0 | この行の出どころとなった元データ（`source_snapshot.source_snapshot_id`）。外部キーは宣言されていない | 全行 `snap_estat_census_2025_populatio…` |
 
@@ -1526,8 +1526,7 @@ WHERE b.verification_status = 'auto';
 
 ### 7.9 学校（文部科学省 学校コード）
 
-**次のリリースで追加する3表です。** `v2.2.0` には入っていません。数値は令和7年5月1日時点（確定版）の一覧を
-`v2.2.0` と同じ住所データに照合した実測です。
+**v2.3.0 で追加した3表です。** 数値は令和7年5月1日時点（確定版）の一覧を照合した `v2.3.0` の実測です。
 
 学校の点は座標アセットの [`school_point`](#school_point座標アセット)（国土数値情報 P29 2023年度版）にあります。
 
@@ -1617,7 +1616,7 @@ WHERE b.verification_status = 'auto';
 
 #### `school_point`（座標アセット）
 
-- **入っているファイル:** `jp_address_crosswalk_points.zip` の `school_point.parquet`（次のリリースで追加）。**SQLite・テーブル別 zip には無い**
+- **入っているファイル:** `jp_address_crosswalk_points.zip` の `school_point.parquet`（v2.3.0 で追加）。**SQLite・テーブル別 zip には無い**
 - **1行が表すもの:** 国土数値情報 学校データ（P29 2023年度版）の1点 = 学校1校 × キャンパス1つ
 - **主キー:** `(school_code, campus_code)`
 - **行数:** 56,807（56,318校。キャンパスが複数ある学校は 258校）。座標が NULL の行 0
@@ -1653,53 +1652,53 @@ WHERE s.is_active AND s.school_type_code = 'B1';
 
 - **1行が表すもの:** 取り込んだ元データのファイル1本（または複数ファイルの束）
 - **主キー:** `source_snapshot_id`
-- **行数:** 122
-- **用途:** どの表の行がどのファイルから来たかを引く。全表の `source_snapshot_id` がここを指す（宣言 FK は無いが、v2.2.0 では全値が存在する）
+- **行数:** 126
+- **用途:** どの表の行がどのファイルから来たかを引く。全表の `source_snapshot_id` がここを指す（宣言 FK は無いが、v2.3.0 では全値が存在する）
 
 | 列名 | 型（SQLite / Parquet） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
 |---|---|---:|---|---|
 | `source_snapshot_id` | TEXT / large_string | 0 | ID。`snap_{データセット名}_{ハッシュ}`、束は `snapset_…` | 例 `snap_abr_city_master_419f6bc…`、`snap_abr_postal_conversion_c…`、`snap_abr_pref_master_92bbbae…` |
-| `provider` | TEXT / large_string | 0 | 発行元 | `総務省統計局` 54、`国土交通省` 50、`総務省` 11、`デジタル庁` 4、`日本郵便株式会社` 3 |
+| `provider` | TEXT / large_string | 0 | 発行元 | `総務省統計局` 54、`国土交通省` 50、`総務省` 11、`デジタル庁` 4、`日本郵便株式会社` 3、`文部科学省` 3、`国土交通省 国土政策局 国土情報課` 1 |
 | `dataset_name` | TEXT / large_string | 0 | データセット名（jpac の内部名。例 `abr_town_master`、`japanpost_ken_all`）。束は `…__aggregate_of_N` | 例 `abr_city_master`、`abr_postal_conversion`、`abr_pref_master` |
-| `source_page_url` | TEXT / large_string | 0 | 発行元のページの URL | `https://www.e-stat.go.jp/gis…` 48、`https://nlftp.mlit.go.jp/isj…` 48、`https://www.soumu.go.jp/main…` 10、`https://www.e-stat.go.jp/mun…` 4、`https://www.digital.go.jp/po…` 4、`https://www.post.japanpost.j…` 3、`https://www.e-stat.go.jp/sta…` 2、`https://www.soumu.go.jp/main…` 1 ほか 2 種 |
+| `source_page_url` | TEXT / large_string | 0 | 発行元のページの URL | `https://www.e-stat.go.jp/gis…` 48、`https://nlftp.mlit.go.jp/isj…` 48、`https://www.soumu.go.jp/main…` 10、`https://www.e-stat.go.jp/mun…` 4、`https://www.digital.go.jp/po…` 4、`https://www.post.japanpost.j…` 3、`https://www.mext.go.jp/b_men…` 3、`https://www.e-stat.go.jp/sta…` 2 ほか 4 種 |
 | `download_url` | TEXT / large_string | 0 | 取得元。リリースでは `local-payload:raw/…`（受け入れ済みのファイルの場所） | 例 `local-payload:raw/abr/city_m…`、`local-payload:raw/abr/postal…`、`local-payload:raw/abr/pref_m…` |
-| `license_name` | TEXT / large_string | 0 | 適用される規約の名前 | `公共データ利用規約（第1.0版） (PDL 1.0)` 65、`政府統計の総合窓口(e-Stat)利用規約（政府標準利用…` 54、`著作権主張なし / 自由配布可 (publisher s…` 3 |
-| `license_url` | TEXT / large_string | 0 | 規約の URL | `https://www.e-stat.go.jp/ter…` 54、`https://nlftp.mlit.go.jp/ksj…` 50、`https://www.soumu.go.jp/menu…` 11、`https://www.digital.go.jp/po…` 4、`https://www.post.japanpost.j…` 3 |
-| `license_text_sha256` | TEXT / null | 122 | このビルドで観測した規約本文のハッシュ。v2.2.0 は全行 NULL（オフラインのビルドで規約ページを読まないため） | 全行 NULL |
-| `source_version` | TEXT / large_string | 72 | 発行元が示す版 | `A002005212020 / JGD2011` 48、`2025` 1、`2022` 1 |
-| `published_at` | TEXT / large_string | 63 | 発行元が示す公表日・基準日 | `2020-10-01` 48、`2024-09-01` 10、`2025-12-31` 1 |
-| `edition_origin` | TEXT / large_string | 62 | 版の情報の出どころ（`declared` 設定で宣言 ／ `payload` ファイル自身が述べる ／ NULL） | `declared` 50、`payload` 10 |
+| `license_name` | TEXT / large_string | 0 | 適用される規約の名前 | `公共データ利用規約（第1.0版） (PDL 1.0)` 66、`政府統計の総合窓口(e-Stat)利用規約（政府標準利用…` 54、`著作権主張なし / 自由配布可 (publisher s…` 3、`文部科学省ウェブサイト利用規約（公共データ利用規約 第1…` 3 |
+| `license_url` | TEXT / large_string | 0 | 規約の URL | `https://www.e-stat.go.jp/ter…` 54、`https://nlftp.mlit.go.jp/ksj…` 51、`https://www.soumu.go.jp/menu…` 11、`https://www.digital.go.jp/po…` 4、`https://www.post.japanpost.j…` 3、`https://www.mext.go.jp/b_men…` 3 |
+| `license_text_sha256` | TEXT / null | 126 | このビルドで観測した規約本文のハッシュ。v2.3.0 は全行 NULL（オフラインのビルドで規約ページを読まないため） | 全行 NULL |
+| `source_version` | TEXT / large_string | 72 | 発行元が示す版 | `A002005212020 / JGD2011` 48、`令和7年5月1日時点（確定版）` 3、`2025` 1、`2023` 1、`2022` 1 |
+| `published_at` | TEXT / large_string | 64 | 発行元が示す公表日・基準日 | `2020-10-01` 48、`2024-09-01` 10、`2025-12-26` 3、`2025-12-31` 1 |
+| `edition_origin` | TEXT / large_string | 62 | 版の情報の出どころ（`declared` 設定で宣言 ／ `payload` ファイル自身が述べる ／ NULL） | `declared` 54、`payload` 10 |
 | `downloaded_at` | TEXT / large_string | 0 | 取得日時（RFC 3339） | 例 `2026-08-23T03:22:24+09:00`、`2026-08-23T03:22:26+09:00`、`2026-09-05T12:32:04+09:00` |
-| `etag` | TEXT / null | 122 | HTTP ETag。v2.2.0 は全行 NULL | 全行 NULL |
-| `last_modified` | TEXT / null | 122 | HTTP Last-Modified。v2.2.0 は全行 NULL | 全行 NULL |
+| `etag` | TEXT / null | 126 | HTTP ETag。v2.3.0 は全行 NULL | 全行 NULL |
+| `last_modified` | TEXT / null | 126 | HTTP Last-Modified。v2.3.0 は全行 NULL | 全行 NULL |
 | `sha256` | TEXT / large_string | 0 | ファイルの SHA-256 | 例 `c719e7394489907c6192f58837d7…`、`febff4aabc2cd99b35ff395855b8…`、`abbd87846872ce6688c569d9aa33…` |
 | `file_size` | INTEGER / int64 | 0 | ファイルサイズ（バイト） | 例 `49179`、`6374347`、`1238` |
 | `row_count` | INTEGER / int64 | 0 | ファイルの行数 | 例 `1918`、`685105`、`47` |
-| `schema_fingerprint` | TEXT / large_string | 0 | 列構成のハッシュ（変わればビルドが止まる） | `7fa522e5f155846be56b4f46f0c1…` 48、`be3e33c3d50dd3324971431bc5d6…` 28、`b60c89dc0754d84e5a472a039271…` 19、`a2c6620218583c5b8e74845dfc56…` 10、`f69e7f12fb1a8f65d5270156b24f…` 4、`f16367f7fd1b5d50124213af6f89…` 1、`bd5d0fcaf642625a1f365a010445…` 1、`b761476efc87b313485fa746a866…` 1 ほか 10 種 |
+| `schema_fingerprint` | TEXT / large_string | 0 | 列構成のハッシュ（変わればビルドが止まる） | `7fa522e5f155846be56b4f46f0c1…` 48、`be3e33c3d50dd3324971431bc5d6…` 28、`b60c89dc0754d84e5a472a039271…` 19、`a2c6620218583c5b8e74845dfc56…` 10、`f69e7f12fb1a8f65d5270156b24f…` 4、`148c2a7e1b2656eb5ca0d211f18e…` 3、`f16367f7fd1b5d50124213af6f89…` 1、`bd5d0fcaf642625a1f365a010445…` 1 ほか 12 種 |
 | `parser_version` | TEXT / large_string | 0 | 読み込み処理の版 | 全行 `1.0.0` |
 | `resolved_via` | TEXT / large_string | 0 | ファイルの特定方法（`discovery`） | 全行 `discovery` |
-| `status` | TEXT / large_string | 0 | `ok` ／ `aggregate`（複数ファイルの束） | `ok` 118、`aggregate` 4 |
+| `status` | TEXT / large_string | 0 | `ok` ／ `aggregate`（複数ファイルの束） | `ok` 122、`aggregate` 4 |
 
 #### `snapshot_license_artifact`
 
 - **1行が表すもの:** 元データ1種類に関わる規約文書1つ（規約本文、詳細ページ、ダウンロード時の同意事項など）
 - **主キー:** 宣言なし（`artifact_id` が全行で一意）
-- **行数:** 20
+- **行数:** 24
 - **用途:** どの規約文書を、いつ人が確認したかの記録
 
 | 列名 | 型（SQLite / Parquet） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
 |---|---|---:|---|---|
-| `artifact_id` | TEXT / large_string | 0 | 記録の ID（`lic_…`） | `lic_feb38f9b8e66494e` 1、`lic_f034322f793f5b43` 1、`lic_e6a0bb0515d832d4` 1、`lic_dbdee6a6c95e16a6` 1、`lic_d8ee45e90d8cb81c` 1、`lic_cecf549961d035ba` 1、`lic_c7f19d2d7cf30c89` 1、`lic_bf1bd9748d5c2ffe` 1 ほか 12 種 |
-| `source` | TEXT / large_string | 0 | 元データの種類（jpac の内部名） | `estat_boundary` 5、`mlit` 3、`abr` 3、`mlit_ksj_p11` 2、`mlit_ksj_n02` 2、`mic_number_assignment` 1、`mic_area_code` 1、`japanpost` 1 ほか 2 種 |
-| `role` | TEXT / large_string | 0 | その文書の役割（`primary_terms` 主たる規約 など） | `primary_terms` 10、`detail_page` 2、`superseded_terms` 1、`policy_page` 1、`gis_terms` 1、`download_stipulation` 1、`definition_pdf` 1、`caveats_pdf` 1 ほか 2 種 |
-| `license_name` | TEXT / large_string | 0 | 文書の名前 | `政府統計の総合窓口(e-Stat) 利用規約` 3、`国土数値情報ダウンロードサイト 利用規約 (2026-0…` 3、`総務省ホームページ 著作権について（PDL 1.0 採用…` 2、`郵便番号データの説明 (readme)` 1、`統計地理情報システム機能利用規約（第6条でコンテンツの利…` 1、`境界データ 注意事項（国勢調査）` 1、`国土数値情報ダウンロードサービスコンテンツ利用規約（旧国…` 1、`国土数値情報 バス停留所データ 第3.0版 詳細ページ（…` 1 ほか 7 種 |
-| `license_url` | TEXT / large_string | 0 | 文書の URL | `https://www.e-stat.go.jp/ter…` 3、`https://nlftp.mlit.go.jp/ksj…` 3、`https://www.soumu.go.jp/menu…` 2、`https://www.post.japanpost.j…` 1、`https://www.geospatial.jp/ck…` 1、`https://www.e-stat.go.jp/pdf…` 1、`https://www.e-stat.go.jp/hel…` 1、`https://www.e-stat.go.jp/gis…` 1 ほか 7 種 |
-| `text_sha256` | TEXT / large_string | 20 | このビルドで観測した本文のハッシュ（v2.2.0 は全行 NULL） | 全行 NULL |
-| `baseline_sha256` | TEXT / large_string | 4 | 人が確認した時点の本文のハッシュ | `93c44dc2fc4de2f33789c71ca80b…` 3、`e885876a039a4d93a54c852bef99…` 2、`4c44671c4183abdad0fa8f117b98…` 2、`e980fada707098bae32b48a6c170…` 1、`d069b147966c9b7d32084b5b8b3d…` 1、`b3e62d5b3ff0047bba2478aa5758…` 1、`acd5205988866f65b29d0720c5bc…` 1、`9eb77a695e33f1df8a0e73751d83…` 1 ほか 4 種 |
-| `reviewed_on` | TEXT / large_string | 0 | 人が確認した日 | `2026-08-24` 9、`2026-09-14` 7、`2026-09-17` 2、`2026-10-12` 1、`2026-09-27` 1 |
-| `review_decision` | TEXT / large_string | 0 | `not_observed` 確認済みの基準があり今回は観測していない ／ `not_gated` 基準のハッシュを持たない（証拠として記録） | `not_observed` 16、`not_gated` 4 |
-| `note` | TEXT / large_string | 6 | 補足 | `版ごとの利用許諾条件はこのページにあり、agreemen…` 1、`mlit（位置参照情報）および mlit_ksj_n02…` 1、`estat_boundary と同じページ・同じハッシュ…` 1、`estat_boundary と同じページ・同じハッシュ…` 1、`The per-layer 利用許諾条件 lives h…` 1、`Same page and same hash as t…` 1、`Recorded so the earlier "+ 利…` 1、`Recorded discrepancy, not a …` 1 ほか 6 種 |
-| `source_snapshot_id` | TEXT / large_string | 0 | → `source_snapshot.source_snapshot_id`（宣言なしの論理結合。20行すべて存在） | `snap_estat_boundary_pref_01_…` 5、`snap_mlit_isj_01_c1214a2a31e…` 3、`snap_abr_city_master_419f6bc…` 3、`snap_mlit_ksj_p11_P11-22_SHP…` 2、`snap_mlit_ksj_n02_n02_2025_1…` 2、`snap_mic_shigai_list_7e020a7…` 1、`snap_mic_fixed_phone_1_c0672…` 1、`snap_japanpost_add_offline_c…` 1 ほか 2 種 |
+| `artifact_id` | TEXT / large_string | 0 | 記録の ID（`lic_…`） | `lic_feb38f9b8e66494e` 1、`lic_f034322f793f5b43` 1、`lic_e6a0bb0515d832d4` 1、`lic_dbdee6a6c95e16a6` 1、`lic_d8ee45e90d8cb81c` 1、`lic_cecf549961d035ba` 1、`lic_c7f19d2d7cf30c89` 1、`lic_c2e6f57e2d0178be` 1 ほか 16 種 |
+| `source` | TEXT / large_string | 0 | 元データの種類（jpac の内部名） | `estat_boundary` 5、`mlit` 3、`abr` 3、`mlit_ksj_p29` 2、`mlit_ksj_p11` 2、`mlit_ksj_n02` 2、`mext_school_code` 2、`mic_number_assignment` 1 ほか 4 種 |
+| `role` | TEXT / large_string | 0 | その文書の役割（`primary_terms` 主たる規約 など） | `primary_terms` 12、`detail_page` 3、`superseded_terms` 1、`policy_page` 1、`gis_terms` 1、`download_stipulation` 1、`definition_pdf` 1、`dataset_page` 1 ほか 3 種 |
+| `license_name` | TEXT / large_string | 0 | 文書の名前 | `国土数値情報ダウンロードサイト 利用規約 (2026-0…` 4、`政府統計の総合窓口(e-Stat) 利用規約` 3、`総務省ホームページ 著作権について（PDL 1.0 採用…` 2、`郵便番号データの説明 (readme)` 1、`統計地理情報システム機能利用規約（第6条でコンテンツの利…` 1、`文部科学省ウェブサイト利用規約` 1、`文部科学省 学校コード（掲載ページ）` 1、`境界データ 注意事項（国勢調査）` 1 ほか 10 種 |
+| `license_url` | TEXT / large_string | 0 | 文書の URL | `https://nlftp.mlit.go.jp/ksj…` 4、`https://www.e-stat.go.jp/ter…` 3、`https://www.soumu.go.jp/menu…` 2、`https://www.post.japanpost.j…` 1、`https://www.mext.go.jp/b_men…` 1、`https://www.mext.go.jp/b_men…` 1、`https://www.geospatial.jp/ck…` 1、`https://www.e-stat.go.jp/pdf…` 1 ほか 10 種 |
+| `text_sha256` | TEXT / large_string | 24 | このビルドで観測した本文のハッシュ（v2.3.0 は全行 NULL） | 全行 NULL |
+| `baseline_sha256` | TEXT / large_string | 5 | 人が確認した時点の本文のハッシュ | `93c44dc2fc4de2f33789c71ca80b…` 3、`4c44671c4183abdad0fa8f117b98…` 3、`e885876a039a4d93a54c852bef99…` 2、`e980fada707098bae32b48a6c170…` 1、`e6dda47382bb34da7e78ad3aec25…` 1、`d069b147966c9b7d32084b5b8b3d…` 1、`b3e62d5b3ff0047bba2478aa5758…` 1、`acd5205988866f65b29d0720c5bc…` 1 ほか 6 種 |
+| `reviewed_on` | TEXT / large_string | 0 | 人が確認した日 | `2026-08-24` 9、`2026-09-14` 7、`2026-10-15` 4、`2026-09-17` 2、`2026-10-12` 1、`2026-09-27` 1 |
+| `review_decision` | TEXT / large_string | 0 | `not_observed` 確認済みの基準があり今回は観測していない ／ `not_gated` 基準のハッシュを持たない（証拠として記録） | `not_observed` 19、`not_gated` 5 |
+| `note` | TEXT / large_string | 6 | 補足 | `版ごとの利用許諾条件はこのページにあり、agreemen…` 1、`版ごとの利用許諾条件と、原典資料（地理院地図と承認番号 …` 1、`ゲートにしない記録。ページは版ごとに書き換わる。規約の文…` 1、`mlit（位置参照情報）および mlit_ksj_n02…` 1、`mlit・mlit_ksj_n02・mlit_ksj_p…` 1、`estat_boundary と同じページ・同じハッシュ…` 1、`estat_boundary と同じページ・同じハッシュ…` 1、`The per-layer 利用許諾条件 lives h…` 1 ほか 10 種 |
+| `source_snapshot_id` | TEXT / large_string | 0 | → `source_snapshot.source_snapshot_id`（宣言なしの論理結合。24行すべて存在） | `snap_estat_boundary_pref_01_…` 5、`snap_mlit_isj_01_c1214a2a31e…` 3、`snap_abr_city_master_419f6bc…` 3、`snap_mlit_ksj_p29_P29-23_GML…` 2、`snap_mlit_ksj_p11_P11-22_SHP…` 2、`snap_mlit_ksj_n02_n02_2025_1…` 2、`snap_mext_school_code_east_7…` 2、`snap_mic_shigai_list_7e020a7…` 1 ほか 4 種 |
 
 #### `match_run`
 
@@ -1710,30 +1709,30 @@ WHERE s.is_active AND s.school_type_code = 'B1';
 
 | 列名 | 型（SQLite / Parquet） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
 |---|---|---:|---|---|
-| `match_run_id` | TEXT / large_string | 0 | 実行の ID（`run_…`、入力と版から作る） | 全行 `run_e93f941788e9e9100abc` |
-| `started_at` | TEXT / large_string | 0 | 実行の日時（RFC 3339） | 全行 `2026-10-12T20:47:44+09:00` |
+| `match_run_id` | TEXT / large_string | 0 | 実行の ID（`run_…`、入力と版から作る） | 全行 `run_f03e7d9008d287dfc16b` |
+| `started_at` | TEXT / large_string | 0 | 実行の日時（RFC 3339） | 全行 `2026-10-15T22:21:32+09:00` |
 | `matching_rule_version` | TEXT / large_string | 0 | 照合規則の版 | 全行 `2.0.0` |
 | `normalization_profile_version` | TEXT / large_string | 0 | 正規化プロファイルの版 | 全行 `1.0.0` |
-| `code_version` | TEXT / large_string | 0 | jpac のコードの版 | 全行 `2.2.0` |
+| `code_version` | TEXT / large_string | 0 | jpac のコードの版 | 全行 `2.3.0` |
 
 #### `match_run_input`
 
 - **1行が表すもの:** 照合の実行1回 × 読んだ元データ1つ
 - **主キー:** 宣言なし（論理キーは `(match_run_id, source_snapshot_id, role)`）
-- **行数:** 118
+- **行数:** 122
 - **用途:** ブリッジ行が依存するすべての元データを引く
 
 | 列名 | 型（SQLite / Parquet） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
 |---|---|---:|---|---|
-| `match_run_id` | TEXT / large_string | 0 | → `match_run.match_run_id`（宣言 FK） | 全行 `run_e93f941788e9e9100abc` |
+| `match_run_id` | TEXT / large_string | 0 | → `match_run.match_run_id`（宣言 FK） | 全行 `run_f03e7d9008d287dfc16b` |
 | `source_snapshot_id` | TEXT / large_string | 0 | → `source_snapshot.source_snapshot_id`（宣言なしの論理結合。118行すべて存在） | 例 `snap_abr_city_master_419f6bc…`、`snap_abr_postal_conversion_c…`、`snap_abr_pref_master_92bbbae…` |
-| `role` | TEXT / large_string | 0 | その元データの役割。`canonical` 基準（ABR 町字・市区町村）／ `mapping` 対応表（ABR 変換表）／ `corroboration` 裏付け（日本郵便）／ `target` 対応先 | `target` 112、`corroboration` 3、`canonical` 2、`mapping` 1 |
+| `role` | TEXT / large_string | 0 | その元データの役割。`canonical` 基準（ABR 町字・市区町村）／ `mapping` 対応表（ABR 変換表）／ `corroboration` 裏付け（日本郵便）／ `target` 対応先 | `target` 116、`corroboration` 3、`canonical` 2、`mapping` 1 |
 
 ### 7.11 ビュー
 
 SQLite にだけあるビューです（Parquet / CSV のフラット表は `address_crosswalk` と同じ内容を実体化したもの）。
 
-| ビュー | 中身 | 行数（v2.2.0） |
+| ビュー | 中身 | 行数（v2.3.0） |
 |---|---|---:|
 | `address_crosswalk` | フラット表。各ブリッジを `is_current = 1 AND verification_status <> 'manually_rejected'` で絞ってから結合 | 727,110 |
 | `address_crosswalk_all` | 同じ列で、ブリッジを絞らずに結合（棄却済み・過去の版も含む） | 727,110 |
@@ -1763,7 +1762,7 @@ SQLite にだけあるビューです（Parquet / CSV のフラット表は `add
 | `town_name_normalized` | `address.full_name_normalized` | TEXT / large_string | |
 | `machiaza_id` | `address.machiaza_id` | TEXT / large_string | |
 | `postal_code` | `bridge_address_postal_code.postal_code` | TEXT / large_string | 対応が無ければ NULL |
-| `postal_relation_type` | 同 `relation_type` | TEXT / large_string | v2.2.0 は `equivalent` か NULL |
+| `postal_relation_type` | 同 `relation_type` | TEXT / large_string | v2.3.0 は `equivalent` か NULL |
 | `postal_match_method` | 同 `match_method` | TEXT / large_string | |
 | `postal_rule` | 同 `matching_rule_id` | TEXT / large_string | |
 | `postal_confidence` | 同 `confidence` | REAL / double | |
@@ -1779,7 +1778,7 @@ SQLite にだけあるビューです（Parquet / CSV のフラット表は `add
 | `mlit_candidate_group` | 同 `candidate_group_id` | TEXT / large_string | |
 | `mlit_is_unique` | 同 `is_unique_match` | INTEGER / bool | |
 | `mlit_status` | 同 `verification_status` | TEXT / large_string | |
-| `numbering_area_code` | `bridge_address_telephone.numbering_area_code` | TEXT / large_string | v2.2.0 は全行 NULL |
+| `numbering_area_code` | `bridge_address_telephone.numbering_area_code` | TEXT / large_string | v2.3.0 は全行 NULL |
 | `telephone_relation_type` | 同 `relation_type` | TEXT / large_string | 全行 `unresolved` |
 | `telephone_match_method` | 同 `match_method` | TEXT / large_string | 全行 `unresolved` |
 | `telephone_rule` | 同 `matching_rule_id` | TEXT / large_string | 全行 `T10` |
@@ -1793,8 +1792,8 @@ SQLite にだけあるビューです（Parquet / CSV のフラット表は `add
 | `mlit_code` | `mlit_town_version.mlit_code`（`is_current = 1`） | TEXT / large_string | |
 | `mlit_latitude` | 同 `latitude` | REAL / double | 代表点 |
 | `mlit_longitude` | 同 `longitude` | REAL / double | 代表点 |
-| `area_code` | `telephone_area_version.area_code`（`is_current = 1`） | TEXT / large_string | v2.2.0 は全行 NULL |
-| `numbering_area_name` | 同 `area_text_raw` | TEXT / large_string | v2.2.0 は全行 NULL |
+| `area_code` | `telephone_area_version.area_code`（`is_current = 1`） | TEXT / large_string | v2.3.0 は全行 NULL |
+| `numbering_area_name` | 同 `area_text_raw` | TEXT / large_string | v2.3.0 は全行 NULL |
 | `old_postal_code` | `postal_record_version.old_postal_code`（`is_current = 1`）を郵便番号ごとに集約 | TEXT / large_string | 旧郵便番号が複数あるときは `;` 区切り（例 `93021;93923`） |
 
 市外局番の13列が空なのは、町字単位の対応が公表されていないためです。市区町村単位の市外局番は
@@ -1815,7 +1814,7 @@ SQLite にだけあるビューです（Parquet / CSV のフラット表は `add
 
 ## 8. よくある落とし穴
 
-どの SQL も v2.2.0 の SQLite で実行して確かめています。
+どの SQL も v2.3.0 の SQLite で実行して確かめています。
 
 ### 8.1 コードを数値として扱う
 
@@ -1984,7 +1983,7 @@ ORDER  BY w.depth, w.lg_code;
 
 ### 8.11 `*_version` 表を `is_current` なしで結ぶ
 
-v2.2.0 ではどの実体も版が1つなので結果は変わりませんが、次の版以降で古い版が残ると行が倍になります。
+v2.3.0 ではどの実体も版が1つなので結果は変わりませんが、次の版以降で古い版が残ると行が倍になります。
 最初から `is_current = 1` を付けてください。
 
 ```sql

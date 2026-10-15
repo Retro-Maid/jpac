@@ -18,7 +18,7 @@
 - 全国ビルドのピークメモリは概ね 4〜6 GB。8 GB のマシンが実質的な下限です。
 - `jpac build` は shapely を使いません。静的マップの境界データを作る
   `tools/build_site_geo.py` だけが追加依存 `pip install -e ".[geo]"` を必要とします。
-- 版番号はコード版とデータ版を分離しています（`v2.2.0+data-2026-10-12`）。
+- 版番号はコード版とデータ版を分離しています（`v2.3.0+data-2026-10-15`）。
 
 ```bash
 git clone git@github.com:Retro-Maid/jpac.git && cd jpac
@@ -66,14 +66,14 @@ jpac validate        # dist/parquet に対してブリッジの不変条件を�
 jpac verify          # 出来上がったデータを元データと突き合わせて検証
 jpac diff            # 前回ビルドとの差分レポートを表示
 jpac export          # dist/parquet からデータ4ファイルを再出力（再構築はしない）
-jpac points          # 座標アセット（駅・バス停の点）だけを作る（再構築はしない）
+jpac points          # 座標アセット（駅・バス停・学校の点）だけを作る（再構築はしない）
 jpac baseline        # 期待スキーマのベースラインを書き出す（リリースは作らない）
 jpac --version       # コード版を表示
 ```
 
 | コマンド | 前提 | 出力 |
 |---|---|---|
-| `build` | `data/raw/` に受け入れ済み payload | `dist/parquet/` のテーブル（任意の元データがすべてあれば44本、無ければ29本）、データ4ファイル、座標アセット（N02・P11 があるとき。`dist/points/` と zip）、`QUALITY_REPORT.md`、`DIFF_REPORT.md`、`NOTICE.md`、`SOURCES.yml`、`SHA256SUMS` |
+| `build` | `data/raw/` に受け入れ済み payload | `dist/parquet/` のテーブル（任意の元データがすべてあれば47本、無ければ29本）、データ4ファイル、座標アセット（N02・P11・P29 があるとき。`dist/points/` と zip）、`QUALITY_REPORT.md`、`DIFF_REPORT.md`、`NOTICE.md`、`SOURCES.yml`、`SHA256SUMS` |
 | `validate` | `build` 済み | なし（検査のみ） |
 | `verify` | `build` 済み + `data/raw/` | なし（検査のみ） |
 | `diff` | `build` 済み | なし（表示のみ） |
