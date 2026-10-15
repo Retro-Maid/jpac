@@ -1,0 +1,56 @@
+---
+title: jpac 2.2.0+data-2026-10-15　学校（文部科学省 学校コード）　（実線 = 宣言された FOREIGN KEY ／ 点線 = 宣言のない結合）
+---
+erDiagram
+  municipality |o--o{ bridge_school_address : "lg_code"
+  address_entity |o--o{ bridge_school_address : "address_id"
+  mext_school ||--o{ bridge_school_address : "school_code"
+  mext_school ||..o{ mext_school_succession : "school_code（廃止した学校）"
+  mext_school |o..o{ mext_school_succession : "successor_school_code（一覧に無いことがある）"
+  mext_school["mext_school　学校（文部科学省 学校コード）"] {
+    TEXT school_code PK
+    TEXT school_type_code
+    TEXT school_type_name
+    TEXT pref_code
+    TEXT founder_code
+    TEXT founder_name
+    TEXT branch_code
+    TEXT branch_name
+    TEXT school_name_raw
+    TEXT address_raw
+    TEXT postal_code_raw
+    TEXT attribute_set_date
+    TEXT attribute_abolished_date
+    TEXT old_survey_number_raw
+    TEXT successor_school_codes_raw
+    INTEGER is_active
+    INTEGER check_digit_valid
+    TEXT source_snapshot_id
+  }
+  mext_school_succession["mext_school_succession　学校の移行（廃止 → 移行後）"] {
+    TEXT school_code PK "→ mext_school"
+    TEXT successor_school_code PK "→ mext_school"
+    INTEGER successor_listed
+    TEXT source_snapshot_id
+  }
+  bridge_school_address["bridge_school_address　学校 ↔ 町字・市区町村"] {
+    TEXT school_code FK "→ mext_school"
+    TEXT address_id FK "→ address_entity"
+    TEXT lg_code FK "→ municipality"
+    TEXT relation_type
+    TEXT match_method
+    TEXT matched_town_name
+    REAL confidence
+    INTEGER candidate_count
+    INTEGER is_unique_match
+    TEXT postal_check
+    TEXT verification_status
+    TEXT mismatch_note
+    TEXT source_snapshot_id
+  }
+  address_entity["address_entity　町字の実体・ID 台帳（→ p.2 住所（ABR 町字）と市区町村）"] {
+    TEXT address_id PK
+  }
+  municipality["municipality　市区町村（→ p.2 住所（ABR 町字）と市区町村）"] {
+    TEXT lg_code PK
+  }

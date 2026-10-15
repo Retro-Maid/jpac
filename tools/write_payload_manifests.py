@@ -65,6 +65,14 @@ ATTESTED: dict[str, tuple[str, str]] = {
         "2026-10-12",
         "docs/POPULATION_PREFLIGHT.md §1.1（同日に取得した statInfId と SHA-256）",
     ),
+    "mext_school_code": (
+        "2026-10-15",
+        "docs/LICENSE_REVIEW_SCHOOL_2026_10.md §4（同日に取得した URL と SHA-256）",
+    ),
+    "mlit_ksj_p29": (
+        "2026-10-15",
+        "docs/LICENSE_REVIEW_SCHOOL_2026_10.md §6（同日に取得した URL と SHA-256）",
+    ),
 }
 
 # 署名した日が ATTESTED_ON と違うソース。後から足したソースの署名を、2026-09-23 に
@@ -72,6 +80,8 @@ ATTESTED: dict[str, tuple[str, str]] = {
 ATTESTED_ON_BY_SOURCE: dict[str, str] = {
     "estat_municipality_change": "2026-09-27",
     "estat_census_2025": "2026-10-12",
+    "mext_school_code": "2026-10-15",
+    "mlit_ksj_p29": "2026-10-15",
 }
 
 HEADER = """\

@@ -26,8 +26,9 @@ jp-address-crosswalk（jpac）のリリースデータを、作った人では�
    - [7.6 駅 路線 バス停 e-Stat 小地域](#76-駅-路線-バス停-e-stat-小地域)
    - [7.7 人口（国勢調査 令和7年）](#77-人口国勢調査-令和7年)
    - [7.8 市区町村の廃置分合](#78-市区町村の廃置分合)
-   - [7.9 来歴](#79-来歴)
-   - [7.10 ビュー](#710-ビュー)
+   - [7.9 学校（文部科学省 学校コード）](#79-学校文部科学省-学校コード)
+   - [7.10 来歴](#710-来歴)
+   - [7.11 ビュー](#711-ビュー)
 8. [よくある落とし穴](#8-よくある落とし穴)
 9. [出典とライセンス](#9-出典とライセンス)
 10. [付録 用語集](#10-付録-用語集)
@@ -49,6 +50,7 @@ jpac は、日本の「住所」に関する複数の公的なコード体系を
 | 番号区画・市外局番・市内局番 | 総務省 | 対応先 |
 | 駅・路線（N02）、バス停留所（P11） | 国土交通省 国土数値情報 | 市区町村に対応づけ |
 | 人口・世帯（令和7年国勢調査）、廃置分合等情報、小地域境界 | 総務省統計局（e-Stat） | 市区町村に対応づけ |
+| 学校コード（次のリリースで追加） | 文部科学省 | 町字・市区町村に対応づけ |
 
 1枚の表ではなく、**44 テーブル・3 ビュー・33 索引**からなる関係データベースです。中心に ABR の町字があり、
 そこから各体系へ「ブリッジ」と呼ぶ対応表が伸びています。対応そのものと一緒に、その根拠（どの規則で、
@@ -74,6 +76,7 @@ jpac は、日本の「住所」に関する複数の公的なコード体系を
 | 住所 ↔ 郵便番号 ／ 国土交通省コード | **町字**（例「西新宿一丁目」）まで。番地・号は持ちません |
 | 住所 ↔ 市外局番 | **市区町村**まで。町字単位の対応は総務省が公表していないため、町字単位の行はすべて「未解決」です |
 | 駅・路線・バス停 | **市区町村**まで。町字（`address_id`）には結びません |
+| 学校（次のリリースで追加） | 所在地の文字列が決める**町字**まで。決まらなければ市区町村まで。座標は持ちません |
 | 人口 | **市区町村**まで（番号区画は、市区町村を丸ごと含む区画だけ） |
 | 廃置分合 | 市区町村コードの旧→新 |
 
@@ -258,7 +261,7 @@ GitHub Releases の `v2.2.0+data-2026-10-12` に添付されている12ファイ
 | `*_version_id` | `ver_` + 24桁の16進 | `*_version` テーブルの1版 | jpac | 内容と観測期間から作る ID |
 | `coverage_id` / `block_id` | `cov_…` ／ `blk_{市外局番}_{市内局番}` | 番号区画の収容句1件 ／ 市内局番1件 | jpac | `coverage_id` は句の内容から作る ID で、総務省が文を変えると別の ID になります。`block_id` は番号そのものから作ります |
 | `rsdt_variant_id` | `rv_{lg_code}_{machiaza_id}_…` | 住居表示の版1件 | jpac | 行を識別する ID |
-| `source_snapshot_id` | `snap_…` または `snapset_…` | 取得した元データ1ファイル（`snapset_` は複数ファイルの束） | jpac | 来歴。7.9 を参照 |
+| `source_snapshot_id` | `snap_…` または `snapset_…` | 取得した元データ1ファイル（`snapset_` は複数ファイルの束） | jpac | 来歴。7.10 を参照 |
 | `match_run_id` | `run_` + 20桁の16進 | 照合の実行1回 | jpac | v2.2.0 では1件だけ |
 
 **リリースをまたいで保存してよいキー**は、`address_id`（上の退役の規則つき）、公的なコード（`lg_code`、`jis_city_code`、`(lg_code, machiaza_id)`、`postal_code`、`mlit_code`、`numbering_area_code`、`area_code`）、版の中での `n02_group_code` と `(line_name_raw, operator_name_raw)` です。`bridge_id`・`*_version_id`・`postal_record_id`・`mlit_record_id`・`p11_stop_id` など jpac が行から作る ID は、元データが変われば変わるものとして扱ってください。
@@ -1521,7 +1524,130 @@ WHERE b.verification_status = 'auto';
 | `edge_id` | TEXT / large_string | 0 | 辺の ID（`mle_…`、施行日・旧・新・種類・注記から作る） | 例 `mle_0025a9aa0dfb01ccfe155071`、`mle_0052ef61cdba39b6dbbfaa5a`、`mle_009099d204bd1ca910a050a8` |
 | `source_snapshot_id` | TEXT / large_string | 0 | この行の出どころとなった元データ（`source_snapshot.source_snapshot_id`）。外部キーは宣言されていない（3ファイルの束 `snapset_…`） | 全行 `snapset_b8daddd9f2265b26effb` |
 
-### 7.9 来歴
+### 7.9 学校（文部科学省 学校コード）
+
+**次のリリースで追加する3表です。** `v2.2.0` には入っていません。数値は令和7年5月1日時点（確定版）の一覧を
+`v2.2.0` と同じ住所データに照合した実測です。
+
+学校の点は座標アセットの [`school_point`](#school_point座標アセット)（国土数値情報 P29 2023年度版）にあります。
+
+学校コードは文部科学省が全国の学校に1つずつ振った13桁のコードで、学校種（2桁）・都道府県番号（2桁）・
+設置区分（1桁）・学校番号（7桁）・検査数字（1桁）からなります。一覧は**座標を持たず**、所在地を文字列で
+持っています。jpac はその文字列を町字に照合して結びます（位置は使いません）。
+
+#### `mext_school`
+
+- **1行が表すもの:** 学校コード一覧の1校（廃止した学校を含む）
+- **主キー:** `school_code`
+- **行数:** 59,738（今ある学校 55,862、廃止 3,876）
+- **用途:** 学校の種別・設置者・名前・所在地。町字・市区町村は `bridge_school_address` から引く
+
+| 列名 | 型（SQLite / Parquet） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
+|---|---|---:|---|---|
+| `school_code` | TEXT / large_string | 0 | 学校コード13桁。一度振られたら変わらず、廃止しても他校に流用されない | 例 `A101110000012`、`B111210000013` |
+| `school_type_code` | TEXT / large_string | 0 | 学校種のコード（コードの1〜2桁目と同じ）。`A1` 幼稚園（幼稚園型認定こども園を含む）／ `A2` 幼保連携型認定こども園 ／ `B1` 小学校 ／ `C1` 中学校 ／ `C2` 義務教育学校 ／ `D1` 高等学校 ／ `D2` 中等教育学校 ／ `E1` 特別支援学校 ／ `F1` 大学 ／ `F2` 短期大学 ／ `G1` 高等専門学校 ／ `H1` 専修学校 ／ `H2` 各種学校 | `B1` 19,725、`C1` 10,271、`A1` 9,741、`A2` 7,771、`D1` 5,093、`H1` 3,244、`E1` 1,212、`H2` 1,138 ほか 5 種 |
+| `school_type_name` | TEXT / large_string | 0 | 学校種の名前（発行元の略称のまま） | `小学校` 19,725、`中学校` 10,271、`幼稚園` 9,741、`こども` 7,771、`高校` 5,093、`専修` 3,244、`特支` 1,212、`各種` 1,138 ほか 5 種 |
+| `pref_code` | TEXT / large_string | 0 | 都道府県番号2桁（コードの3〜4桁目と同じ） | `13` 4,507、`27` 3,551、`01` 2,998 ほか 44 種 |
+| `founder_code` | TEXT / large_string | 0 | 設置区分（コードの5桁目と同じ）。`1` 国立 ／ `2` 公立 ／ `3` 私立 | `2` 38,573、`3` 20,760、`1` 405 |
+| `founder_name` | TEXT / large_string | 0 | 設置区分の名前（発行元の略称） | `公` 38,573、`私` 20,760、`国` 405 |
+| `branch_code` | TEXT / large_string | 0 | 本分校。`1` 本校 ／ `2` 分校 ／ `9` 廃校 | `1` 55,248、`9` 3,846、`2` 644 |
+| `branch_name` | TEXT / large_string | 0 | 本分校の名前 | `本` 55,248、`廃` 3,846、`分` 644 |
+| `school_name_raw` | TEXT / large_string | 0 | 学校名（原文） | 例 `北海道教育大学附属函館幼稚園`、`札幌市立手稲中央幼稚園` |
+| `address_raw` | TEXT / large_string | 0 | 所在地（原文。全角数字のまま）。都道府県名が無い行が3行、所在地が2つ書かれた行が1行ある | 例 `北海道函館市美原３丁目４８番６号` |
+| `postal_code_raw` | TEXT / large_string | 0 | 郵便番号（原文）。**7桁でない値や、郵便番号の表に無い番号（大学などの事業所個別番号）がある**ので、`postal_code_entity` への外部キーにしていない | 例 `0410806`、`0700875` |
+| `attribute_set_date` | TEXT / large_string | 0 | 属性情報設定年月日（`YYYY-MM-DD` に直した値） | `2020-12-22` 55,752、`2021-01-20` 1,183 ほか |
+| `attribute_abolished_date` | TEXT / large_string | 55,862 | 属性情報廃止年月日（`YYYY-MM-DD`）。今ある学校は NULL | `2025-05-01` 823、`2022-05-01` 788、`2021-05-27` 776 ほか |
+| `old_survey_number_raw` | TEXT / large_string | 2,186 | 旧学校調査番号（原文） | 例 `016501`、`016502` |
+| `successor_school_codes_raw` | TEXT / large_string | 57,949 | 移行後の学校コード（原文。複数のときは `、` `,` 改行などで区切られている）。分けたものが `mext_school_succession` | 例 `B103220900301` |
+| `is_active` | INTEGER / bool | 0 | 今ある学校なら 1（本分校が `9` でなく、廃止日が無い） | `1` 55,862、`0` 3,876 |
+| `check_digit_valid` | INTEGER / bool | 0 | 末尾の検査数字が、発行元の計算方法と合えば 1。**学校種などが変わった学校は元の種別の検査数字を持ち続けていて 0 になる**（幼稚園 → 認定こども園など）。発行元のコードなので直していない | `1` 59,575、`0` 163 |
+| `source_snapshot_id` | TEXT / large_string | 0 | この行が載っていた CSV（3本のどれか）の `source_snapshot_id`。外部キーは宣言されていない | `snap_mext_school_code_east_…` 34,163、`snap_mext_school_code_west_…` 24,355、`snap_mext_school_code_university_…` 1,220 |
+
+#### `mext_school_succession`
+
+- **1行が表すもの:** 廃止した学校 → 移行後の学校の1組
+- **主キー:** `(school_code, successor_school_code)`
+- **行数:** 1,797（移行元 1,789校）
+- **用途:** 統合・分離・種別の変更で学校コードが変わった学校をたどる。1校が複数の学校に移ることがある
+
+| 列名 | 型（SQLite / Parquet） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
+|---|---|---:|---|---|
+| `school_code` | TEXT / large_string | 0 | 移行元（廃止した学校）→ `mext_school.school_code`（外部キーは宣言していない） | 例 `B101222900050` |
+| `successor_school_code` | TEXT / large_string | 0 | 移行先の学校コード | 例 `B101222900014` |
+| `successor_listed` | INTEGER / bool | 0 | 移行先が一覧にあれば 1。**無いことがある**ので外部キーにしていない | `1` 1,793、`0` 4 |
+| `source_snapshot_id` | TEXT / large_string | 0 | 移行元の行が載っていた CSV | |
+
+#### `bridge_school_address`
+
+- **1行が表すもの:** 学校1校 × 町字の候補1件。町字まで決まらない学校も1行持つ
+- **主キー:** 宣言なし（`(school_code, address_id)` で並べて出力）
+- **行数:** 59,952（59,738校）
+- **用途:** 学校 → 町字・市区町村。所在地の文字列を、町字マスターの名前に照合して結ぶ
+
+照合の規則（`src/jp_address_crosswalk/build/school.py`）:
+
+1. 市区町村は、学校の都道府県の中で、所在地の先頭に最も長く一致する市区町村名で決める（郡名は省いてもよい）。
+   同じ名前の候補が複数なら決めない。政令市の市名で止まっていれば、その区の町字をまとめて探す。
+2. 町字は、残りの先頭に最も長く一致する町字名で決める。**ただし町字名の直後が番地（数字・番地・字など）で
+   なければ結ばない。**「小野田２２番地」を名前の短い別の町字「小野」に結ばないためです。`4-6-27` の先頭の
+   数字は、その町字に「4丁目」があれば丁目として読む。先頭の「大字」「字」は省いてもよい。
+3. 表記の正規化は住所の照合と同じ保守的なもので、ヶ／ケの違い・「字」の省略・京都の通り名などは結ばずに
+   市区町村どまりにする。
+4. 郵便番号は照合に使わない。結んだ後で、学校の郵便番号がその町字の郵便番号（`bridge_address_postal_code`）に
+   含まれるかを `postal_check` に記録する。
+
+| 列名 | 型（SQLite / Parquet） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
+|---|---|---:|---|---|
+| `school_code` | TEXT / large_string | 0 | → `mext_school.school_code`（宣言 FK） | 例 `A101110000012` |
+| `address_id` | TEXT / large_string | 2,914 | 町字 → `address_entity.address_id`（宣言 FK）。`located_in` と `ambiguous` の行だけ値がある | 例 `jpa16tgz98s6dm2q7sxe` |
+| `lg_code` | TEXT / large_string | 24 | 市区町村 → `municipality.lg_code`（宣言 FK）。**常に区・市町村のコードで、政令市の親コードは入らない**。`unresolved` なら NULL | 例 `221384`、`462012` |
+| `relation_type` | TEXT / large_string | 0 | `located_in` 町字が1つに決まった ／ `ambiguous` 同じ名前の町字が複数（候補ごとに1行）／ `municipality_only` 市区町村までしか決まらない ／ `unresolved` 市区町村も決まらない | `located_in` 56,610、`municipality_only` 2,890、`ambiguous` 428、`unresolved` 24 |
+| `match_method` | TEXT / large_string | 0 | `address_text_prefix` 町字名で結んだ ／ `municipality_text_prefix` 市区町村名まで ／ `unresolved` | `address_text_prefix` 57,038、`municipality_text_prefix` 2,890、`unresolved` 24 |
+| `matched_town_name` | TEXT / large_string | 2,914 | 一致した町字名（正規化後。先頭の「大字」「字」を省いた形のことがある） | 例 `美原3丁目`、`春光5条2丁目` |
+| `confidence` | REAL / double | 0 | 規則で決まる値（確率ではない）。町字が1つで郵便番号も合う 0.98 ／ 町字が1つで郵便番号で確かめられない 0.9 ／ 市区町村まで 0.9 ／ 町字の候補が複数 0.5 ／ 未解決 0.0 | `0.98` 54,154、`0.9` 5,346、`0.5` 428、`0.0` 24 |
+| `candidate_count` | INTEGER / int64 | 0 | 町字の候補の数。町字まで決まらなければ 0 | `1` 56,610、`0` 2,914、`2` 428 |
+| `is_unique_match` | INTEGER / int64 | 0 | 町字の候補が1つなら 1 | `1` 56,610、`0` 3,342 |
+| `postal_check` | TEXT / large_string | 2,914 | `agrees` 学校の郵便番号が町字の郵便番号の1つ ／ `differs` 違う（大学などの事業所個別番号のことが多い）／ `town_has_no_postal_code` 町字に郵便番号の対応が無い ／ NULL 町字が無いか、学校の郵便番号が7桁でない | `agrees` 54,552、`differs` 2,145、`town_has_no_postal_code` 341 |
+| `verification_status` | TEXT / large_string | 0 | `auto` 町字が1つに決まり、郵便番号も合う ／ `review_required` それ以外 | `auto` 54,153、`review_required` 5,799 |
+| `mismatch_note` | TEXT / large_string | 54,153 | `auto` でない理由（日本語）。`auto` なら NULL | `町字まで決まらない（表記の違い・町字の無い地域など）` 2,890、`学校の郵便番号が町字の郵便番号と違う（…）` 2,133、`同じ名前の町字が複数ある。候補を残す（…）` 428、`町字に郵便番号の対応が無く、…` 323、`所在地から市区町村が決まらない` 24、`所在地が複数書かれている。…` 1 |
+| `source_snapshot_id` | TEXT / large_string | 0 | 学校の行が載っていた CSV | |
+
+今ある学校 55,862 校で数えると、町字に1つに決まった学校が 94.85%、町字の候補が複数 0.34%、市区町村どまり
+4.77%、市区町村も決まらない 0.04% です。
+
+#### `school_point`（座標アセット）
+
+- **入っているファイル:** `jp_address_crosswalk_points.zip` の `school_point.parquet`（次のリリースで追加）。**SQLite・テーブル別 zip には無い**
+- **1行が表すもの:** 国土数値情報 学校データ（P29 2023年度版）の1点 = 学校1校 × キャンパス1つ
+- **主キー:** `(school_code, campus_code)`
+- **行数:** 56,807（56,318校。キャンパスが複数ある学校は 258校）。座標が NULL の行 0
+- **用途:** 学校を地図に載せる。P29 が公表している点を**計算も丸めもせずに**出している。町字（`bridge_school_address`）は所在地の文字列から決めたもので、この点からは決めていない
+- **測地系:** JGD2011 の経緯度（EPSG:6668）。範囲は経度 122.943…〜145.750…、緯度 24.061…〜45.513…（実測）
+- **注意:** P29 は令和5年（2023年）5月1日時点の一覧から作られている。今ある学校（令和7年の一覧）55,862校のうち点があるのは 54,776校（98.1%）で、無いのは2023年以降にできた学校が中心（認定こども園 729校など）。P29 の原典資料には地理院地図（測量法に基づく国土地理院長承認（使用）R 3JHs 917）が含まれる
+
+| 列名 | 型（Parquet / Snowflake 推奨） | NULL 行数 | 説明 | 値の例・取りうる値（実測） |
+|---|---|---:|---|---|
+| `school_code` | large_string / `VARCHAR` | 0 | 学校コード → `mext_school.school_code`（56,807 点の学校コードはすべて令和7年の一覧にある。廃止になった学校もある） | 例 `A101110000012` |
+| `campus_code` | large_string / `VARCHAR` | 0 | キャンパスコード。`00` キャンパスの区別なし ／ `01` 本校 ／ `02` 以降 それ以外のキャンパス | `00` 56,021、`01` 297、`02` 258、`03` 105、`04` 50 ほか |
+| `school_name_raw` | large_string / `VARCHAR` | 0 | P29 の名称（`mext_school.school_name_raw` と違うことがある） | 例 `北海道教育大学附属函館幼稚園` |
+| `campus_note_raw` | large_string / `VARCHAR` | 56,109 | 学校名備考（キャンパスの名称等）。無ければ NULL | 例 `原峠分室`、`女子部` |
+| `p29_admin_code` | large_string / `VARCHAR` | 0 | P29 作成時点の行政区域コード5桁。jpac の `lg_code`（6桁）ではない | 例 `01202` |
+| `closed_code_raw` | large_string / `VARCHAR` | 0 | 休校区分。`0` 調査なし ／ `1` 開校中 ／ `2` 休校中。`9` はコード表に無いが発行元の値のまま | `1` 28,932、`0` 27,673、`9` 202 |
+| `longitude` | double / `FLOAT` | 0 | 経度（発行元の値のまま） | 例 `140.7481043400378` |
+| `latitude` | double / `FLOAT` | 0 | 緯度（発行元の値のまま） | 例 `41.82050309831556` |
+| `source_snapshot_id` | large_string / `VARCHAR` | 0 | 元データ（P29 の全国ファイル） | 全行 `snap_mlit_ksj_p29_P29-23_GML_…` |
+
+```sql
+-- 例（DuckDB）: 今ある小学校の点と、所在地から決めた町字
+SELECT s.school_code, s.school_name_raw, p.campus_code, p.longitude, p.latitude, b.address_id
+FROM 'tables/mext_school.parquet' s
+JOIN 'points/school_point.parquet' p USING (school_code)
+LEFT JOIN 'tables/bridge_school_address.parquet' b
+       ON b.school_code = s.school_code AND b.relation_type = 'located_in'
+WHERE s.is_active AND s.school_type_code = 'B1';
+```
+
+### 7.10 来歴
 
 #### `source_snapshot`
 
@@ -1603,7 +1729,7 @@ WHERE b.verification_status = 'auto';
 | `source_snapshot_id` | TEXT / large_string | 0 | → `source_snapshot.source_snapshot_id`（宣言なしの論理結合。118行すべて存在） | 例 `snap_abr_city_master_419f6bc…`、`snap_abr_postal_conversion_c…`、`snap_abr_pref_master_92bbbae…` |
 | `role` | TEXT / large_string | 0 | その元データの役割。`canonical` 基準（ABR 町字・市区町村）／ `mapping` 対応表（ABR 変換表）／ `corroboration` 裏付け（日本郵便）／ `target` 対応先 | `target` 112、`corroboration` 3、`canonical` 2、`mapping` 1 |
 
-### 7.10 ビュー
+### 7.11 ビュー
 
 SQLite にだけあるビューです（Parquet / CSV のフラット表は `address_crosswalk` と同じ内容を実体化したもの）。
 

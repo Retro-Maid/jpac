@@ -252,7 +252,7 @@ def points(
     root: str = ROOT_OPT,
     verbose: bool = VERBOSE_OPT,
 ) -> None:
-    """Write the station / bus stop coordinate asset from the tables already on disk.
+    """Write the station / bus stop / school coordinate asset from the tables already on disk.
 
     `jpac build` writes it too. This command exists so a release that predates
     the asset can get it without a rebuild: it reads the built tables from
@@ -264,7 +264,16 @@ def points(
 
     from .build import points as points_build
     from .export import writers
-    from .pipeline import _read_p11_geometry, _read_station_geometry, write_points_asset
+    from .payload import load_payload_manifest
+    from .pipeline import (
+        _accepted_payloads,
+        _read_p11_geometry,
+        _read_p29_geometry,
+        _read_station_geometry,
+        write_points_asset,
+    )
+    from .snapshot import make_snapshot_id
+    from .sources.mlit_ksj_p29 import MlitKsjP29Source
 
     p = _paths(root)
 
@@ -277,7 +286,9 @@ def points(
         return ids[0] if len(ids) == 1 else None
 
     tables = {
-        n: t for n in ("n02_station", "bridge_station_municipality", "p11_bus_stop")
+        n: t for n in (
+            "n02_station", "bridge_station_municipality", "p11_bus_stop", "mext_school",
+        )
         if (t := table(n)) is not None
     }
     found: dict[str, pl.DataFrame] = {}
@@ -293,12 +304,23 @@ def points(
             found["bus_stop_point"] = points_build.build_bus_stop_points(
                 bs, _read_p11_geometry(p), snapshot(bs),
             )
+        # P29 の属性は本体に入らないので、dist/parquet ではなく data/raw から読む。
+        p29_dir = p.raw / "mlit_ksj_p29"
+        if p29_dir.exists():
+            fetched = _accepted_payloads(p29_dir, "mlit_ksj_p29", load_payload_manifest(p29_dir))
+            if fetched:
+                p29 = MlitKsjP29Source({}).parse(fetched)["p29_school"]
+                (key, fr), = fetched.items()
+                found["school_point"] = points_build.build_school_points(
+                    p29, _read_p29_geometry(p),
+                    make_snapshot_id(f"mlit_ksj_p29_{key}", fr.sha256),
+                )
     except JpacError as exc:
         _fail(exc)
     if not found:
         _abort(
-            "points: no N02 / P11 tables or payloads to read",
-            "run `jpac build` with the N02 and P11 payloads in data/raw",
+            "points: no N02 / P11 / P29 tables or payloads to read",
+            "run `jpac build` with the N02, P11 and P29 payloads in data/raw",
         )
     out, problems = write_points_asset(p, found, tables)
     if problems:

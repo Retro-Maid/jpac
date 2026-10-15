@@ -226,6 +226,44 @@ them. Terms were read verbatim and reviewed by a person — N02 and e-Stat on 20
 「令和7年国勢調査 人口等基本集計」（総務省統計局、政府統計の総合窓口（e-Stat）、https://www.e-stat.go.jp/）を加工して作成
 ```
 
+### 文部科学省 — 学校コード（令和7年5月1日時点・確定版）
+
+- **Terms:** 文部科学省ウェブサイト利用規約 (公共データ利用規約 第1.0版 準拠, stated to be
+  compatible with CC BY 4.0). <https://www.mext.go.jp/b_menu/1351168.htm> The 学校コード
+  page carries no terms of its own, and the list is not among the exceptions in the
+  terms' 別紙. Approved by the maintainer on 2026-10-15
+  ([`docs/LICENSE_REVIEW_SCHOOL_2026_10.md`](docs/LICENSE_REVIEW_SCHOOL_2026_10.md)).
+- `required: false`. The three CSV files of the list. What is shipped is the list's
+  values split into code and name (`mext_school`, `mext_school_succession`) and each
+  school's 町字 or 市区町村 found by matching its address text (`bridge_school_address`)
+  — processed data under the terms above. The list has no coordinates; the school
+  points come from 国土数値情報 P29, below.
+- The publisher notes that names, addresses and postal codes are checked with the
+  prefectures and may contain changes or errors.
+
+```
+「文部科学省 学校コード」（文部科学省、https://www.mext.go.jp/b_menu/toukei/mext_01087.html）を加工して作成
+```
+
+### 国土交通省 — 国土数値情報 学校データ（P29）2023年度版
+
+- **Terms:** 国土数値情報ダウンロードサイト 利用規約 — PDL 1.0 — the same page as N02 and P11.
+  The 2023 edition's licence is 「オープンデータ（CC_BY_4.0）」, not one of the exceptions
+  in §1.3 of those terms. <https://nlftp.mlit.go.jp/ksj/other/agreement.html>
+- **原典資料 include 地理院地図（標準地図） with 「測量法に基づく国土地理院長承認（使用）
+  R 3JHs 917」.** This layer was refused on that ground on 2026-09-28; on 2026-10-15 the
+  maintainer, told this, chose to adopt it for school points only
+  ([`docs/LICENSE_REVIEW_SCHOOL_2026_10.md`](docs/LICENSE_REVIEW_SCHOOL_2026_10.md) §6,
+  `docs/POLICY.md` §3.5).
+- `required: false`. Only P29's points are shipped, as `school_point` in the coordinate
+  asset `jp_address_crosswalk_points.zip`, per (学校コード, キャンパスコード) and as published.
+  No P29 attribute enters the core artifacts. Do not describe a point as more than P29's
+  position for the school.
+
+```
+「国土数値情報（学校データ）」（国土交通省）https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P29-2023.html をもとに jp-address-crosswalk 作成
+```
+
 ### Background map of the static map — OpenStreetMap
 
 The map in `site/` displays © OpenStreetMap contributors raster tiles as a background

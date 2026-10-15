@@ -22,7 +22,7 @@
 [概要](#概要) ・ [入手](#入手) ・ [クイックスタート](#クイックスタート) ・
 [データの考え方](#データの考え方) ・ [フラット表の列](#フラット表の列) ・
 [テーブル一覧](#テーブル一覧) ・ [鉄道とバス](#鉄道とバス) ・ [人口](#人口) ・
-[廃置分合](#市区町村の廃置分合) ・ [例](#例) ・ [クエリ例](#クエリ例) ・
+[廃置分合](#市区町村の廃置分合) ・ [学校](#学校) ・ [例](#例) ・ [クエリ例](#クエリ例) ・
 [ER 図とスキーマ](#er-図とスキーマ) ・ [address_id](#address_id) ・ [元データ](#元データ) ・
 [ライセンス](#ライセンス) ・ [静的マップ](#静的マップ) ・ [ビルドと検証](#ビルドと検証) ・
 [ドキュメント](#ドキュメント)
@@ -650,6 +650,57 @@ WHERE  old_lg_code = '221317';
 
 ---
 
+## 学校
+
+> **次のリリースで追加します。** `v2.2.0` には入っていません。数値は令和7年5月1日時点（確定版）の
+> 一覧を `v2.2.0` と同じ住所データに照合した実測です。
+
+文部科学省の「学校コード」一覧（幼稚園・認定こども園から大学・専修学校まで、廃止した学校を
+含む 59,738校）を、**所在地の文字列で町字（`address_id`）に結びます**。駅やバス停と違い、町字
+まで届きます。学校の**座標**は、国土数値情報の学校データ（P29 2023年度版）の点を、座標アセット
+（`jp_address_crosswalk_points.zip`）の `school_point` として別に配ります。
+
+| テーブル | 行数 | 中身 |
+|---|---:|---|
+| `mext_school` | 59,738 | 学校1校1行。学校種・設置区分・本分校をコードと名前に分けて持つ |
+| `mext_school_succession` | 1,797 | 廃止した学校 → 移行後の学校（統合・分離で1校が複数に移ることがある） |
+| `bridge_school_address` | 59,952 | 学校 → 町字・市区町村。根拠の列つき |
+| `school_point`（座標アセット） | 56,807 | 学校 × キャンパスの点（P29 の公表値）。学校コードで `mext_school` に結ぶ |
+
+今ある学校 55,862校のうち、町字が1つに決まったのは **94.85%** です。
+
+| 結果 | 学校数 | 割合 |
+|---|---:|---:|
+| 町字が1つに決まった（`located_in`） | 52,985 | 94.85% |
+| 同じ名前の町字が複数（`ambiguous`、候補ごとに1行） | 192 | 0.34% |
+| 市区町村まで（`municipality_only`） | 2,663 | 4.77% |
+| 市区町村も決まらない（`unresolved`） | 22 | 0.04% |
+
+- **町字名の直後が番地のときだけ結びます。** 「小野田２２番地」を、名前の短い別の町字「小野」に
+  結ばないためです。表記の揺れ（ヶ／ケ、「字」の省略、京都の通り名）は推測せず、市区町村どまり
+  にします。
+- **郵便番号は照合に使わず、裏づけに使います。** 学校の郵便番号がその町字の郵便番号と合えば
+  `verification_status = 'auto'` です。合わない学校の多くは大学などの事業所個別番号です。
+- **点は P29 の公表値で、町字の決め方とは独立です。** 今ある学校の 98.1%（54,776校）に点が
+  あります。無いのは P29 の時点（2023年）より後にできた学校が中心です（認定こども園 729校など）。
+  キャンパスが複数ある学校は点も複数です（`campus_code`）。
+- P29 の詳細ページは原典資料に地理院地図と「測量法に基づく国土地理院長承認（使用）」を挙げて
+  います。いったん見送ったレイヤで、2026-10-15 に座標のためだけに採用しました
+  （[`docs/POLICY.md`](docs/POLICY.md) §3.5）。
+
+```sql
+-- 町字ごとの、今ある小学校
+SELECT a.full_name_raw, s.school_name_raw, b.postal_check
+FROM   bridge_school_address b
+JOIN   mext_school s ON s.school_code = b.school_code
+JOIN   address a     ON a.address_id = b.address_id
+WHERE  b.lg_code = '131041' AND s.school_type_code = 'B1' AND s.is_active = 1;
+```
+
+列の定義: [`docs/DATA_REFERENCE.md`](docs/DATA_REFERENCE.md) 7.9。
+
+---
+
 ## 例
 
 以下はすべて実際のビルド結果です。
@@ -726,10 +777,10 @@ sqlite3 jp_address_crosswalk.sqlite < docs/queries/01_postal_to_address.sql
 
 ![全44テーブルを領域ごとにまとめた ER 図の概観](docs/diagrams/er/00-overview.svg)
 
-全44テーブルと座標アセットの2表を領域ごとにまとめた概観です。矢印は参照する側 → 参照される側で、実線は宣言
+全47テーブル（学校の3表は次のリリースで追加）と座標アセットの3表を領域ごとにまとめた概観です。矢印は参照する側 → 参照される側で、実線は宣言
 された `FOREIGN KEY`、破線は宣言していない論理的な結合（実体と `*_version`、人口の `lg_code`
 など）です。全列を載せた版は **[`docs/diagrams/er/jpac-er.pdf`](docs/diagrams/er/jpac-er.pdf)**
-（8ページ、しおりつき。拡大して読む用。8ページ目が座標アセット）。どちらも
+（9ページ、しおりつき。拡大して読む用。8ページ目が座標アセット、9ページ目が学校）。どちらも
 [`docs/schema.sql`](docs/schema.sql) と座標アセットの定義（`build/points.py`）から
 `py -3.12 tools/build_er.py` で生成し、`jpac verify er` で同期を確かめています。
 
@@ -850,6 +901,8 @@ id     = "jpa1" + digest を base32 で 16 文字に
 | 総務省統計局 | 令和2年国勢調査 小地域（町丁・字等別）境界データ | V2・任意：駅と地図の市区町村判定 | 国勢調査ごと（5年） |
 | 総務省統計局 | 令和7年国勢調査 人口等基本集計（第1-1表・第2-7表） | 任意：人口 | 国勢調査ごと（5年） |
 | 総務省統計局 | 廃置分合等情報（e-Stat） | 任意：市区町村コードの旧→新 | 廃置分合の都度 |
+| 文部科学省 | 学校コード（令和7年5月1日時点・確定版） | 任意：学校（次のリリースで追加） | 年1回（5月1日時点） |
+| 国土交通省 | 国土数値情報 学校データ（P29）2023年度版 | 任意：学校の点（座標アセット。次のリリースで追加） | 不定期 |
 
 「任意」の元データは、`data/raw/` にあるときだけ対応するテーブルが出力されます。日本郵便の
 月次差分ファイル（追加・廃止）は受け入れて来歴に記録していますが、テーブルには取り込んで
@@ -971,7 +1024,7 @@ jpac verify          # 出来上がったデータを元データと突き合わ
 | [`docs/MESH_MUNICIPALITY_LOOKUP.md`](docs/MESH_MUNICIPALITY_LOOKUP.md) | 静的マップの要件・データ形式・検証・軽量化 |
 | [`docs/POPULATION_PREFLIGHT.md`](docs/POPULATION_PREFLIGHT.md) | 人口（国勢調査 令和7年）の設計と実測 |
 | [`docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md`](docs/MUNICIPALITY_LINEAGE_PREFLIGHT.md) | 市区町村の廃置分合を公式データで裏づける設計と実測 |
-| [`docs/FACILITY_PREFLIGHT.md`](docs/FACILITY_PREFLIGHT.md) | 学校・役場等を市区町村に結ぶための下調べ（未実装） |
+| [`docs/FACILITY_PREFLIGHT.md`](docs/FACILITY_PREFLIGHT.md) | 学校・役場等を国土数値情報（P29・P05）で市区町村に結ぶための下調べ（中止。学校は文部科学省 学校コードで入れる） |
 | [`docs/N03_BOUNDARY_DESIGN.md`](docs/N03_BOUNDARY_DESIGN.md) | 国土数値情報 N03（行政区域）の設計と、配布を見送っている理由 |
 | [`docs/GEO_EXPANSION_RESEARCH.md`](docs/GEO_EXPANSION_RESEARCH.md) | 地理情報の拡張候補の調査 |
 | [`docs/LICENSE_REVIEW_2026_09.md`](docs/LICENSE_REVIEW_2026_09.md) | V2 の元データの規約を逐語で読んだ記録 |
@@ -979,6 +1032,7 @@ jpac verify          # 出来上がったデータを元データと突き合わ
 | [`docs/LICENSE_REVIEW_LINEAGE_2026_09.md`](docs/LICENSE_REVIEW_LINEAGE_2026_09.md) | 廃置分合の規約の審査（e-Stat は 2026-09-27 署名。団体コード表は未署名） |
 | [`docs/LICENSE_REVIEW_POPULATION_2026_10.md`](docs/LICENSE_REVIEW_POPULATION_2026_10.md) | 人口の規約の審査（2026-10-12 署名） |
 | [`docs/LICENSE_REVIEW_FACILITY_2026_09.md`](docs/LICENSE_REVIEW_FACILITY_2026_09.md) | 学校・役場等の規約の審査（未署名） |
+| [`docs/LICENSE_REVIEW_SCHOOL_2026_10.md`](docs/LICENSE_REVIEW_SCHOOL_2026_10.md) | 文部科学省 学校コードの規約の審査（2026-10-15 承認） |
 
 ### 変更履歴の要点
 

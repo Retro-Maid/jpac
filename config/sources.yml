@@ -918,6 +918,170 @@ sources:
       - name: "DB（API）形式"
         reason: "e-Stat 利用規約の別紙「API 機能の利用について」で別ルール。"
 
+  mext_school_code:
+    provider: "文部科学省"
+    provider_en: "Ministry of Education, Culture, Sports, Science and Technology"
+    required: false
+    landing_page: "https://www.mext.go.jp/b_menu/toukei/mext_01087.html"
+    discovery:
+      method: file_download
+      # 年に1回（5月1日時点）の一覧。暫定版のあとに確定版が出る。確定版に固定する。
+      # 取得元と実測は docs/LICENSE_REVIEW_SCHOOL_2026_10.md §4。ファイル名に公開日が入る
+      # ので、次の版は URL ごと変わる。
+      edition: "令和7年5月1日時点（確定版）"
+      reference_date: "2025-12-26"
+      resources:
+        east:
+          dataset_name: mext_school_code_east
+          url: "https://www.mext.go.jp/content/20251226-mxt_chousa01-000011635_2.csv"
+          title: "学校コード一覧（北海道〜三重県。大学・短期大学・高等専門学校を除く）"
+          observed_sha256: "0d65288d2ec0afcde7858c21a40735c28467fee930612972cada159cf3dfd3b3"
+          observed_bytes: 4394598
+        west:
+          dataset_name: mext_school_code_west
+          url: "https://www.mext.go.jp/content/20251226-mxt_chousa01-000011635_4.csv"
+          title: "学校コード一覧（滋賀県〜沖縄県。同上）"
+          observed_sha256: "f896bab52dff9d843126d4fa7e24bdfe4305bdd9c5108653759e8900a802a057"
+          observed_bytes: 3149443
+        university:
+          dataset_name: mext_school_code_university
+          url: "https://www.mext.go.jp/content/20251226-mxt_chousa01-000011635_6.csv"
+          title: "学校コード一覧（大学・短期大学・高等専門学校）"
+          observed_sha256: "a5ed3655bd132d92bf3d124777802fc0eb562a80977bec7fd1560729431f0e41"
+          observed_bytes: 144400
+    license:
+      name: "文部科学省ウェブサイト利用規約（公共データ利用規約 第1.0版 準拠 / CC BY 4.0 互換）"
+      url: "https://www.mext.go.jp/b_menu/1351168.htm"
+      reviewed_on: "2026-10-15"
+      reviewed_by: "jp-address-crosswalk"
+      review_2026_10_15: >-
+        2026-10-15、メンテナが作業セッションで承認した（docs/LICENSE_REVIEW_SCHOOL_2026_10.md
+        §1）。学校コードの掲載ページには規約の文面が無く、サイト全体の利用規約が適用される。
+        同規約は複製・公衆送信・翻案・商用利用を認め、CC BY 4.0 と互換である旨を明記している。
+        別紙（別のルールを適用するコンテンツ）に学校コードは含まれない。国土地理院の承認・
+        座標・第三者の原典の記載は無い（P29 を採らなかった理由はどれも当てはまらない）。
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。編集・加工した場合は出典とは別に加工した旨を記載し、あたかも国（又は
+          府省等）が作成したかのような態様で公表・利用しない。
+      attribution:
+        unmodified: |
+          出典：「文部科学省 学校コード」（文部科学省、https://www.mext.go.jp/b_menu/toukei/mext_01087.html）
+        processed: |
+          「文部科学省 学校コード」（文部科学省、https://www.mext.go.jp/b_menu/toukei/mext_01087.html）を加工して作成
+      artifacts:
+        - role: primary_terms
+          name: "文部科学省ウェブサイト利用規約"
+          url: "https://www.mext.go.jp/b_menu/1351168.htm"
+          text_sha256: "89a28f8ecbef358f0218ff7c550f5aa33e7847b79717f962ac3b044f3a8d2011"
+          text_sha256_decoded: "89a28f8ecbef358f0218ff7c550f5aa33e7847b79717f962ac3b044f3a8d2011"
+          note: >-
+            2026-10-15 に snapshot.license_text_hash_bytes() で計算した（最終改正 令和8年8月17日の
+            版）。応答ヘッダは charset を宣言しないが、文書が UTF-8 を宣言しており、正しく
+            復号した本文のハッシュなので2つの値は同じ。
+        - role: dataset_page
+          name: "文部科学省 学校コード（掲載ページ）"
+          url: "https://www.mext.go.jp/b_menu/toukei/mext_01087.html"
+          text_sha256: null
+          note: >-
+            ゲートにしない記録。ページは版ごとに書き換わる。規約の文面は無く、「学校の名称、
+            住所、郵便番号については、都道府県等に確認しつつ記載しておりますが、変更や誤り等が
+            ある可能性があり、随時更新します。」と注記している。
+    datasets:
+      school:
+        title: "学校コード一覧（令和7年5月1日時点・確定版）"
+        encoding: cp932
+        rows_observed: 59738
+        note: >-
+          座標は無い。所在地の文字列を町字に照合する（build/school.py）。廃止した学校も
+          一覧に残っており、移行後の学校コードを持つ。
+    excluded_datasets:
+      - name: "令和8年5月1日時点（暫定版）"
+        reason: "暫定版で、今後差し替わる。確定版が出てから取り込む。"
+      - name: "Excel 版"
+        reason: "CSV と同じ内容。CSV を使う。"
+
+  mlit_ksj_p29:
+    provider: "国土交通省 国土政策局 国土情報課"
+    provider_en: "MLIT"
+    required: false
+    landing_page: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P29-2023.html"
+    discovery:
+      method: static_url
+      observed_url: "https://nlftp.mlit.go.jp/ksj/gml/data/P29/P29-23/P29-23_GML.zip"
+      observed_sha256: "74387e04bdf0b3cc6b0b5a978ce3f1295e5ee3b66114f87f61b4a9d999502ac4"
+      observed_bytes: 5443235
+      edition: "2023"
+      version_source: >-
+        詳細ページの版（データ基準年度 2023年度・令和5年度、2024年6月更新）。利用許諾条件は
+        版ごとに異なり、2013年度版は「非商用」（year_note）。
+    license:
+      name: "公共データ利用規約（第1.0版） (PDL 1.0)"
+      url: "https://nlftp.mlit.go.jp/ksj/other/agreement.html"
+      reviewed_on: "2026-10-15"
+      reviewed_by: "jp-address-crosswalk"
+      review_2026_10_15: >-
+        2026-10-15、メンテナが作業セッションで採用を選んだ（docs/LICENSE_REVIEW_SCHOOL_2026_10.md
+        §6）。詳細ページの原典資料に地理院地図（標準地図）と「測量法に基づく国土地理院長承認
+        （使用）R 3JHs 917」があり、2026-09-28 にはこれを理由に中止していた。その記載を伝えた
+        うえでの選択である。利用許諾条件は 2023年度版が「オープンデータ（CC_BY_4.0）」で、
+        規約 §1.3 の適用除外（「一部制限」「商用可」「非商用」「記載なし」）に当たらず、
+        PDL 1.0 が適用される。規約 §1.2 が国土地理院の承認を求めているのは国土調査の成果で、
+        P29 は挙がっていない。点だけを別アセットで配り、本体には入れない（POLICY.md §3.5）。
+      year_scoped: true
+      year_note: >-
+        2023年度・2021年度版は「オープンデータ（CC_BY_4.0）」、2013年度版は「非商用」。
+        取得は2023年度版の全国ファイルに限る。
+      redistribution:
+        unmodified: permitted
+        modified: permitted
+        conditions: >-
+          出典表示。加工物には利用したコンテンツの名称及び加工した旨を併記し、あたかも国が
+          作成したかのような態様で公表・利用しない。
+      attribution:
+        unmodified: |
+          出典：国土交通省国土数値情報ダウンロードサイト
+                https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P29-2023.html
+        processed: |
+          「国土数値情報（学校データ）」（国土交通省）
+                https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P29-2023.html をもとに jp-address-crosswalk 作成
+      artifacts:
+        - role: primary_terms
+          name: "国土数値情報ダウンロードサイト 利用規約 (2026-03-23 施行)"
+          url: "https://nlftp.mlit.go.jp/ksj/other/agreement.html"
+          text_sha256: "4c44671c4183abdad0fa8f117b98fd7594fc0990048e4d410917076284837e3a"
+          text_sha256_decoded: "4c44671c4183abdad0fa8f117b98fd7594fc0990048e4d410917076284837e3a"
+          note: >-
+            mlit・mlit_ksj_n02・mlit_ksj_p11 と同じページ・同じハッシュ。2026-10-15 に実ページから
+            snapshot.license_text_hash_bytes() で再計算し、一致を確かめた。
+        - role: detail_page
+          name: "国土数値情報 学校データ 2023年度版 詳細ページ（利用許諾条件と原典資料の出所）"
+          url: "https://nlftp.mlit.go.jp/ksj/gml/datalist/KsjTmplt-P29-2023.html"
+          text_sha256: "e6dda47382bb34da7e78ad3aec25f182e49c9e93dbd638579599d59ebfeb5fd9"
+          text_sha256_decoded: "e6dda47382bb34da7e78ad3aec25f182e49c9e93dbd638579599d59ebfeb5fd9"
+          note: >-
+            版ごとの利用許諾条件と、原典資料（地理院地図と承認番号 R 3JHs 917）はこのページにある。
+            2026-10-15 に取得し（206,371 bytes、UTF-8、BOM あり）、snapshot.license_text_hash_bytes()
+            で計算した。
+    datasets:
+      p29_school:
+        title: "学校 (2023年度版)"
+        member: "P29-23_GML/P29-23.shp / .dbf"
+        encoding: utf-8
+        datum: "JGD2011"
+        geometry: point
+        features: 56807
+        note: >-
+          学校コード（P29_002）とキャンパスコード（P29_008）で一意。点は座標アセットの
+          school_point にだけ入り、属性は本体に入れない（学校の一覧は mext_school_code）。
+    excluded_datasets:
+      - name: "2013年度版 (P29-13)"
+        reason: "利用許諾条件が「非商用」。再配布できない。"
+      - name: "2021年度版 (P29-21)"
+        reason: "2023年度版で置き換わっている。版を混在させない。"
+
 http:
   timeout_connect_s: 15
   timeout_read_s: 120

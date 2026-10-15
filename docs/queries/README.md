@@ -44,6 +44,13 @@ sqlite3 jp_address_crosswalk.sqlite < docs/queries/01_postal_to_address.sql
 | [`24_area_code_population.sql`](24_area_code_population.sql) | 市外局番の番号区画ごとの人口と、値が無い理由（`value_status`） |
 | [`25_source_editions.sql`](25_source_editions.sql) | このリリースが読んだ元データの一覧（発行元・版・取得日・規約） |
 
+### 学校
+
+| ファイル | 引けるもの |
+|---|---|
+| [`26_schools_by_postal_code.sql`](26_schools_by_postal_code.sql) | 郵便番号 → 町字 → その町字にある学校。郵便番号が合うかも並べる |
+| [`27_schools_in_municipality.sql`](27_schools_in_municipality.sql) | 市区町村の学校を学校種ごとに数える。町字まで決まった数と、市区町村どまりの数 |
+
 ## 読むときの注意
 
 これらのクエリは**曖昧性を隠すための `LIMIT 1` を使いません**。1つの郵便番号が8つの町字を

@@ -49,6 +49,9 @@ from .build import (
     railroad as railroad_build,
 )
 from .build import (
+    school as school_build,
+)
+from .build import (
     station as station_build,
 )
 from .build.common import BuildContext, assert_bridge_invariants
@@ -84,12 +87,14 @@ from .snapshot import (
     utcnow,
 )
 from .sources import mlit_ksj_p11 as p11_source
+from .sources import mlit_ksj_p29 as p29_source
 from .sources.abr import AbrSource
 from .sources.base import DiscoveredResource, Discovery
 from .sources.estat import EstatBoundarySource
 from .sources.estat_census import EstatCensusSource
 from .sources.estat_municipality_change import EstatMunicipalityChangeSource
 from .sources.japanpost import JapanPostSource
+from .sources.mext_school_code import MextSchoolCodeSource
 from .sources.mic_area_code import MicAreaCodeSource
 from .sources.mic_number_assignment import MicNumberAssignmentSource
 from .sources.mlit import MlitSource
@@ -111,6 +116,10 @@ SOURCE_CLASSES = {
     "estat_municipality_change": EstatMunicipalityChangeSource,
     # 人口（国勢調査 令和7年）。required: false で、無ければ整合の検査が skip になるだけ。
     "estat_census_2025": EstatCensusSource,
+    # 学校（文部科学省 学校コード）。required: false で、無ければ一覧の検査が skip になるだけ。
+    "mext_school_code": MextSchoolCodeSource,
+    # 学校の点（国土数値情報 P29 2023年度版）。座標アセットにだけ入る（POLICY.md §3.5）。
+    "mlit_ksj_p29": p29_source.MlitKsjP29Source,
 }
 
 
@@ -584,6 +593,19 @@ def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str,
         )
     )
 
+    # --- 学校 (docs/POLICY.md §3.5)
+    # Optional like the V2 sources: without the payload nothing is added and the
+    # list's consistency gate is reported as not run.
+    tables.update(_build_school_tables(outcome, tables, snapshot_for))
+    # 学校の点は座標アセットにだけ入る（"_" で始まる名前。POLICY.md §3.4・§3.5）。
+    p29 = outcome.parsed.get("mlit_ksj_p29", {}).get("p29_school")
+    if p29 is not None:
+        with stage_context("school", "geometry"):
+            school_geometry = _read_p29_geometry(paths)
+        tables["_school_point"] = points_build.build_school_points(
+            p29, school_geometry, snapshot_for("mlit_ksj_p29")
+        )
+
     # --- Provenance
     tables["source_snapshot"] = pl.DataFrame(
         [s.as_dict() for s in [*snapshots, *aggregate_snapshots]]
@@ -854,9 +876,11 @@ def _source_of(dataset_name: str) -> str:
     """
     for prefix, source in [
         ("mlit_ksj_n02_", "mlit_ksj_n02"), ("mlit_ksj_p11_", "mlit_ksj_p11"),
+        ("mlit_ksj_p29_", "mlit_ksj_p29"),
         ("estat_boundary_", "estat_boundary"),
         ("estat_municipality_change_", "estat_municipality_change"),
         ("estat_census_2025_", "estat_census_2025"),
+        ("mext_school_code_", "mext_school_code"),
         ("abr_", "abr"), ("japanpost_", "japanpost"), ("mlit_", "mlit"),
         ("mic_shigai", "mic_area_code"), ("mic_fixed", "mic_number_assignment"),
     ]:
@@ -1017,6 +1041,15 @@ def _build_station_tables(
             stops_raw, stop_points, snapshot_for("mlit_ksj_p11")
         )
     return out
+
+
+def _read_p29_geometry(paths: Paths) -> list[tuple[float, float] | None]:
+    """P29 の点。DBF と同じ順（添字で属性と対にする）。測地系は JGD2011 を確かめてある。"""
+    src_dir = paths.raw / "mlit_ksj_p29"
+    files = sorted(p for p in src_dir.glob("*.zip"))
+    if len(files) != 1:
+        raise ValidationFailed("P29 のペイロードは1ファイルのはず", found=[f.name for f in files])
+    return p29_source.read_points(files[0])
 
 
 def write_points_asset(
@@ -1297,6 +1330,47 @@ def _build_census_tables(
     }
 
 
+def _build_school_tables(
+    outcome: FetchOutcome, tables: dict[str, pl.DataFrame], snapshot_for
+) -> dict[str, pl.DataFrame]:
+    """学校の3表と、一覧の整合の検査結果（``_school_gate``、非公開）.
+
+    ペイロードが無ければ何も返さず、品質ゲートは検査を ``skip`` として記録する。
+    町字の郵便番号は、フラット表と同じく ``bridge_address_postal_code`` から引く。
+    """
+    parsed = outcome.parsed.get("mext_school_code")
+    if not parsed:
+        return {}
+    schools, succession = parsed["mext_school"], parsed["mext_school_succession"]
+    # 行ごとに、その行が載っていたファイルの snapshot を引く。
+    snaps = {
+        key: snapshot_for(f"mext_school_code_{key}")
+        for key in schools["_resource"].unique().to_list()
+    }
+    snap_of = schools.select(
+        "school_code",
+        pl.col("_resource").replace_strict(snaps).alias("source_snapshot_id"),
+    )
+    schools = schools.drop("_resource").join(snap_of, on="school_code", how="left")
+    postal = tables.get("bridge_address_postal_code")
+    if postal is not None:
+        postal = postal.filter(
+            pl.col("is_current") & (pl.col("verification_status") != "manually_rejected")
+        )
+    bridge = school_build.build_school_bridge(
+        schools, tables["address"], tables["municipality_version"], postal
+    ).join(snap_of, on="school_code", how="left")
+    problems = school_build.consistency_problems(schools, succession)
+    return {
+        "mext_school": schools,
+        "mext_school_succession": succession.join(snap_of, on="school_code", how="left"),
+        "bridge_school_address": bridge,
+        "_school_gate": pl.DataFrame(
+            [{"problem": p} for p in problems], schema={"problem": pl.Utf8}
+        ),
+    }
+
+
 def _load_municipality_lineage(paths: Paths) -> dict[str, str]:
     path = paths.overrides / "municipality_lineage.yml"
     if not path.exists():
@@ -1565,6 +1639,22 @@ def export(
             "limit": 0,
             "problems": census_gate["problem"].to_list(),
             "status": "pass" if census_gate.height == 0 else "fail",
+        }
+    )
+    school_gate = tables.get("_school_gate")
+    report.thresholds.append(
+        {
+            "check": "school_list_consistent",
+            "reason": "文部科学省 学校コードのペイロードが無いため未検査",
+            "status": "skip",
+        }
+        if school_gate is None
+        else {
+            "check": "school_list_consistent",
+            "observed": school_gate.height,
+            "limit": 0,
+            "problems": school_gate["problem"].to_list(),
+            "status": "pass" if school_gate.height == 0 else "fail",
         }
     )
     report.thresholds.append(

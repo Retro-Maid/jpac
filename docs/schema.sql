@@ -3,9 +3,9 @@
 -- このファイルは手書きではありません。出荷済みの成果物からそのまま抽出し、
 -- 読みやすいように改行だけを入れたものです。定義そのものは一切変えていません。
 --
---   抽出元ビルド: v2.2.0+data-2026-10-12。tools/verify_artifacts_agree.py の 3c で、
+--   抽出元ビルド: 2.2.0+data-2026-10-15。学校を加えた開発ビルド（リリース前）。tools/verify_artifacts_agree.py の 3c で、
 --     このビルドの出荷物と全オブジェクトが一致することを確かめた。
---   内訳: テーブル 44 / ビュー 3 / 索引 33（PRIMARY KEY の自動索引を除く）
+--   内訳: テーブル 47 / ビュー 3 / 索引 36（PRIMARY KEY の自動索引を除く）
 --
 --   v2.0.x にあった `*_v1` の互換ビュー6本は、予告どおり v2.1.0 で落としました
 --   （docs/BRIDGE_ENDPOINT_MIGRATION.md A7）。
@@ -581,6 +581,36 @@ CREATE TABLE "bridge_municipality_telephone" (
   FOREIGN KEY ("match_run_id") REFERENCES "match_run"("match_run_id")
 );
 
+CREATE TABLE "bridge_school_address" (
+  "school_code" TEXT,
+  "address_id" TEXT,
+  "lg_code" TEXT,
+  "relation_type" TEXT,
+  "match_method" TEXT,
+  "matched_town_name" TEXT,
+  "confidence" REAL,
+  "candidate_count" INTEGER,
+  "is_unique_match" INTEGER,
+  "postal_check" TEXT,
+  "verification_status" TEXT,
+  "mismatch_note" TEXT,
+  "source_snapshot_id" TEXT,
+  CHECK (confidence >= 0.0 AND confidence <= 1.0),
+  CHECK (candidate_count >= 0),
+  CHECK (NOT (is_unique_match = 1 AND candidate_count > 1)),
+  CHECK (relation_type IN ('located_in','ambiguous','municipality_only','unresolved')),
+  CHECK (match_method IN ('address_text_prefix','municipality_text_prefix','unresolved')),
+  CHECK (postal_check IS NULL OR postal_check IN ('agrees','differs','town_has_no_postal_code')),
+  CHECK (verification_status IN ('auto', 'review_required', 'manually_verified', 'manually_rejected')),
+  CHECK ((relation_type IN ('located_in','ambiguous')) = (address_id IS NOT NULL)),
+  CHECK (relation_type <> 'municipality_only' OR lg_code IS NOT NULL),
+  CHECK (relation_type <> 'unresolved' OR (lg_code IS NULL AND confidence = 0.0)),
+  CHECK (verification_status <> 'auto' OR ( relation_type = 'located_in' AND candidate_count = 1 AND is_unique_match = 1 AND postal_check = 'agrees' AND mismatch_note IS NULL)),
+  FOREIGN KEY ("school_code") REFERENCES "mext_school"("school_code"),
+  FOREIGN KEY ("address_id") REFERENCES "address_entity"("address_id"),
+  FOREIGN KEY ("lg_code") REFERENCES "municipality"("lg_code")
+);
+
 CREATE TABLE "bridge_station_line" (
   "n02_group_code" TEXT,
   "station_name_raw" TEXT,
@@ -776,6 +806,41 @@ CREATE TABLE "match_run_input" (
   "source_snapshot_id" TEXT,
   "role" TEXT,
   FOREIGN KEY ("match_run_id") REFERENCES "match_run"("match_run_id")
+);
+
+CREATE TABLE "mext_school" (
+  "school_code" TEXT PRIMARY KEY,
+  "school_type_code" TEXT,
+  "school_type_name" TEXT,
+  "pref_code" TEXT,
+  "founder_code" TEXT,
+  "founder_name" TEXT,
+  "branch_code" TEXT,
+  "branch_name" TEXT,
+  "school_name_raw" TEXT,
+  "address_raw" TEXT,
+  "postal_code_raw" TEXT,
+  "attribute_set_date" TEXT,
+  "attribute_abolished_date" TEXT,
+  "old_survey_number_raw" TEXT,
+  "successor_school_codes_raw" TEXT,
+  "is_active" INTEGER,
+  "check_digit_valid" INTEGER,
+  "source_snapshot_id" TEXT,
+  CHECK (length(school_code) = 13),
+  CHECK (substr(school_code, 1, 2) = school_type_code),
+  CHECK (substr(school_code, 3, 2) = pref_code),
+  CHECK (substr(school_code, 5, 1) = founder_code),
+  CHECK (founder_code IN ('1','2','3')),
+  CHECK (branch_code IN ('1','2','9'))
+);
+
+CREATE TABLE "mext_school_succession" (
+  "school_code" TEXT,
+  "successor_school_code" TEXT,
+  "successor_listed" INTEGER,
+  "source_snapshot_id" TEXT,
+  PRIMARY KEY ("school_code", "successor_school_code")
 );
 
 CREATE TABLE "mlit_town" (
@@ -1213,6 +1278,12 @@ CREATE INDEX idx_bmp_lg ON bridge_municipality_postal(lg_code);
 CREATE INDEX idx_bmpc_lg ON bridge_municipality_postal_code(lg_code);
 
 CREATE INDEX idx_bmt_area ON bridge_municipality_telephone(numbering_area_code);
+
+CREATE INDEX idx_bsa_address ON bridge_school_address(address_id);
+
+CREATE INDEX idx_bsa_lg ON bridge_school_address(lg_code);
+
+CREATE INDEX idx_bsa_school ON bridge_school_address(school_code);
 
 CREATE INDEX idx_bsl_line ON bridge_station_line(line_name_raw, operator_name_raw);
 
