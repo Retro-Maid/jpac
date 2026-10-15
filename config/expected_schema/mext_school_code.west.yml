@@ -1,0 +1,21 @@
+column_count: 12
+columns:
+- 学校コード
+- 学校種
+- 都道府県番号
+- 設置区分
+- 本分校
+- 学校名
+- 学校所在地
+- 郵便番号
+- 属性情報設定年月日
+- 属性情報廃止年月日
+- 旧学校調査番号
+- 移行後の学校コード
+container: csv
+delimiter: ','
+encoding: cp932
+fingerprint: 148c2a7e1b2656eb5ca0d211f18ebf44fe83d3da7d733fac0984f2f06a43dd1a
+has_header: true
+members: []
+sheet_names: []

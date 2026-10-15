@@ -83,6 +83,10 @@ SORT_KEYS: dict[str, list[str]] = {
     ],
     "census_population_age_summary": ["census_year", "region_key", "nationality_raw", "sex_raw"],
     "census_population_numbering_area": ["census_year", "numbering_area_code"],
+    # 学校（文部科学省 学校コード、docs/POLICY.md §3.5）
+    "mext_school": ["school_code"],
+    "mext_school_succession": ["school_code", "successor_school_code"],
+    "bridge_school_address": ["school_code", "address_id"],
 }
 
 # Columns that must never be written as a numeric type (docs/POLICY.md §8).
@@ -395,6 +399,11 @@ V2_INDEXES = {
         " ON bridge_bus_stop_municipality(p11_stop_id)",
         "CREATE INDEX IF NOT EXISTS idx_bbm_lg ON bridge_bus_stop_municipality(lg_code)",
     ],
+    "bridge_school_address": [
+        "CREATE INDEX IF NOT EXISTS idx_bsa_school ON bridge_school_address(school_code)",
+        "CREATE INDEX IF NOT EXISTS idx_bsa_address ON bridge_school_address(address_id)",
+        "CREATE INDEX IF NOT EXISTS idx_bsa_lg ON bridge_school_address(lg_code)",
+    ],
 }
 
 
@@ -502,6 +511,11 @@ PRIMARY_KEYS = {
     ),
     "census_population_age_summary": ("census_year", "region_key", "nationality_raw", "sex_raw"),
     "census_population_numbering_area": ("census_year", "numbering_area_code"),
+    # 文部科学省が振った学校固有のコード。一度振れば変えず、廃止しても他校に流用しない
+    # （「学校コードの取り扱いについて」1.）。
+    "mext_school": "school_code",
+    # 1校が複数の学校に移ることがある（統合・分離）ので、対で一意。
+    "mext_school_succession": ("school_code", "successor_school_code"),
     "address_lineage": "lineage_id", "address_history": "history_id",
     "address_rsdt_variant": "rsdt_variant_id",
     **{b: "bridge_id" for b in [
@@ -622,6 +636,40 @@ CENSUS_NUMBERING_AREA_CHECKS = [
     "CHECK ((value_status = 'complete') = (population_total IS NOT NULL))",
 ]
 
+# 学校（docs/POLICY.md §3.5）。コードの構成要素は列の値と一致する（品質ゲートが確かめる）。
+SCHOOL_CHECKS = [
+    "CHECK (length(school_code) = 13)",
+    "CHECK (substr(school_code, 1, 2) = school_type_code)",
+    "CHECK (substr(school_code, 3, 2) = pref_code)",
+    "CHECK (substr(school_code, 5, 1) = founder_code)",
+    "CHECK (founder_code IN ('1','2','3'))",
+    "CHECK (branch_code IN ('1','2','9'))",
+]
+
+# 学校 → 町字は文字列の照合なので、空間のブリッジと語彙が違う。
+#
+# * 町字に結べたら located_in、同じ名前の町字が複数なら ambiguous（候補ごとに1行）。
+#   どちらも address_id を持ち、それ以外は持たない
+# * 市区町村までしか決まらなければ municipality_only。lg_code だけを持つ
+# * auto は、町字が1つに決まり、学校の郵便番号がその町字の郵便番号と合うときだけ。
+#   文字列の照合を、独立した郵便番号の対応が裏づけている
+SCHOOL_BRIDGE_CHECKS = [
+    "CHECK (confidence >= 0.0 AND confidence <= 1.0)",
+    "CHECK (candidate_count >= 0)",
+    "CHECK (NOT (is_unique_match = 1 AND candidate_count > 1))",
+    "CHECK (relation_type IN ('located_in','ambiguous','municipality_only','unresolved'))",
+    "CHECK (match_method IN ('address_text_prefix','municipality_text_prefix','unresolved'))",
+    "CHECK (postal_check IS NULL OR postal_check IN"
+    " ('agrees','differs','town_has_no_postal_code'))",
+    f"CHECK (verification_status IN ('{_STATUSES}'))",
+    "CHECK ((relation_type IN ('located_in','ambiguous')) = (address_id IS NOT NULL))",
+    "CHECK (relation_type <> 'municipality_only' OR lg_code IS NOT NULL)",
+    "CHECK (relation_type <> 'unresolved' OR (lg_code IS NULL AND confidence = 0.0))",
+    "CHECK (verification_status <> 'auto' OR ("
+    " relation_type = 'located_in' AND candidate_count = 1 AND is_unique_match = 1"
+    " AND postal_check = 'agrees' AND mismatch_note IS NULL))",
+]
+
 BUS_STOP_CHECKS = [
     "CHECK (length(pref_code) = 2)",
     "CHECK (length(stop_name_raw) > 0)",
@@ -686,6 +734,9 @@ _FK_BY_COLUMN = {
     "numbering_area_code": ("telephone_area", "numbering_area_code"),
     "n02_group_code": ("n02_station", "n02_group_code"),
     "p11_stop_id": ("p11_bus_stop", "p11_stop_id"),
+    # successor_school_code は付けない。移行先が一覧に無いことがある（mext_school_succession
+    # の successor_listed）。
+    "school_code": ("mext_school", "school_code"),
 }
 
 # The one composite reference. A 路線 is keyed by the publisher's own
@@ -835,12 +886,16 @@ def _write_table(
         types.extend(LINE_BRIDGE_CHECKS)
     elif name == "bridge_station_line":
         types.extend(STATION_LINE_CHECKS)
+    elif name == "bridge_school_address":
+        types.extend(SCHOOL_BRIDGE_CHECKS)
     elif name in BRIDGE_ENDPOINTS:
         types.extend(bridge_checks(name))
     if name == "n02_railroad_line":
         types.extend(RAILROAD_LINE_CHECKS)
     if name == "p11_bus_stop":
         types.extend(BUS_STOP_CHECKS)
+    if name == "mext_school":
+        types.extend(SCHOOL_CHECKS)
     if name == "estat_small_area":
         types.extend(SMALL_AREA_CHECKS)
     if name == "n02_station":

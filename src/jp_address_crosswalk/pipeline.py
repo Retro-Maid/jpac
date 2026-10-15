@@ -49,6 +49,9 @@ from .build import (
     railroad as railroad_build,
 )
 from .build import (
+    school as school_build,
+)
+from .build import (
     station as station_build,
 )
 from .build.common import BuildContext, assert_bridge_invariants
@@ -90,6 +93,7 @@ from .sources.estat import EstatBoundarySource
 from .sources.estat_census import EstatCensusSource
 from .sources.estat_municipality_change import EstatMunicipalityChangeSource
 from .sources.japanpost import JapanPostSource
+from .sources.mext_school_code import MextSchoolCodeSource
 from .sources.mic_area_code import MicAreaCodeSource
 from .sources.mic_number_assignment import MicNumberAssignmentSource
 from .sources.mlit import MlitSource
@@ -111,6 +115,8 @@ SOURCE_CLASSES = {
     "estat_municipality_change": EstatMunicipalityChangeSource,
     # 人口（国勢調査 令和7年）。required: false で、無ければ整合の検査が skip になるだけ。
     "estat_census_2025": EstatCensusSource,
+    # 学校（文部科学省 学校コード）。required: false で、無ければ一覧の検査が skip になるだけ。
+    "mext_school_code": MextSchoolCodeSource,
 }
 
 
@@ -584,6 +590,11 @@ def build(paths: Paths, outcome: FetchOutcome, strict: bool = True) -> dict[str,
         )
     )
 
+    # --- 学校 (docs/POLICY.md §3.5)
+    # Optional like the V2 sources: without the payload nothing is added and the
+    # list's consistency gate is reported as not run.
+    tables.update(_build_school_tables(outcome, tables, snapshot_for))
+
     # --- Provenance
     tables["source_snapshot"] = pl.DataFrame(
         [s.as_dict() for s in [*snapshots, *aggregate_snapshots]]
@@ -857,6 +868,7 @@ def _source_of(dataset_name: str) -> str:
         ("estat_boundary_", "estat_boundary"),
         ("estat_municipality_change_", "estat_municipality_change"),
         ("estat_census_2025_", "estat_census_2025"),
+        ("mext_school_code_", "mext_school_code"),
         ("abr_", "abr"), ("japanpost_", "japanpost"), ("mlit_", "mlit"),
         ("mic_shigai", "mic_area_code"), ("mic_fixed", "mic_number_assignment"),
     ]:
@@ -1297,6 +1309,47 @@ def _build_census_tables(
     }
 
 
+def _build_school_tables(
+    outcome: FetchOutcome, tables: dict[str, pl.DataFrame], snapshot_for
+) -> dict[str, pl.DataFrame]:
+    """学校の3表と、一覧の整合の検査結果（``_school_gate``、非公開）.
+
+    ペイロードが無ければ何も返さず、品質ゲートは検査を ``skip`` として記録する。
+    町字の郵便番号は、フラット表と同じく ``bridge_address_postal_code`` から引く。
+    """
+    parsed = outcome.parsed.get("mext_school_code")
+    if not parsed:
+        return {}
+    schools, succession = parsed["mext_school"], parsed["mext_school_succession"]
+    # 行ごとに、その行が載っていたファイルの snapshot を引く。
+    snaps = {
+        key: snapshot_for(f"mext_school_code_{key}")
+        for key in schools["_resource"].unique().to_list()
+    }
+    snap_of = schools.select(
+        "school_code",
+        pl.col("_resource").replace_strict(snaps).alias("source_snapshot_id"),
+    )
+    schools = schools.drop("_resource").join(snap_of, on="school_code", how="left")
+    postal = tables.get("bridge_address_postal_code")
+    if postal is not None:
+        postal = postal.filter(
+            pl.col("is_current") & (pl.col("verification_status") != "manually_rejected")
+        )
+    bridge = school_build.build_school_bridge(
+        schools, tables["address"], tables["municipality_version"], postal
+    ).join(snap_of, on="school_code", how="left")
+    problems = school_build.consistency_problems(schools, succession)
+    return {
+        "mext_school": schools,
+        "mext_school_succession": succession.join(snap_of, on="school_code", how="left"),
+        "bridge_school_address": bridge,
+        "_school_gate": pl.DataFrame(
+            [{"problem": p} for p in problems], schema={"problem": pl.Utf8}
+        ),
+    }
+
+
 def _load_municipality_lineage(paths: Paths) -> dict[str, str]:
     path = paths.overrides / "municipality_lineage.yml"
     if not path.exists():
@@ -1565,6 +1618,22 @@ def export(
             "limit": 0,
             "problems": census_gate["problem"].to_list(),
             "status": "pass" if census_gate.height == 0 else "fail",
+        }
+    )
+    school_gate = tables.get("_school_gate")
+    report.thresholds.append(
+        {
+            "check": "school_list_consistent",
+            "reason": "文部科学省 学校コードのペイロードが無いため未検査",
+            "status": "skip",
+        }
+        if school_gate is None
+        else {
+            "check": "school_list_consistent",
+            "observed": school_gate.height,
+            "limit": 0,
+            "problems": school_gate["problem"].to_list(),
+            "status": "pass" if school_gate.height == 0 else "fail",
         }
     )
     report.thresholds.append(

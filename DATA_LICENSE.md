@@ -226,6 +226,25 @@ them. Terms were read verbatim and reviewed by a person — N02 and e-Stat on 20
 「令和7年国勢調査 人口等基本集計」（総務省統計局、政府統計の総合窓口（e-Stat）、https://www.e-stat.go.jp/）を加工して作成
 ```
 
+### 文部科学省 — 学校コード（令和7年5月1日時点・確定版）
+
+- **Terms:** 文部科学省ウェブサイト利用規約 (公共データ利用規約 第1.0版 準拠, stated to be
+  compatible with CC BY 4.0). <https://www.mext.go.jp/b_menu/1351168.htm> The 学校コード
+  page carries no terms of its own, and the list is not among the exceptions in the
+  terms' 別紙. Approved by the maintainer on 2026-10-15
+  ([`docs/LICENSE_REVIEW_SCHOOL_2026_10.md`](docs/LICENSE_REVIEW_SCHOOL_2026_10.md)).
+- `required: false`. The three CSV files of the list. What is shipped is the list's
+  values split into code and name (`mext_school`, `mext_school_succession`) and each
+  school's 町字 or 市区町村 found by matching its address text (`bridge_school_address`)
+  — processed data under the terms above. The list has no coordinates and none are
+  derived; this is not 国土数値情報 P29, which was refused (`docs/POLICY.md` §3.5).
+- The publisher notes that names, addresses and postal codes are checked with the
+  prefectures and may contain changes or errors.
+
+```
+「文部科学省 学校コード」（文部科学省、https://www.mext.go.jp/b_menu/toukei/mext_01087.html）を加工して作成
+```
+
 ### Background map of the static map — OpenStreetMap
 
 The map in `site/` displays © OpenStreetMap contributors raster tiles as a background

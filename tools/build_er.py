@@ -98,10 +98,13 @@ LABELS: dict[str, str] = {
     "census_population_numbering_area": "番号区画の人口",
     "census_population_raw": "人口 原表",
     "estat_small_area": "e-Stat 小地域（形状なし）",
+    "bridge_school_address": "学校 ↔ 町字・市区町村",
     "match_run": "照合の実行",
     "match_run_input": "実行が読んだ元データ",
     "mlit_town": "国交省 大字・町丁目",
     "mlit_town_version": "国交省 大字・町丁目の版（代表点）",
+    "mext_school": "学校（文部科学省 学校コード）",
+    "mext_school_succession": "学校の移行（廃止 → 移行後）",
     "municipality": "市区町村",
     "municipality_change_raw": "廃置分合 原表",
     "municipality_lineage_edge": "廃置分合 旧→新",
@@ -158,6 +161,9 @@ PAGES: list[tuple[str, str, list[str]]] = [
     ]),
     ("07-points", f"座標（別アセット {POINTS_ZIP_NAME}。SQLite には無い）", [
         "station_point", "bus_stop_point",
+    ]),
+    ("08-school", "学校（文部科学省 学校コード）", [
+        "mext_school", "mext_school_succession", "bridge_school_address",
     ]),
 ]
 
@@ -221,11 +227,20 @@ LOGICAL: list[Edge] = [
          ("source_snapshot_id",), "||..o{", "source_snapshot_id"),
     Edge("source_snapshot", ("source_snapshot_id",), "bus_stop_point",
          ("source_snapshot_id",), "||..o{", "source_snapshot_id"),
+    # Schools. The succession table's key is the pair, so neither side is declared:
+    # a column inside a composite key gets no FK (export/writers.py), and the
+    # successor may be missing from the list (successor_listed = 0).
+    Edge("mext_school", ("school_code",), "mext_school_succession", ("school_code",),
+         "||..o{", "school_code（廃止した学校）"),
+    Edge("mext_school", ("school_code",), "mext_school_succession",
+         ("successor_school_code",), "|o..o{", "successor_school_code（一覧に無いことがある）"),
 ]
 
 
 # Bridge columns that are never NULL, so the parent side is exactly one.
-ALWAYS_SET = {"p11_stop_id", "n02_group_code", "line_name_raw", "match_run_id"}
+ALWAYS_SET = {
+    "p11_stop_id", "n02_group_code", "line_name_raw", "match_run_id", "school_code",
+}
 
 
 @dataclass

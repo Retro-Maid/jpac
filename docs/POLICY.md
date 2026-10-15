@@ -306,6 +306,47 @@ zip — and this section lifts them for one separate asset only.
   produces no asset (and removes a stale one), and the `points_match_sources`
   gate is `skip`.
 
+## 3.5 School extension (文部科学省 学校コード, added 2026-10-15)
+
+§3 lists `schools` as out of scope for V1 and names the allowed origins; both are
+**left exactly as written**, for the reason §3.1 gives. This states what is added
+on top. Licence review: `docs/LICENSE_REVIEW_SCHOOL_2026_10.md` (approved by the
+maintainer on 2026-10-15).
+
+| | |
+|---|---|
+| **Subject** | 学校 (学校コード一覧、令和7年5月1日時点・確定版) |
+| **Origin** | **文部科学省 — a new origin.** Added to §3's list by the maintainer's approval on 2026-10-15, fetched directly from `mext.go.jp` |
+| **Granularity** | 町字 (`address_id`) where the address text settles one, otherwise 市区町村 |
+| **Tables** | `mext_school`, `mext_school_succession`, `bridge_school_address` |
+
+- **Not 国土数値情報 P29.** P29 was refused (2026-09-28, re-checked 2026-10-14)
+  because it cites a 測量法 approval and third-party originals. The 学校コード list
+  cites neither and has no coordinates; it is joined by its address text, so no
+  survey product is touched.
+- **Matched by text, not by position, and conservatively.** The municipality is
+  the longest name match within the school's own prefecture; the 町字 is the
+  longest name match that is followed directly by a 番地. Without that boundary
+  a school at 「小野田２２番地」 lands on the different, shorter 町字 「小野」.
+  Normalization is `normalize_conservative` unchanged: a school written with ヶ for
+  ケ, without 字, or with a Kyoto 通り name stays at 市区町村 rather than being
+  guessed (§4). Two 町字 of the same name keep both rows.
+- **The postal code corroborates; it never decides.** A row is `auto` only when one
+  町字 matched and the school's postal code is one of that 町字's postal codes
+  (`bridge_address_postal_code`). A differing code is recorded in `postal_check`
+  and left for review — most are 事業所個別番号 of universities, not errors.
+- **No coordinates.** The list has none, and none are derived. A map may place a
+  school at its 町字's MLIT point only if it says so; that point is not the school.
+- **Abolished schools are kept (§5)**, with 移行後の学校コード as
+  `mext_school_succession` (one school can move to several). A successor that is
+  not in the list keeps its row, flagged `successor_listed = 0`.
+- **The publisher's check digit is reported, not enforced.** 163 codes in the
+  令和7年 list keep the check digit of the school type they had before a change
+  (幼稚園 → 認定こども園 and similar). They are the publisher's codes and are not
+  corrected; `check_digit_valid` records it.
+- **`required: false`**, like the other added sources. Without the payload the
+  tables are absent and the `school_list_consistent` gate is `skip`.
+
 ## 4. Ambiguity policy (hard)
 
 > Leaving data unresolved is acceptable. Inventing a wrong 1:1 mapping is a defect.
